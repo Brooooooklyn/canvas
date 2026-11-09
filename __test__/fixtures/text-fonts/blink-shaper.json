@@ -1,5 +1,5 @@
 {
-  "note": "Chrome 157.0.8103.38 (headless, --disable-gpu, macOS 27.2 arm64). Canvas + element CSS: css on a fresh <canvas> in the document whose own font is the ctx.font, ctx attributes on the context; fonts loaded with FontFace(family, data, {weight, stretch, style: \"auto\"}). lowEnd rows: Chrome --enable-low-end-device-mode (no FrameShapeCache, DESIGN-SHAPER D26). measure rows: [width, actualBoundingBoxLeft, actualBoundingBoxRight, actualBoundingBoxAscent, actualBoundingBoxDescent]. same rows: whether draws[0] and draws[1] give the same pixels. color rows: whether the glyphs have ink and colored pixels. system rows need macOS system fonts. flip / flipPortable: the old path does not match Chrome (system renderer all fields / portable renderer width); the shaper stage that is expected to fix it. Capture scripts: canvas-align-work/blink-shaper/stages/S0 (cases.cjs, chrome.cjs, mkfixture.cjs). S13 (word spacing on a leading space): the spacing: wslead.* rows and the leading-space rows ws.lead2, ws.only3, ws.leadword, sspnk.ws.leadword, sspnk.ws.only3, latk.ws.leadword and both.lead are desktop mode (FrameShapeCache on), each on its own new canvas (stages/S13/capture.cjs).",
+  "note": "Chrome 157.0.8103.38 (headless, --disable-gpu, macOS 27.2 arm64). Canvas + element CSS: css on a fresh <canvas> in the document whose own font is the ctx.font, ctx attributes on the context; fonts loaded with FontFace(family, data, {weight, stretch, style: \"auto\"}). Every row: desktop mode (FrameShapeCache on), one new canvas per row; the rows first captured in low-end mode were re-captured in desktop mode and are equal (followups2/lowend-fixture-audit). measure rows: [width, actualBoundingBoxLeft, actualBoundingBoxRight, actualBoundingBoxAscent, actualBoundingBoxDescent]. same rows: whether draws[0] and draws[1] give the same pixels. color rows: whether the glyphs have ink and colored pixels. system rows need macOS system fonts. flip / flipPortable: the old path does not match Chrome (system renderer all fields / portable renderer width); the shaper stage that is expected to fix it. Capture scripts: canvas-align-work/blink-shaper/stages/S0 (cases.cjs, chrome.cjs, mkfixture.cjs). S13 (word spacing on a leading space): the spacing: wslead.* rows and the leading-space rows ws.lead2, ws.only3, ws.leadword, sspnk.ws.leadword, sspnk.ws.only3, latk.ws.leadword and both.lead are desktop mode (FrameShapeCache on), each on its own new canvas (stages/S13/capture.cjs).",
   "ua": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/157.0.0.0 Safari/537.36",
   "darwin": "27",
   "fonts": {
@@ -5224,7 +5224,6 @@
       "group": "spacing",
       "font": "40px BSLato",
       "text": "a b",
-      "lowEnd": true,
       "chrome": [50.3599853515625, -1.840000033378601, 48.919986724853516, 29.46000099182129, 0.32000160217285156]
     },
     "spacing: ws.plain": {
@@ -5234,14 +5233,12 @@
       "ctx": {
         "wordSpacing": "10px"
       },
-      "lowEnd": true,
       "chrome": [60.3599853515625, -1.840000033378601, 58.919986724853516, 29.46000099182129, 0.32000160217285156]
     },
     "spacing: ws0.lead": {
       "group": "spacing",
       "font": "40px BSLato",
       "text": " ab",
-      "lowEnd": true,
       "chrome": [50.3599853515625, -9.559986114501953, 48.91999053955078, 29.46000099182129, 0.32000160217285156]
     },
     "spacing: ws.lead": {
@@ -5251,14 +5248,12 @@
       "ctx": {
         "wordSpacing": "10px"
       },
-      "lowEnd": true,
       "chrome": [50.3599853515625, -9.559986114501953, 48.91999053955078, 29.46000099182129, 0.32000160217285156]
     },
     "spacing: ws0.lead2": {
       "group": "spacing",
       "font": "40px BSLato",
       "text": "  ab",
-      "lowEnd": true,
       "chrome": [58.07997131347656, -17.279972076416016, 56.639976501464844, 29.46000099182129, 0.32000160217285156]
     },
     "spacing: ws.lead2": {
@@ -5276,7 +5271,6 @@
       "group": "spacing",
       "font": "40px BSLato",
       "text": "ab ",
-      "lowEnd": true,
       "chrome": [50.3599853515625, -1.840000033378601, 41.20000457763672, 29.46000099182129, 0.32000160217285156]
     },
     "spacing: ws.trail": {
@@ -5286,7 +5280,6 @@
       "ctx": {
         "wordSpacing": "10px"
       },
-      "lowEnd": true,
       "chrome": [60.3599853515625, -1.840000033378601, 41.20000457763672, 29.46000099182129, 0.32000160217285156],
       "flip": "S4",
       "flipPortable": "S4"
@@ -5295,7 +5288,6 @@
       "group": "spacing",
       "font": "40px BSLato",
       "text": "ab  ",
-      "lowEnd": true,
       "chrome": [58.07997131347656, -1.840000033378601, 41.20000457763672, 29.46000099182129, 0.32000160217285156]
     },
     "spacing: ws.trail2": {
@@ -5305,7 +5297,6 @@
       "ctx": {
         "wordSpacing": "10px"
       },
-      "lowEnd": true,
       "chrome": [78.07997131347656, -1.840000033378601, 41.20000457763672, 29.46000099182129, 0.32000160217285156],
       "flip": "S4",
       "flipPortable": "S4"
@@ -5314,7 +5305,6 @@
       "group": "spacing",
       "font": "40px BSLato",
       "text": "a   b",
-      "lowEnd": true,
       "chrome": [65.79995727539062, -1.840000033378601, 64.35995483398438, 29.46000099182129, 0.32000160217285156]
     },
     "spacing: ws.run3": {
@@ -5324,7 +5314,6 @@
       "ctx": {
         "wordSpacing": "10px"
       },
-      "lowEnd": true,
       "chrome": [95.79995727539062, -1.840000033378601, 94.35995483398438, 29.46000099182129, 0.32000160217285156],
       "flip": "S4",
       "flipPortable": "S4"
@@ -5333,7 +5322,6 @@
       "group": "spacing",
       "font": "40px BSLato",
       "text": " ",
-      "lowEnd": true,
       "chrome": [7.7199859619140625, 0, 0, 0, 0]
     },
     "spacing: ws.only1": {
@@ -5343,14 +5331,12 @@
       "ctx": {
         "wordSpacing": "10px"
       },
-      "lowEnd": true,
       "chrome": [7.7199859619140625, 0, 0, 0, 0]
     },
     "spacing: ws0.only3": {
       "group": "spacing",
       "font": "40px BSLato",
       "text": "   ",
-      "lowEnd": true,
       "chrome": [23.159957885742188, -15.439971923828125, 15.439971923828125, 0, 0]
     },
     "spacing: ws.only3": {
@@ -5368,7 +5354,6 @@
       "group": "spacing",
       "font": "40px BSLato",
       "text": " a b",
-      "lowEnd": true,
       "chrome": [58.07997131347656, -9.559986114501953, 56.63997268676758, 29.46000099182129, 0.32000160217285156]
     },
     "spacing: ws.leadword": {
@@ -5384,7 +5369,6 @@
       "group": "spacing",
       "font": "40px BSLato",
       "text": "a b",
-      "lowEnd": true,
       "chrome": [50.3599853515625, -1.840000033378601, 48.91999053955078, 29.46000099182129, 0.32000160217285156]
     },
     "spacing: ws.nbsp": {
@@ -5394,7 +5378,6 @@
       "ctx": {
         "wordSpacing": "10px"
       },
-      "lowEnd": true,
       "chrome": [60.3599853515625, -1.840000033378601, 58.91999053955078, 29.46000099182129, 0.32000160217285156],
       "flip": "S4",
       "flipPortable": "S4"
@@ -5403,7 +5386,6 @@
       "group": "spacing",
       "font": "40px BSLato",
       "text": " ab",
-      "lowEnd": true,
       "chrome": [50.3599853515625, -9.559986114501953, 48.91999053955078, 29.46000099182129, 0.32000160217285156]
     },
     "spacing: ws.nbspLead": {
@@ -5413,7 +5395,6 @@
       "ctx": {
         "wordSpacing": "10px"
       },
-      "lowEnd": true,
       "chrome": [60.3599853515625, -19.559986114501953, 58.91999053955078, 29.46000099182129, 0.32000160217285156],
       "flip": "S4",
       "flipPortable": "S4"
@@ -5422,7 +5403,6 @@
       "group": "spacing",
       "font": "40px BSLato",
       "text": "ab ",
-      "lowEnd": true,
       "chrome": [50.3599853515625, -1.840000033378601, 41.20000457763672, 29.46000099182129, 0.32000160217285156]
     },
     "spacing: ws.nbspTrail": {
@@ -5432,7 +5412,6 @@
       "ctx": {
         "wordSpacing": "10px"
       },
-      "lowEnd": true,
       "chrome": [60.3599853515625, -1.840000033378601, 41.20000457763672, 29.46000099182129, 0.32000160217285156],
       "flip": "S4",
       "flipPortable": "S4"
@@ -5441,7 +5420,6 @@
       "group": "spacing",
       "font": "40px BSLato",
       "text": "a\tb",
-      "lowEnd": true,
       "chrome": [50.3599853515625, -1.840000033378601, 48.919986724853516, 29.46000099182129, 0.32000160217285156]
     },
     "spacing: ws.tab": {
@@ -5451,14 +5429,12 @@
       "ctx": {
         "wordSpacing": "10px"
       },
-      "lowEnd": true,
       "chrome": [60.3599853515625, -1.840000033378601, 58.919986724853516, 29.46000099182129, 0.32000160217285156]
     },
     "spacing: ws0.tabLead": {
       "group": "spacing",
       "font": "40px BSLato",
       "text": "\tab",
-      "lowEnd": true,
       "chrome": [50.3599853515625, -9.559986114501953, 48.91999053955078, 29.46000099182129, 0.32000160217285156]
     },
     "spacing: ws.tabLead": {
@@ -5468,14 +5444,12 @@
       "ctx": {
         "wordSpacing": "10px"
       },
-      "lowEnd": true,
       "chrome": [50.3599853515625, -9.559986114501953, 48.91999053955078, 29.46000099182129, 0.32000160217285156]
     },
     "spacing: ws0.lf": {
       "group": "spacing",
       "font": "40px BSLato",
       "text": "a\nb",
-      "lowEnd": true,
       "chrome": [50.3599853515625, -1.840000033378601, 48.919986724853516, 29.46000099182129, 0.32000160217285156]
     },
     "spacing: ws.lf": {
@@ -5485,14 +5459,12 @@
       "ctx": {
         "wordSpacing": "10px"
       },
-      "lowEnd": true,
       "chrome": [60.3599853515625, -1.840000033378601, 58.919986724853516, 29.46000099182129, 0.32000160217285156]
     },
     "spacing: ws0.cr": {
       "group": "spacing",
       "font": "40px BSLato",
       "text": "a\rb",
-      "lowEnd": true,
       "chrome": [50.3599853515625, -1.840000033378601, 48.919986724853516, 29.46000099182129, 0.32000160217285156]
     },
     "spacing: ws.cr": {
@@ -5502,14 +5474,12 @@
       "ctx": {
         "wordSpacing": "10px"
       },
-      "lowEnd": true,
       "chrome": [60.3599853515625, -1.840000033378601, 58.919986724853516, 29.46000099182129, 0.32000160217285156]
     },
     "spacing: ws0.ff": {
       "group": "spacing",
       "font": "40px BSLato",
       "text": "a\fb",
-      "lowEnd": true,
       "chrome": [50.3599853515625, -1.840000033378601, 48.919986724853516, 29.46000099182129, 0.32000160217285156]
     },
     "spacing: ws.ff": {
@@ -5519,14 +5489,12 @@
       "ctx": {
         "wordSpacing": "10px"
       },
-      "lowEnd": true,
       "chrome": [60.3599853515625, -1.840000033378601, 58.919986724853516, 29.46000099182129, 0.32000160217285156]
     },
     "spacing: ws0.en2002": {
       "group": "spacing",
       "font": "40px BSLato",
       "text": "a b",
-      "lowEnd": true,
       "chrome": [62.63999938964844, -1.840000033378601, 61.20000457763672, 29.46000099182129, 0.32000160217285156]
     },
     "spacing: ws.en2002": {
@@ -5536,7 +5504,6 @@
       "ctx": {
         "wordSpacing": "10px"
       },
-      "lowEnd": true,
       "chrome": [62.63999938964844, -1.840000033378601, 61.20000457763672, 29.46000099182129, 0.32000160217285156],
       "flip": "S4",
       "flipPortable": "S4"
@@ -5545,7 +5512,6 @@
       "group": "spacing",
       "font": "40px BSLato",
       "text": "a b",
-      "lowEnd": true,
       "chrome": [50.3599853515625, -1.840000033378601, 48.91999053955078, 29.46000099182129, 0.32000160217285156]
     },
     "spacing: ws.ls2028": {
@@ -5555,7 +5521,6 @@
       "ctx": {
         "wordSpacing": "10px"
       },
-      "lowEnd": true,
       "chrome": [50.3599853515625, -1.840000033378601, 48.91999053955078, 29.46000099182129, 0.32000160217285156],
       "flip": "S4",
       "flipPortable": "S4"
@@ -5564,7 +5529,6 @@
       "group": "spacing",
       "font": "40px BSLato",
       "text": "a​b",
-      "lowEnd": true,
       "chrome": [42.63999938964844, -1.840000033378601, 41.20000076293945, 29.46000099182129, 0.32000160217285156]
     },
     "spacing: ws.zws": {
@@ -5574,7 +5538,6 @@
       "ctx": {
         "wordSpacing": "10px"
       },
-      "lowEnd": true,
       "chrome": [42.63999938964844, -1.840000033378601, 41.20000076293945, 29.46000099182129, 0.32000160217285156]
     },
     "spacing: ssp.ws0.plain": {
@@ -5584,7 +5547,6 @@
       "ctx": {
         "fontKerning": "normal"
       },
-      "lowEnd": true,
       "chrome": [52.759979248046875, -1.8000000715255737, 50.959991455078125, 29.560001373291016, 0.5200023651123047]
     },
     "spacing: ssp.ws.plain": {
@@ -5595,7 +5557,6 @@
         "fontKerning": "normal",
         "wordSpacing": "10px"
       },
-      "lowEnd": true,
       "chrome": [62.759979248046875, -1.8000000715255737, 60.959991455078125, 29.560001373291016, 0.5200023651123047]
     },
     "spacing: ssp.ws0.lead": {
@@ -5605,7 +5566,6 @@
       "ctx": {
         "fontKerning": "normal"
       },
-      "lowEnd": true,
       "chrome": [52.759979248046875, -11.11999225616455, 50.959991455078125, 29.560001373291016, 0.5200023651123047]
     },
     "spacing: ssp.ws.lead": {
@@ -5616,7 +5576,6 @@
         "fontKerning": "normal",
         "wordSpacing": "10px"
       },
-      "lowEnd": true,
       "chrome": [52.759979248046875, -11.11999225616455, 50.959991455078125, 29.560001373291016, 0.5200023651123047]
     },
     "spacing: ssp.ws0.trail": {
@@ -5626,7 +5585,6 @@
       "ctx": {
         "fontKerning": "normal"
       },
-      "lowEnd": true,
       "chrome": [52.759979248046875, -1.8000000715255737, 41.63999938964844, 29.560001373291016, 0.5200023651123047]
     },
     "spacing: ssp.ws.trail": {
@@ -5637,7 +5595,6 @@
         "fontKerning": "normal",
         "wordSpacing": "10px"
       },
-      "lowEnd": true,
       "chrome": [62.759979248046875, -1.8000000715255737, 41.63999938964844, 29.560001373291016, 0.5200023651123047],
       "flip": "S4",
       "flipPortable": "S4"
@@ -5649,7 +5606,6 @@
       "ctx": {
         "fontKerning": "normal"
       },
-      "lowEnd": true,
       "chrome": [71.39996337890625, -1.8000000715255737, 69.5999755859375, 29.560001373291016, 0.5200023651123047]
     },
     "spacing: ssp.ws.run3": {
@@ -5660,7 +5616,6 @@
         "fontKerning": "normal",
         "wordSpacing": "10px"
       },
-      "lowEnd": true,
       "chrome": [101.39996337890625, -1.8000000715255737, 99.5999755859375, 29.560001373291016, 0.5200023651123047],
       "flip": "S4",
       "flipPortable": "S4"
@@ -5672,7 +5627,6 @@
       "ctx": {
         "fontKerning": "normal"
       },
-      "lowEnd": true,
       "chrome": [27.959976196289062, 0, 0, 0, 0]
     },
     "spacing: ssp.ws.only3": {
@@ -5683,7 +5637,6 @@
         "fontKerning": "normal",
         "wordSpacing": "10px"
       },
-      "lowEnd": true,
       "chrome": [47.95997619628906, 0, 0, 0, 0],
       "flip": "S4",
       "flipPortable": "S4"
@@ -5695,7 +5648,6 @@
       "ctx": {
         "fontKerning": "normal"
       },
-      "lowEnd": true,
       "chrome": [62.07997131347656, -11.11999225616455, 60.27998352050781, 29.560001373291016, 0.5200023651123047]
     },
     "spacing: ssp.ws.leadword": {
@@ -5706,7 +5658,6 @@
         "fontKerning": "normal",
         "wordSpacing": "10px"
       },
-      "lowEnd": true,
       "chrome": [72.07997131347656, -11.11999225616455, 70.27998352050781, 29.560001373291016, 0.5200023651123047]
     },
     "spacing: ssp.ws0.nbspLead": {
@@ -5716,7 +5667,6 @@
       "ctx": {
         "fontKerning": "normal"
       },
-      "lowEnd": true,
       "chrome": [52.759979248046875, -11.11999225616455, 50.959991455078125, 29.560001373291016, 0.5200023651123047]
     },
     "spacing: ssp.ws.nbspLead": {
@@ -5727,7 +5677,6 @@
         "fontKerning": "normal",
         "wordSpacing": "10px"
       },
-      "lowEnd": true,
       "chrome": [62.759979248046875, -21.119991302490234, 60.959991455078125, 29.560001373291016, 0.5200023651123047],
       "flip": "S4",
       "flipPortable": "S4"
@@ -5739,7 +5688,6 @@
       "ctx": {
         "fontKerning": "none"
       },
-      "lowEnd": true,
       "chrome": [52.759979248046875, -11.11999225616455, 50.959991455078125, 29.560001373291016, 0.5200023651123047]
     },
     "spacing: sspnk.ws.lead": {
@@ -5750,7 +5698,6 @@
         "fontKerning": "none",
         "wordSpacing": "10px"
       },
-      "lowEnd": true,
       "chrome": [52.759979248046875, -11.11999225616455, 50.959991455078125, 29.560001373291016, 0.5200023651123047]
     },
     "spacing: sspnk.ws0.leadword": {
@@ -5760,7 +5707,6 @@
       "ctx": {
         "fontKerning": "none"
       },
-      "lowEnd": true,
       "chrome": [62.07997131347656, -11.11999225616455, 60.27998352050781, 29.560001373291016, 0.5200023651123047]
     },
     "spacing: sspnk.ws.leadword": {
@@ -5780,7 +5726,6 @@
       "ctx": {
         "fontKerning": "none"
       },
-      "lowEnd": true,
       "chrome": [27.959976196289062, -18.639984130859375, 18.639984130859375, 0, 0]
     },
     "spacing: sspnk.ws.only3": {
@@ -5799,7 +5744,6 @@
       "group": "spacing",
       "font": "40px BSHan",
       "text": "一　一",
-      "lowEnd": true,
       "chrome": [120, -1.4453125, 118.88671875, 21.5234375, -15.60546875]
     },
     "spacing: han.ws.3000": {
@@ -5809,7 +5753,6 @@
       "ctx": {
         "wordSpacing": "10px"
       },
-      "lowEnd": true,
       "chrome": [120, -1.4453125, 118.88671875, 21.5234375, -15.60546875],
       "flip": "S4",
       "flipPortable": "S4"
@@ -5818,7 +5761,6 @@
       "group": "spacing",
       "font": "40px BSHan",
       "text": "一 一",
-      "lowEnd": true,
       "chrome": [90.0390625, -1.4453125, 88.92578125, 21.5234375, -15.60546875]
     },
     "spacing: han.ws.sp": {
@@ -5828,7 +5770,6 @@
       "ctx": {
         "wordSpacing": "10px"
       },
-      "lowEnd": true,
       "chrome": [100.0390625, -1.4453125, 98.92578125, 21.5234375, -15.60546875]
     },
     "spacing: latk.ws.leadword": {
@@ -5848,7 +5789,6 @@
       "ctx": {
         "direction": "rtl"
       },
-      "lowEnd": true,
       "chrome": [50.3599853515625, 48.51998519897461, -9.159980773925781, 29.46000099182129, 0.32000160217285156]
     },
     "spacing: rtl.ws.lead": {
@@ -5859,7 +5799,6 @@
         "direction": "rtl",
         "wordSpacing": "10px"
       },
-      "lowEnd": true,
       "chrome": [50.3599853515625, 48.51998519897461, -9.159980773925781, 29.46000099182129, 0.32000160217285156]
     },
     "spacing: rtl.ws0.trail": {
@@ -5869,7 +5808,6 @@
       "ctx": {
         "direction": "rtl"
       },
-      "lowEnd": true,
       "chrome": [50.3599853515625, 40.79999923706055, -1.4399948120117188, 29.46000099182129, 0.32000160217285156]
     },
     "spacing: rtl.ws.trail": {
@@ -5880,7 +5818,6 @@
         "direction": "rtl",
         "wordSpacing": "10px"
       },
-      "lowEnd": true,
       "chrome": [60.3599853515625, 40.79999923706055, -1.4399948120117188, 29.46000099182129, 0.32000160217285156],
       "flip": "S4",
       "flipPortable": "S4"
@@ -5892,7 +5829,6 @@
       "ctx": {
         "direction": "ltr"
       },
-      "lowEnd": true,
       "chrome": [96.42578125, -1.3671875, 95.05859375, 35.60546875, 11.484375]
     },
     "spacing: ar.ws": {
@@ -5903,7 +5839,6 @@
         "direction": "ltr",
         "wordSpacing": "10px"
       },
-      "lowEnd": true,
       "chrome": [106.42578125, -1.3671875, 105.05859375, 35.60546875, 11.484375]
     },
     "spacing: ar.ws0.lead": {
@@ -5913,7 +5848,6 @@
       "ctx": {
         "direction": "ltr"
       },
-      "lowEnd": true,
       "chrome": [105.2734375, -10.21484375, 103.90625, 35.60546875, 11.484375]
     },
     "spacing: ar.ws.lead": {
@@ -5924,7 +5858,6 @@
         "direction": "ltr",
         "wordSpacing": "10px"
       },
-      "lowEnd": true,
       "chrome": [115.2734375, -10.21484375, 113.90625, 35.60546875, 11.484375]
     },
     "spacing: ar.ws0.rtl": {
@@ -5934,7 +5867,6 @@
       "ctx": {
         "direction": "rtl"
       },
-      "lowEnd": true,
       "chrome": [105.2734375, 95.05859375, -1.3671875, 35.60546875, 11.484375]
     },
     "spacing: ar.ws.rtl": {
@@ -5945,7 +5877,6 @@
         "direction": "rtl",
         "wordSpacing": "10px"
       },
-      "lowEnd": true,
       "chrome": [125.2734375, 105.05859375, -1.3671875, 35.60546875, 11.484375],
       "flip": "S4",
       "flipPortable": "S4"
@@ -5954,7 +5885,6 @@
       "group": "spacing",
       "font": "40px BSLato",
       "text": "abc",
-      "lowEnd": true,
       "chrome": [61.31999206542969, -1.840000033378601, 60.540000915527344, 29.46000099182129, 0.32000160217285156]
     },
     "spacing: ls.latin": {
@@ -5964,14 +5894,12 @@
       "ctx": {
         "letterSpacing": "8px"
       },
-      "lowEnd": true,
       "chrome": [85.31999206542969, -1.840000033378601, 76.54000091552734, 29.46000099182129, 0.32000160217285156]
     },
     "spacing: ls0.latinsp": {
       "group": "spacing",
       "font": "40px BSLato",
       "text": "a b",
-      "lowEnd": true,
       "chrome": [50.3599853515625, -1.840000033378601, 48.919986724853516, 29.46000099182129, 0.32000160217285156]
     },
     "spacing: ls.latinsp": {
@@ -5981,14 +5909,12 @@
       "ctx": {
         "letterSpacing": "8px"
       },
-      "lowEnd": true,
       "chrome": [74.3599853515625, -1.840000033378601, 64.91998291015625, 29.46000099182129, 0.32000160217285156]
     },
     "spacing: ls0.leadsp": {
       "group": "spacing",
       "font": "40px BSLato",
       "text": " ab",
-      "lowEnd": true,
       "chrome": [50.3599853515625, -9.559986114501953, 48.91999053955078, 29.46000099182129, 0.32000160217285156]
     },
     "spacing: ls.leadsp": {
@@ -5998,14 +5924,12 @@
       "ctx": {
         "letterSpacing": "8px"
       },
-      "lowEnd": true,
       "chrome": [74.3599853515625, -17.559986114501953, 64.91999053955078, 29.46000099182129, 0.32000160217285156]
     },
     "spacing: ls0.eacute_pre": {
       "group": "spacing",
       "font": "40px BSSerif",
       "text": "é",
-      "lowEnd": true,
       "chrome": [20.399993896484375, -1.8000000715255737, 18.440000534057617, 30.31999969482422, 0.5200023651123047]
     },
     "spacing: ls.eacute_pre": {
@@ -6015,14 +5939,12 @@
       "ctx": {
         "letterSpacing": "8px"
       },
-      "lowEnd": true,
       "chrome": [28.399993896484375, -1.8000000715255737, 18.440000534057617, 30.31999969482422, 0.5200023651123047]
     },
     "spacing: ls0.e0301": {
       "group": "spacing",
       "font": "40px BSSerif",
       "text": "é",
-      "lowEnd": true,
       "chrome": [20.399993896484375, -1.8000000715255737, 18.440000534057617, 30.31999969482422, 0.5200023651123047]
     },
     "spacing: ls.e0301": {
@@ -6032,14 +5954,12 @@
       "ctx": {
         "letterSpacing": "8px"
       },
-      "lowEnd": true,
       "chrome": [28.399993896484375, -1.8000000715255737, 18.440000534057617, 30.31999969482422, 0.5200023651123047]
     },
     "spacing: ls0.q0301": {
       "group": "spacing",
       "font": "40px BSSerif",
       "text": "q́x",
-      "lowEnd": true,
       "chrome": [43.31999206542969, -1.8000000715255737, 42.91999816894531, 30.31999969482422, 9.55999755859375]
     },
     "spacing: ls.q0301": {
@@ -6049,7 +5969,6 @@
       "ctx": {
         "letterSpacing": "8px"
       },
-      "lowEnd": true,
       "chrome": [59.31999206542969, -1.8000000715255737, 50.91999816894531, 30.31999969482422, 9.55999755859375],
       "flip": "S4",
       "flipPortable": "S4"
@@ -6058,7 +5977,6 @@
       "group": "spacing",
       "font": "40px BSSerif",
       "text": "q́̈x",
-      "lowEnd": true,
       "chrome": [43.31999206542969, -1.8000000715255737, 42.91999816894531, 38.44001007080078, 9.55999755859375]
     },
     "spacing: ls.q0301_0308": {
@@ -6068,7 +5986,6 @@
       "ctx": {
         "letterSpacing": "8px"
       },
-      "lowEnd": true,
       "chrome": [59.31999206542969, -1.8000000715255737, 50.91999816894531, 38.44001007080078, 9.55999755859375],
       "flip": "S4",
       "flipPortable": "S4"
@@ -6077,7 +5994,6 @@
       "group": "spacing",
       "font": "40px BSGar",
       "text": "q́x",
-      "lowEnd": true,
       "chrome": [38.079986572265625, -1.399999976158142, 37.87998962402344, 25.959999084472656, 11.400001525878906]
     },
     "spacing: ls.ebg_q0301": {
@@ -6087,7 +6003,6 @@
       "ctx": {
         "letterSpacing": "8px"
       },
-      "lowEnd": true,
       "chrome": [54.079986572265625, -1.399999976158142, 45.87998962402344, 25.959999084472656, 11.400001525878906],
       "flip": "S4",
       "flipPortable": "S4"
@@ -6096,7 +6011,6 @@
       "group": "spacing",
       "font": "40px BSLato",
       "text": "a‍b",
-      "lowEnd": true,
       "chrome": [42.63999938964844, -1.840000033378601, 41.20000457763672, 29.46000099182129, 0.32000160217285156]
     },
     "spacing: ls.zwj": {
@@ -6106,14 +6020,12 @@
       "ctx": {
         "letterSpacing": "8px"
       },
-      "lowEnd": true,
       "chrome": [58.63999938964844, -1.840000033378601, 49.20000457763672, 29.46000099182129, 0.32000160217285156]
     },
     "spacing: ls0.zwnj": {
       "group": "spacing",
       "font": "40px BSLato",
       "text": "a‌b",
-      "lowEnd": true,
       "chrome": [42.63999938964844, -1.840000033378601, 41.20000457763672, 29.46000099182129, 0.32000160217285156]
     },
     "spacing: ls.zwnj": {
@@ -6123,14 +6035,12 @@
       "ctx": {
         "letterSpacing": "8px"
       },
-      "lowEnd": true,
       "chrome": [58.63999938964844, -1.840000033378601, 49.20000457763672, 29.46000099182129, 0.32000160217285156]
     },
     "spacing: ls0.zws": {
       "group": "spacing",
       "font": "40px BSLato",
       "text": "a​b",
-      "lowEnd": true,
       "chrome": [42.63999938964844, -1.840000033378601, 41.20000076293945, 29.46000099182129, 0.32000160217285156]
     },
     "spacing: ls.zws": {
@@ -6140,14 +6050,12 @@
       "ctx": {
         "letterSpacing": "8px"
       },
-      "lowEnd": true,
       "chrome": [58.63999938964844, -1.840000033378601, 49.20000076293945, 29.46000099182129, 0.32000160217285156]
     },
     "spacing: ls0.shy": {
       "group": "spacing",
       "font": "40px BSLato",
       "text": "a­b",
-      "lowEnd": true,
       "chrome": [42.63999938964844, -1.840000033378601, 41.20000076293945, 29.46000099182129, 0.32000160217285156]
     },
     "spacing: ls.shy": {
@@ -6157,14 +6065,12 @@
       "ctx": {
         "letterSpacing": "8px"
       },
-      "lowEnd": true,
       "chrome": [58.63999938964844, -1.840000033378601, 49.20000076293945, 29.46000099182129, 0.32000160217285156]
     },
     "spacing: ls0.feff": {
       "group": "spacing",
       "font": "40px BSLato",
       "text": "a﻿b",
-      "lowEnd": true,
       "chrome": [42.63999938964844, -1.840000033378601, 41.20000076293945, 29.46000099182129, 0.32000160217285156]
     },
     "spacing: ls.feff": {
@@ -6174,7 +6080,6 @@
       "ctx": {
         "letterSpacing": "8px"
       },
-      "lowEnd": true,
       "chrome": [58.63999938964844, -1.840000033378601, 49.20000076293945, 29.46000099182129, 0.32000160217285156]
     },
     "spacing: ls0.emoji": {
@@ -6182,7 +6087,6 @@
       "font": "40px BSLato",
       "text": "a😀b",
       "system": true,
-      "lowEnd": true,
       "chrome": [82.63999938964844, -1.840000033378601, 81.19999694824219, 37, 6]
     },
     "spacing: ls.emoji": {
@@ -6193,7 +6097,6 @@
         "letterSpacing": "8px"
       },
       "system": true,
-      "lowEnd": true,
       "chrome": [106.63999938964844, -1.840000033378601, 97.19999694824219, 37, 6]
     },
     "spacing: ls0.emojizwj": {
@@ -6201,7 +6104,6 @@
       "font": "40px BSLato",
       "text": "a👨‍👩‍👧b",
       "system": true,
-      "lowEnd": true,
       "chrome": [82.63999938964844, -1.840000033378601, 81.19999694824219, 37, 6]
     },
     "spacing: ls.emojizwj": {
@@ -6212,7 +6114,6 @@
         "letterSpacing": "8px"
       },
       "system": true,
-      "lowEnd": true,
       "chrome": [106.63999938964844, -1.840000033378601, 97.19999694824219, 37, 6]
     },
     "spacing: ls0.emojiflag": {
@@ -6220,7 +6121,6 @@
       "font": "40px BSLato",
       "text": "a🇯🇵b",
       "system": true,
-      "lowEnd": true,
       "chrome": [82.63999938964844, -1.840000033378601, 81.19999694824219, 37, 6]
     },
     "spacing: ls.emojiflag": {
@@ -6231,7 +6131,6 @@
         "letterSpacing": "8px"
       },
       "system": true,
-      "lowEnd": true,
       "chrome": [106.63999938964844, -1.840000033378601, 97.19999694824219, 37, 6]
     },
     "spacing: ls0.emojiskin": {
@@ -6239,7 +6138,6 @@
       "font": "40px BSLato",
       "text": "a👍🏽b",
       "system": true,
-      "lowEnd": true,
       "chrome": [82.63999938964844, -1.840000033378601, 81.19999694824219, 37, 6]
     },
     "spacing: ls.emojiskin": {
@@ -6250,14 +6148,12 @@
         "letterSpacing": "8px"
       },
       "system": true,
-      "lowEnd": true,
       "chrome": [106.63999938964844, -1.840000033378601, 97.19999694824219, 37, 6]
     },
     "spacing: ls0.deva_ksa": {
       "group": "spacing",
       "font": "40px BSDeva",
       "text": "क्ष",
-      "lowEnd": true,
       "chrome": [28.67999267578125, -2.0399999618530273, 29.240001678466797, 25.280000686645508, 3.4000015258789062]
     },
     "spacing: ls.deva_ksa": {
@@ -6267,14 +6163,12 @@
       "ctx": {
         "letterSpacing": "8px"
       },
-      "lowEnd": true,
       "chrome": [36.67999267578125, -2.0399999618530273, 29.240001678466797, 25.280000686645508, 3.4000015258789062]
     },
     "spacing: ls0.deva_ki": {
       "group": "spacing",
       "font": "40px BSDeva",
       "text": "कि",
-      "lowEnd": true,
       "chrome": [41.07997131347656, 0, 41.67998504638672, 35.84000015258789, 0]
     },
     "spacing: ls.deva_ki": {
@@ -6284,7 +6178,6 @@
       "ctx": {
         "letterSpacing": "8px"
       },
-      "lowEnd": true,
       "chrome": [49.07997131347656, 0, 41.67998504638672, 35.84000015258789, 0],
       "flip": "S4",
       "flipPortable": "S4"
@@ -6293,7 +6186,6 @@
       "group": "spacing",
       "font": "40px BSDeva",
       "text": "नमस्ते",
-      "lowEnd": true,
       "chrome": [84.47998046875, 0, 85.03999328613281, 35.84000015258789, 0.5600013732910156]
     },
     "spacing: ls.deva_word": {
@@ -6303,7 +6195,6 @@
       "ctx": {
         "letterSpacing": "8px"
       },
-      "lowEnd": true,
       "chrome": [116.47998046875, 0, 109.03999328613281, 35.84000015258789, 0.5600013732910156],
       "flip": "S4",
       "flipPortable": "S4"
@@ -6312,7 +6203,6 @@
       "group": "spacing",
       "font": "40px BSDeva",
       "text": "र्क",
-      "lowEnd": true,
       "chrome": [30.719985961914062, 0, 31.31999969482422, 35.84000015258789, 0]
     },
     "spacing: ls.deva_rka": {
@@ -6322,7 +6212,6 @@
       "ctx": {
         "letterSpacing": "8px"
       },
-      "lowEnd": true,
       "chrome": [38.71998596191406, 0, 31.31999969482422, 35.84000015258789, 0],
       "flip": "S4",
       "flipPortable": "S4"
@@ -6332,7 +6221,6 @@
       "font": "40px \"Kohinoor Devanagari\"",
       "text": "क्ष",
       "system": true,
-      "lowEnd": true,
       "chrome": [29.959991455078125, -1.5600000619888306, 30.84000015258789, 26.079999923706055, 3.480001449584961]
     },
     "spacing: ls.kohinoor_ksa": {
@@ -6343,7 +6231,6 @@
         "letterSpacing": "8px"
       },
       "system": true,
-      "lowEnd": true,
       "chrome": [37.959991455078125, -1.5600000619888306, 30.84000015258789, 26.079999923706055, 3.480001449584961]
     },
     "spacing: ls0.kohinoor_ki": {
@@ -6351,7 +6238,6 @@
       "font": "40px \"Kohinoor Devanagari\"",
       "text": "कि",
       "system": true,
-      "lowEnd": true,
       "chrome": [41.71998596191406, 0.8799999952316284, 42.60000228881836, 37, 0]
     },
     "spacing: ls.kohinoor_ki": {
@@ -6362,7 +6248,6 @@
         "letterSpacing": "8px"
       },
       "system": true,
-      "lowEnd": true,
       "chrome": [49.71998596191406, 0.8799999952316284, 42.60000228881836, 37, 0],
       "flip": "S4"
     },
@@ -6371,7 +6256,6 @@
       "font": "40px \"Kohinoor Devanagari\"",
       "text": "नमस्ते",
       "system": true,
-      "lowEnd": true,
       "chrome": [82.67997741699219, 0.8799999952316284, 83.55997467041016, 36.400001525878906, 0.44000244140625]
     },
     "spacing: ls.kohinoor_word": {
@@ -6382,7 +6266,6 @@
         "letterSpacing": "8px"
       },
       "system": true,
-      "lowEnd": true,
       "chrome": [106.67997741699219, 0.8799999952316284, 99.55997467041016, 36.400001525878906, 0.44000244140625],
       "flip": "S4"
     },
@@ -6391,7 +6274,6 @@
       "font": "40px \"Kohinoor Devanagari\"",
       "text": "र्क",
       "system": true,
-      "lowEnd": true,
       "chrome": [30.79998779296875, 0.8799999952316284, 31.68000602722168, 36, 0]
     },
     "spacing: ls.kohinoor_rka": {
@@ -6402,7 +6284,6 @@
         "letterSpacing": "8px"
       },
       "system": true,
-      "lowEnd": true,
       "chrome": [38.79998779296875, 0.8799999952316284, 31.68000602722168, 36, 0],
       "flip": "S4"
     },
@@ -6410,7 +6291,6 @@
       "group": "spacing",
       "font": "40px BSLato",
       "text": "fi",
-      "lowEnd": true,
       "chrome": [22.79998779296875, -0.5199999809265137, 19.420000076293945, 29.419998168945312, 0]
     },
     "spacing: ls.fi": {
@@ -6420,14 +6300,12 @@
       "ctx": {
         "letterSpacing": "8px"
       },
-      "lowEnd": true,
       "chrome": [39.71998596191406, -0.5199999809265137, 29.159996032714844, 29.18000030517578, 0]
     },
     "spacing: ls0.ssp_fi": {
       "group": "spacing",
       "font": "40px BSSerif",
       "text": "fi",
-      "lowEnd": true,
       "chrome": [24.67999267578125, -1.3600001335144043, 23.399999618530273, 29.96000099182129, 0]
     },
     "spacing: ls.ssp_fi": {
@@ -6437,14 +6315,12 @@
       "ctx": {
         "letterSpacing": "8px"
       },
-      "lowEnd": true,
       "chrome": [43.31999206542969, -1.3600001335144043, 34.079994201660156, 29.96000099182129, 0]
     },
     "spacing: ls0.ssp_ffi": {
       "group": "spacing",
       "font": "40px BSSerif",
       "text": "ffi",
-      "lowEnd": true,
       "chrome": [36.79998779296875, -1.3600001335144043, 35.560001373291016, 29.96000099182129, 0]
     },
     "spacing: ls.ssp_ffi": {
@@ -6454,14 +6330,12 @@
       "ctx": {
         "letterSpacing": "8px"
       },
-      "lowEnd": true,
       "chrome": [65.47998046875, -1.3600001335144043, 56.23998260498047, 29.96000099182129, 0]
     },
     "spacing: ls0.ar": {
       "group": "spacing",
       "font": "40px BSHarm",
       "text": "بسم الله",
-      "lowEnd": true,
       "chrome": [96.42578125, -1.3671875, 95.05859375, 35.60546875, 11.484375]
     },
     "spacing: ls.ar": {
@@ -6471,14 +6345,12 @@
       "ctx": {
         "letterSpacing": "8px"
       },
-      "lowEnd": true,
       "chrome": [104.42578125, -1.3671875, 103.05859375, 35.60546875, 11.484375]
     },
     "spacing: ls0.ar_lam_alef": {
       "group": "spacing",
       "font": "40px BSHarm",
       "text": "لا",
-      "lowEnd": true,
       "chrome": [15.7421875, -1.171875, 14.375, 21.26953125, 0.3125]
     },
     "spacing: ls.ar_lam_alef": {
@@ -6488,14 +6360,12 @@
       "ctx": {
         "letterSpacing": "8px"
       },
-      "lowEnd": true,
       "chrome": [15.91796875, -1.3671875, 14.55078125, 21.26953125, 0.1953125]
     },
     "spacing: ls0.ar_latin": {
       "group": "spacing",
       "font": "40px BSHarm",
       "text": "بسم ab",
-      "lowEnd": true,
       "chrome": [96.26953125, 1.07421875, 94.8828125, 23.4375, 11.484375]
     },
     "spacing: ls.ar_latin": {
@@ -6505,14 +6375,12 @@
       "ctx": {
         "letterSpacing": "8px"
       },
-      "lowEnd": true,
       "chrome": [120.26953125, 1.07421875, 110.8828125, 23.4375, 11.484375]
     },
     "spacing: ls0.ar_digits": {
       "group": "spacing",
       "font": "40px BSHarm",
       "text": "بسم 12",
-      "lowEnd": true,
       "chrome": [98.10546875, -3.4765625, 96.73828125, 21.09375, 11.484375]
     },
     "spacing: ls.ar_digits": {
@@ -6522,14 +6390,12 @@
       "ctx": {
         "letterSpacing": "8px"
       },
-      "lowEnd": true,
       "chrome": [122.10546875, -3.4765625, 120.73828125, 21.09375, 11.484375]
     },
     "spacing: ls0.nko": {
       "group": "spacing",
       "font": "40px BSNKo",
       "text": "ߊߋߌ ߍ",
-      "lowEnd": true,
       "chrome": [89.63996887207031, -1.2400000095367432, 86.11997985839844, 28.559999465942383, 0]
     },
     "spacing: ls.nko": {
@@ -6539,14 +6405,12 @@
       "ctx": {
         "letterSpacing": "8px"
       },
-      "lowEnd": true,
       "chrome": [97.63996887207031, -1.2400000095367432, 94.11997985839844, 28.559999465942383, 0]
     },
     "spacing: ls0.han3000": {
       "group": "spacing",
       "font": "40px BSHan",
       "text": "一　一",
-      "lowEnd": true,
       "chrome": [120, -1.4453125, 118.88671875, 21.5234375, -15.60546875]
     },
     "spacing: ls.han3000": {
@@ -6556,14 +6420,12 @@
       "ctx": {
         "letterSpacing": "8px"
       },
-      "lowEnd": true,
       "chrome": [144, -1.4453125, 134.88671875, 21.5234375, -15.60546875]
     },
     "spacing: ls0.tab": {
       "group": "spacing",
       "font": "40px BSLato",
       "text": "a\tb",
-      "lowEnd": true,
       "chrome": [50.3599853515625, -1.840000033378601, 48.919986724853516, 29.46000099182129, 0.32000160217285156]
     },
     "spacing: ls.tab": {
@@ -6573,14 +6435,12 @@
       "ctx": {
         "letterSpacing": "8px"
       },
-      "lowEnd": true,
       "chrome": [74.3599853515625, -1.840000033378601, 64.91998291015625, 29.46000099182129, 0.32000160217285156]
     },
     "spacing: ls0.ls2028": {
       "group": "spacing",
       "font": "40px BSLato",
       "text": "a b",
-      "lowEnd": true,
       "chrome": [50.3599853515625, -1.840000033378601, 48.91999053955078, 29.46000099182129, 0.32000160217285156]
     },
     "spacing: ls.ls2028": {
@@ -6590,7 +6450,6 @@
       "ctx": {
         "letterSpacing": "8px"
       },
-      "lowEnd": true,
       "chrome": [74.3599853515625, -1.840000033378601, 64.91999053955078, 29.46000099182129, 0.32000160217285156]
     },
     "spacing: ls0.thai_am": {
@@ -6598,7 +6457,6 @@
       "font": "40px BSLato",
       "text": "กำข",
       "system": true,
-      "lowEnd": true,
       "chrome": [67.640625, -1.453125, 64.59375, 34.515625, 0]
     },
     "spacing: ls.thai_am": {
@@ -6609,7 +6467,6 @@
         "letterSpacing": "8px"
       },
       "system": true,
-      "lowEnd": true,
       "chrome": [83.640625, -1.453125, 72.59375, 34.515625, 0]
     },
     "spacing: ls0.he_niqqud": {
@@ -6617,7 +6474,6 @@
       "font": "40px BSLato",
       "text": "שָׁלוֹם",
       "system": true,
-      "lowEnd": true,
       "chrome": [90.80078125, -1.5234375, 88.8671875, 31.328125, 10],
       "flip": "S3"
     },
@@ -6629,7 +6485,6 @@
         "letterSpacing": "8px"
       },
       "system": true,
-      "lowEnd": true,
       "chrome": [122.80078125, -1.5234375, 112.8671875, 31.328125, 10],
       "flip": "S4"
     },
@@ -6638,7 +6493,6 @@
       "font": "40px BSLato",
       "text": "a🐈‍🍕b",
       "system": true,
-      "lowEnd": true,
       "chrome": [122.63999938964844, -1.840000033378601, 121.19999694824219, 37, 6]
     },
     "spacing: ls.emoji_nonrgi": {
@@ -6649,7 +6503,6 @@
         "letterSpacing": "8px"
       },
       "system": true,
-      "lowEnd": true,
       "chrome": [146.63999938964844, -1.840000033378601, 137.1999969482422, 37, 6],
       "flip": "S4"
     },
@@ -6657,7 +6510,6 @@
       "group": "spacing",
       "font": "40px BSLato",
       "text": "qáx",
-      "lowEnd": true,
       "chrome": [62.79998779296875, -1.4399999380111694, 62.20000076293945, 28.979999542236328, 6.8600006103515625]
     },
     "spacing: ls.lato_a0301": {
@@ -6667,7 +6519,6 @@
       "ctx": {
         "letterSpacing": "8px"
       },
-      "lowEnd": true,
       "chrome": [86.79998779296875, -1.4399999380111694, 78.19999694824219, 28.979999542236328, 6.8600006103515625]
     },
     "spacing: ls0.vs16": {
@@ -6675,7 +6526,6 @@
       "font": "40px BSLato",
       "text": "a☺️b",
       "system": true,
-      "lowEnd": true,
       "chrome": [82.63999938964844, -1.840000033378601, 81.20000457763672, 37, 6],
       "flip": "S3"
     },
@@ -6687,7 +6537,6 @@
         "letterSpacing": "8px"
       },
       "system": true,
-      "lowEnd": true,
       "chrome": [106.63999938964844, -1.840000033378601, 97.20000457763672, 37, 6],
       "flip": "S4"
     },
@@ -6695,7 +6544,6 @@
       "group": "spacing",
       "font": "40px BSHarm",
       "text": "بِسْمِ",
-      "lowEnd": true,
       "chrome": [54.1015625, 1.07421875, 53.515625, 16.875, 14.55078125]
     },
     "spacing: ls.ar_harakat": {
@@ -6705,7 +6553,6 @@
       "ctx": {
         "letterSpacing": "8px"
       },
-      "lowEnd": true,
       "chrome": [54.1015625, 1.07421875, 53.28125, 16.875, 14.74609375]
     },
     "spacing: liga0.ssp_fi": {
@@ -6715,7 +6562,6 @@
       "css": {
         "fontFeatureSettings": "\"liga\" 1"
       },
-      "lowEnd": true,
       "chrome": [24.67999267578125, -1.3600001335144043, 23.399999618530273, 29.96000099182129, 0]
     },
     "spacing: liga.ssp_fi": {
@@ -6728,7 +6574,6 @@
       "css": {
         "fontFeatureSettings": "\"liga\" 1"
       },
-      "lowEnd": true,
       "chrome": [32.67999267578125, -1.3600001335144043, 23.399999618530273, 29.96000099182129, 0],
       "flip": "S4",
       "flipPortable": "S4"
@@ -6740,7 +6585,6 @@
       "css": {
         "fontFeatureSettings": "\"liga\" 1"
       },
-      "lowEnd": true,
       "chrome": [36.79998779296875, -1.3600001335144043, 35.560001373291016, 29.96000099182129, 0]
     },
     "spacing: liga.ssp_ffi": {
@@ -6753,7 +6597,6 @@
       "css": {
         "fontFeatureSettings": "\"liga\" 1"
       },
-      "lowEnd": true,
       "chrome": [44.79998779296875, -1.3600001335144043, 35.560001373291016, 29.96000099182129, 0],
       "flip": "S4",
       "flipPortable": "S4"
@@ -6765,7 +6608,6 @@
       "ctx": {
         "direction": "rtl"
       },
-      "lowEnd": true,
       "chrome": [42.63999938964844, 40.79999923706055, -1.4399948120117188, 29.46000099182129, 0.32000160217285156]
     },
     "spacing: ls.rtl.ab": {
@@ -6776,7 +6618,6 @@
         "direction": "rtl",
         "letterSpacing": "8px"
       },
-      "lowEnd": true,
       "chrome": [58.63999938964844, 56.79999923706055, -9.439994812011719, 29.46000099182129, 0.32000160217285156]
     },
     "spacing: ls0.rtl.ar": {
@@ -6786,7 +6627,6 @@
       "ctx": {
         "direction": "rtl"
       },
-      "lowEnd": true,
       "chrome": [96.42578125, 95.05859375, -1.3671875, 35.60546875, 11.484375]
     },
     "spacing: ls.rtl.ar": {
@@ -6797,7 +6637,6 @@
         "direction": "rtl",
         "letterSpacing": "8px"
       },
-      "lowEnd": true,
       "chrome": [104.42578125, 103.05859375, -1.3671875, 35.60546875, 11.484375]
     },
     "spacing: neg.ls": {
@@ -6807,7 +6646,6 @@
       "ctx": {
         "letterSpacing": "-12px"
       },
-      "lowEnd": true,
       "chrome": [25.319992065429688, -1.840000033378601, 36.540000915527344, 29.46000099182129, 0.32000160217285156]
     },
     "spacing: neg.ls_big": {
@@ -6817,7 +6655,6 @@
       "ctx": {
         "letterSpacing": "-40px"
       },
-      "lowEnd": true,
       "chrome": [-58.68000793457031, 58.68000793457031, 17.800003051757812, 29.46000099182129, 0.32000160217285156],
       "flip": "S4"
     },
@@ -6828,7 +6665,6 @@
       "ctx": {
         "wordSpacing": "-20px"
       },
-      "lowEnd": true,
       "chrome": [36.75996398925781, -1.840000033378601, 35.97997283935547, 29.46000099182129, 0.32000160217285156]
     },
     "spacing: neg.ws_big": {
@@ -6838,7 +6674,6 @@
       "ctx": {
         "wordSpacing": "-60px"
       },
-      "lowEnd": true,
       "chrome": [-9.6400146484375, 28.96001434326172, 17.799999237060547, 29.46000099182129, 0.32000160217285156],
       "flip": "S4",
       "flipPortable": "S4"
@@ -6851,7 +6686,6 @@
         "letterSpacing": "-10px",
         "wordSpacing": "-10px"
       },
-      "lowEnd": true,
       "chrome": [10.3599853515625, -1.0399847030639648, 18.919986724853516, 29.46000099182129, 0.32000160217285156],
       "flip": "S4",
       "flipPortable": "S4"
@@ -6863,7 +6697,6 @@
       "ctx": {
         "letterSpacing": "-6px"
       },
-      "lowEnd": true,
       "chrome": [90.42578125, -1.3671875, 89.05859375, 35.60546875, 11.484375]
     },
     "spacing: both.lead": {
@@ -6886,7 +6719,6 @@
         "letterSpacing": "3px",
         "wordSpacing": "7px"
       },
-      "lowEnd": true,
       "chrome": [84.07997131347656, -19.559986114501953, 79.63996887207031, 29.46000099182129, 0.32000160217285156],
       "flip": "S4",
       "flipPortable": "S4"
@@ -6898,7 +6730,6 @@
       "ctx": {
         "letterSpacing": "0.0002px"
       },
-      "lowEnd": true,
       "chrome": [181.20191955566406, -1.840000033378601, 178.72174072265625, 29.46000099182129, 7.30000114440918],
       "flip": "S4",
       "flipPortable": "S4"
@@ -6907,7 +6738,6 @@
       "group": "spacing",
       "font": "40px BSLato",
       "text": "abcdefghij",
-      "lowEnd": true,
       "chrome": [181.19993591308594, -1.840000033378601, 178.71995544433594, 29.46000099182129, 7.30000114440918]
     },
     "spacing: frac.ls": {
@@ -6917,7 +6747,6 @@
       "ctx": {
         "letterSpacing": "0.3px"
       },
-      "lowEnd": true,
       "chrome": [184.19981384277344, -1.840000033378601, 181.4198455810547, 29.46000099182129, 7.30000114440918]
     },
     "spacing: frac.ws": {
@@ -6927,14 +6756,12 @@
       "ctx": {
         "wordSpacing": "0.3px"
       },
-      "lowEnd": true,
       "chrome": [158.2198486328125, -1.840000033378601, 157.93984985351562, 29.46000099182129, 0.32000160217285156]
     },
     "spacing: frac.ws0": {
       "group": "spacing",
       "font": "40px BSLato",
       "text": "a b c d e f",
-      "lowEnd": true,
       "chrome": [156.71990966796875, -1.840000033378601, 156.43991088867188, 29.46000099182129, 0.32000160217285156]
     },
     "spacing: wslead.ltr.sp3": {
@@ -12191,7 +12018,6 @@
       "ctx": {
         "letterSpacing": "5px"
       },
-      "lowEnd": true,
       "chrome": [145, -7.799999237060547, 132.1999969482422, 34.2400016784668, 3.8400001525878906],
       "flip": "S7",
       "flipPortable": "S7"
@@ -12203,7 +12029,6 @@
       "ctx": {
         "letterSpacing": "5px"
       },
-      "lowEnd": true,
       "chrome": [223.95999145507812, -1.159999966621399, 217.83999633789062, 34.2400016784668, 3.8400001525878906],
       "flip": "S7",
       "flipPortable": "S7"
@@ -12215,7 +12040,6 @@
       "ctx": {
         "letterSpacing": "5px"
       },
-      "lowEnd": true,
       "chrome": [258.27996826171875, -0.1600000113248825, 249.5999755859375, 34.2400016784668, 3.8400001525878906],
       "flip": "S7",
       "flipPortable": "S7"
@@ -12227,7 +12051,6 @@
       "ctx": {
         "wordSpacing": "7px"
       },
-      "lowEnd": true,
       "chrome": [120, -7.799999237060547, 112.19999694824219, 34.2400016784668, 3.8400001525878906],
       "flip": "S7",
       "flipPortable": "S7"
@@ -12239,7 +12062,6 @@
       "ctx": {
         "wordSpacing": "7px"
       },
-      "lowEnd": true,
       "chrome": [195.95999145507812, -1.159999966621399, 194.83999633789062, 34.2400016784668, 3.8400001525878906],
       "flip": "S7",
       "flipPortable": "S7"
@@ -12251,7 +12073,6 @@
       "ctx": {
         "wordSpacing": "7px"
       },
-      "lowEnd": true,
       "chrome": [213.2799530029297, -0.1600000113248825, 209.5999755859375, 34.2400016784668, 3.8400001525878906],
       "flip": "S7",
       "flipPortable": "S7"
@@ -12635,7 +12456,6 @@
       "ctx": {
         "letterSpacing": "5px"
       },
-      "lowEnd": true,
       "chrome": [185, -27.799999237060547, 152.1999969482422, 34.2400016784668, 3.8400001525878906],
       "flip": "S7",
       "flipPortable": "S7"
@@ -12647,7 +12467,6 @@
       "ctx": {
         "letterSpacing": "5px"
       },
-      "lowEnd": true,
       "chrome": [263.9599914550781, -1.159999966621399, 257.8399963378906, 34.2400016784668, 3.8400001525878906],
       "flip": "S7",
       "flipPortable": "S7"
@@ -12659,7 +12478,6 @@
       "ctx": {
         "letterSpacing": "5px"
       },
-      "lowEnd": true,
       "chrome": [298.27996826171875, -0.1600000113248825, 289.5999755859375, 34.2400016784668, 3.8400001525878906],
       "flip": "S7",
       "flipPortable": "S7"
@@ -12671,7 +12489,6 @@
       "ctx": {
         "wordSpacing": "7px"
       },
-      "lowEnd": true,
       "chrome": [160, -27.799999237060547, 132.1999969482422, 34.2400016784668, 3.8400001525878906],
       "flip": "S7",
       "flipPortable": "S7"
@@ -12683,7 +12500,6 @@
       "ctx": {
         "wordSpacing": "7px"
       },
-      "lowEnd": true,
       "chrome": [235.95999145507812, -1.159999966621399, 234.83999633789062, 34.2400016784668, 3.8400001525878906],
       "flip": "S7",
       "flipPortable": "S7"
@@ -12695,7 +12511,6 @@
       "ctx": {
         "wordSpacing": "7px"
       },
-      "lowEnd": true,
       "chrome": [253.2799530029297, -0.1600000113248825, 249.5999755859375, 34.2400016784668, 3.8400001525878906],
       "flip": "S7",
       "flipPortable": "S7"
@@ -13085,7 +12900,6 @@
       "ctx": {
         "letterSpacing": "5px"
       },
-      "lowEnd": true,
       "chrome": [185, -25.68359375, 154.31640625, 34.12109375, 3.7109375],
       "flip": "S7",
       "flipPortable": "S7"
@@ -13097,7 +12911,6 @@
       "ctx": {
         "letterSpacing": "5px"
       },
-      "lowEnd": true,
       "chrome": [265.0390625, -0.83984375, 259.08203125, 34.12109375, 3.7109375],
       "flip": "S7",
       "flipPortable": "S7"
@@ -13109,7 +12922,6 @@
       "ctx": {
         "letterSpacing": "5px"
       },
-      "lowEnd": true,
       "chrome": [309.9609375, -0.48828125, 304.00390625, 34.12109375, 3.7109375],
       "flip": "S7",
       "flipPortable": "S7"
@@ -13121,7 +12933,6 @@
       "ctx": {
         "wordSpacing": "7px"
       },
-      "lowEnd": true,
       "chrome": [160, -25.68359375, 134.31640625, 34.12109375, 3.7109375],
       "flip": "S7",
       "flipPortable": "S7"
@@ -13133,7 +12944,6 @@
       "ctx": {
         "wordSpacing": "7px"
       },
-      "lowEnd": true,
       "chrome": [237.0390625, -0.83984375, 236.08203125, 34.12109375, 3.7109375],
       "flip": "S7",
       "flipPortable": "S7"
@@ -13145,7 +12955,6 @@
       "ctx": {
         "wordSpacing": "7px"
       },
-      "lowEnd": true,
       "chrome": [264.9609375, -0.48828125, 264.00390625, 34.12109375, 3.7109375],
       "flip": "S7",
       "flipPortable": "S7"
@@ -13535,7 +13344,6 @@
       "ctx": {
         "letterSpacing": "5px"
       },
-      "lowEnd": true,
       "chrome": [185, -27.799999237060547, 152.1999969482422, 34.2400016784668, 3.8400001525878906],
       "flip": "S7",
       "flipPortable": "S7"
@@ -13547,7 +13355,6 @@
       "ctx": {
         "letterSpacing": "5px"
       },
-      "lowEnd": true,
       "chrome": [262.719970703125, -1.159999966621399, 256.5999755859375, 34.2400016784668, 3.8400001525878906],
       "flip": "S7",
       "flipPortable": "S7"
@@ -13559,7 +13366,6 @@
       "ctx": {
         "letterSpacing": "5px"
       },
-      "lowEnd": true,
       "chrome": [295.5999755859375, -0.19999998807907104, 287.53997802734375, 34.2400016784668, 3.8400001525878906],
       "flip": "S7",
       "flipPortable": "S7"
@@ -13571,7 +13377,6 @@
       "ctx": {
         "wordSpacing": "7px"
       },
-      "lowEnd": true,
       "chrome": [160, -27.799999237060547, 132.1999969482422, 34.2400016784668, 3.8400001525878906],
       "flip": "S7",
       "flipPortable": "S7"
@@ -13583,7 +13388,6 @@
       "ctx": {
         "wordSpacing": "7px"
       },
-      "lowEnd": true,
       "chrome": [234.71998596191406, -1.159999966621399, 233.59999084472656, 34.2400016784668, 3.8400001525878906],
       "flip": "S7",
       "flipPortable": "S7"
@@ -13595,7 +13399,6 @@
       "ctx": {
         "wordSpacing": "7px"
       },
-      "lowEnd": true,
       "chrome": [250.59999084472656, -0.19999998807907104, 247.53997802734375, 34.2400016784668, 3.8400001525878906],
       "flip": "S7",
       "flipPortable": "S7"
