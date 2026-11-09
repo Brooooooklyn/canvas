@@ -204,6 +204,9 @@ test('an installed font follows the installed-font rules, a registered one the w
   copyFileSync(file, join(FONTS_DIR, 'iosevka-slab-regular.ttf'))
   t.is(GlobalFonts.loadFontsFromDir(FONTS_DIR), 1)
   GlobalFonts.registerFromPath(file, 'IosevkaWeb')
+  // The file loadFontsFromDir loaded, under another name: a FontFace of its
+  // own, so it follows the web rules too.
+  GlobalFonts.registerFromPath(join(FONTS_DIR, 'iosevka-slab-regular.ttf'), 'IosevkaSame')
   const box = (style: string, family: string) => draw(`${style} 40px ${family}`)[5]
   const installed = 'Iosevka Slab'
   // The DejaVu rows above: only `italic` and plain oblique (14deg) slant an
@@ -219,6 +222,9 @@ test('an installed font follows the installed-font rules, a registered one the w
   t.not(box('italic', 'IosevkaWeb'), box('normal', 'IosevkaWeb'))
   t.is(box('600', 'IosevkaWeb'), box('700', 'IosevkaWeb'))
   t.not(box('600', 'IosevkaWeb'), box('normal', 'IosevkaWeb'))
+  for (const style of ['normal', 'italic', 'oblique 20deg', '600', '700']) {
+    t.is(box(style, 'IosevkaSame'), box(style, 'IosevkaWeb'), style)
+  }
 })
 
 // Our fontVariationSettings (Chrome has none) comes after the axes the font

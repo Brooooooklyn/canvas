@@ -207,6 +207,9 @@ inline uint32_t computePathHash(const std::string& path) {
   return hash ? hash : 1;  // Never return 0
 }
 
+// font_families.cpp: a family name case-folded as FontFaceCache keys it.
+std::string FoldFamilyName(std::string_view name);
+
 // Stores font data needed to recreate a typeface after rebuild
 struct RegisteredFont {
   sk_sp<SkData> data;  // For buffer-registered fonts (null for path-registered)
@@ -238,6 +241,42 @@ struct RegisteredFont {
   // is the newest of its style (font_families.cpp FamilyResolver::Faces).
   // The provider's own sets keep the first listing.
   std::vector<uint64_t> relists;
+  // loadFontsFromDir registered it (an installed font: system_font_ids). A
+  // name a register / registerFromPath call then gives the same file is a
+  // FontFace of its own (WebName): Chrome makes a FontFace its own font
+  // with its own typeface, never the installed font's
+  // (binary_data_font_face_source.cc CreateFontData), so it rounds tiny
+  // ascent and descent, synthesizes bold and italic as a FontFace, is sized
+  // from its own aspect under font-size-adjust and drops trak. Such a name
+  // lists `web_typeface`, a second face of the same file (the web twin),
+  // and the text code sees a face that is not installed.
+  bool preloaded = false;
+  // The face's own family case-folded (FoldFamilyName), when preloaded.
+  std::string folded_family;
+  // The web twin, null until a name needs it, and the twin each renderer
+  // mode made ([0] portable, [1] system), as mode_typefaces.
+  sk_sp<SkTypeface> web_typeface;
+  sk_sp<SkTypeface> web_mode_typefaces[2];
+
+  // Whether name `i` is a FontFace name of a preloaded font: the alias
+  // argument of a call and not the face's own family in any case.
+  bool WebName(size_t i) const {
+    return preloaded && alias_args[i] &&
+           FoldFamilyName(aliases[i]) != folded_family;
+  }
+  bool HasWebName() const {
+    for (size_t i = 0; i < aliases.size(); ++i) {
+      if (WebName(i)) {
+        return true;
+      }
+    }
+    return false;
+  }
+  // The face name `i` lists: the web twin for a FontFace name of a
+  // preloaded font (when it could be made), else the font's face.
+  const sk_sp<SkTypeface>& NameFace(size_t i) const {
+    return WebName(i) && web_typeface ? web_typeface : typeface;
+  }
 };
 
 struct skiac_font_collection;
@@ -252,8 +291,6 @@ sk_sp<SkFontStyleSet> MakeSplitFamily(skiac_font_collection* c_collection,
 sk_sp<SkTypeface> MatchNamedFamily(skiac_font_collection* c_collection,
                                    const char* family,
                                    const SkFontStyle& style);
-// font_families.cpp: a family name case-folded as FontFaceCache keys it.
-std::string FoldFamilyName(std::string_view name);
 // text_metrics.cpp: an installed face, not a registered one.
 bool IsSystemTypeface(skiac_font_collection* c_collection,
                       SkTypeface* typeface);
@@ -484,12 +521,11 @@ class TypefaceFontProviderCustom : public TypefaceFontProvider {
                    bool latest) const {
     uint64_t order = latest ? 0 : UINT64_MAX;
     for (const auto& [id, font_info] : registered_fonts) {
-      if (!font_info.typeface ||
-          font_info.typeface->uniqueID() != typeface_id) {
-        continue;
-      }
       for (size_t i = 0; i < font_info.aliases.size(); ++i) {
-        if (font_info.aliases[i] != name) {
+        // The face the name lists (a preloaded font's web twin for its
+        // FontFace names).
+        if (font_info.aliases[i] != name || !font_info.NameFace(i) ||
+            font_info.NameFace(i)->uniqueID() != typeface_id) {
           continue;
         }
         if (!latest) {
@@ -535,12 +571,10 @@ class TypefaceFontProviderCustom : public TypefaceFontProvider {
   // the name `name` as its alias argument (RegisteredFont::alias_args).
   bool isAliasArg(const std::string& name, SkTypefaceID typeface_id) const {
     for (const auto& [id, font_info] : registered_fonts) {
-      if (!font_info.typeface ||
-          font_info.typeface->uniqueID() != typeface_id) {
-        continue;
-      }
       for (size_t i = 0; i < font_info.aliases.size(); ++i) {
-        if (font_info.alias_args[i] && font_info.aliases[i] == name) {
+        if (font_info.alias_args[i] && font_info.aliases[i] == name &&
+            font_info.NameFace(i) &&
+            font_info.NameFace(i)->uniqueID() == typeface_id) {
           return true;
         }
       }
@@ -548,16 +582,57 @@ class TypefaceFontProviderCustom : public TypefaceFontProvider {
     return false;
   }
 
+  // Whether `name` is a FontFace name of the preloaded font `id`
+  // (RegisteredFont::WebName).
+  bool isWebName(uint32_t id, const std::string& name) const {
+    auto it = registered_fonts.find(id);
+    if (it == registered_fonts.end()) {
+      return false;
+    }
+    for (size_t i = 0; i < it->second.aliases.size(); ++i) {
+      if (it->second.aliases[i] == name) {
+        return it->second.WebName(i);
+      }
+    }
+    return false;
+  }
+
+  // loadFontsFromDir registered the font `id` (system_font_ids).
+  void markPreloaded(uint32_t id) {
+    auto it = registered_fonts.find(id);
+    if (it == registered_fonts.end() || it->second.installed ||
+        !it->second.typeface) {
+      return;
+    }
+    SkString family;
+    it->second.typeface->getFamilyName(&family);
+    it->second.preloaded = true;
+    it->second.folded_family = FoldFamilyName({family.c_str(), family.size()});
+  }
+
   // The registration (FontKey) whose face is `typeface_id`, 0 when it is an
   // installed font (macOS loadSystemFonts) or no registered one. An alias
   // face is the face of the font it names, so this also finds the font an
-  // alias of an alias came from.
-  uint32_t registrationOf(SkTypefaceID typeface_id) const {
+  // alias of an alias came from. `web_face` (optional): whether the face is
+  // the font's web twin (a FontFace name of a preloaded font).
+  uint32_t registrationOf(SkTypefaceID typeface_id,
+                          bool* web_face = nullptr) const {
     for (const auto& [id, font_info] : registered_fonts) {
-      if (!font_info.installed && font_info.typeface &&
-          font_info.typeface->uniqueID() == typeface_id) {
+      if (font_info.installed) {
+        continue;
+      }
+      const bool web = font_info.web_typeface &&
+                       font_info.web_typeface->uniqueID() == typeface_id;
+      if (web || (font_info.typeface &&
+                  font_info.typeface->uniqueID() == typeface_id)) {
+        if (web_face) {
+          *web_face = web;
+        }
         return id;
       }
+    }
+    if (web_face) {
+      *web_face = false;
     }
     return 0;
   }
@@ -565,17 +640,26 @@ class TypefaceFontProviderCustom : public TypefaceFontProvider {
   // A rebuild: the font `id` of the old provider, made again as `typeface`
   // (its FontKey stays), with no name yet. addRebuiltAlias registers it
   // under each of its names.
+  // `web_typeface` / `web_mode_typefaces`: its web twin made again
+  // (RegisteredFont::web_typeface), null when no name needs it.
   void addRebuiltFont(uint32_t id,
                       const RegisteredFont& old,
                       sk_sp<SkTypeface> typeface,
-                      const sk_sp<SkTypeface> (&mode_typefaces)[2]) {
+                      const sk_sp<SkTypeface> (&mode_typefaces)[2],
+                      sk_sp<SkTypeface> web_typeface,
+                      const sk_sp<SkTypeface> (&web_mode_typefaces)[2]) {
     RegisteredFont font_info;
     font_info.data = old.data;
     font_info.path = old.path;
     font_info.installed = old.installed;
+    font_info.preloaded = old.preloaded;
+    font_info.folded_family = old.folded_family;
     font_info.typeface = std::move(typeface);
     font_info.mode_typefaces[0] = mode_typefaces[0];
     font_info.mode_typefaces[1] = mode_typefaces[1];
+    font_info.web_typeface = std::move(web_typeface);
+    font_info.web_mode_typefaces[0] = web_mode_typefaces[0];
+    font_info.web_mode_typefaces[1] = web_mode_typefaces[1];
     registered_fonts[id] = std::move(font_info);
 
     // Update secondary index
@@ -600,7 +684,8 @@ class TypefaceFontProviderCustom : public TypefaceFontProvider {
     font_info.aliases.push_back(name);
     font_info.orders.push_back(++registrations);
     font_info.alias_args.push_back(alias_arg);
-    this->registerTypeface(font_info.typeface, SkString(name.c_str()));
+    this->registerTypeface(font_info.NameFace(font_info.aliases.size() - 1),
+                           SkString(name.c_str()));
   }
 
   /**
@@ -699,15 +784,22 @@ class TypefaceFontProviderCustom : public TypefaceFontProvider {
         if (font_it != registered_fonts.end() &&
             !font_it->second.path.empty() && font_it->second.path == path) {
           // Found matching path via index - true duplicate, add alias if new
-          auto& aliases = font_it->second.aliases;
+          RegisteredFont& font = font_it->second;
+          auto& aliases = font.aliases;
           if (std::find(aliases.begin(), aliases.end(), aliasStr) ==
               aliases.end()) {
             aliases.push_back(aliasStr);
-            font_it->second.orders.push_back(++registrations);
-            font_it->second.alias_args.push_back(true);
-            // The font's own face, so the alias name is that registration
-            // (registrationOf finds it) as after a rebuild.
-            this->registerTypeface(font_it->second.typeface, alias);
+            font.orders.push_back(++registrations);
+            font.alias_args.push_back(true);
+            // A FontFace name of a file loadFontsFromDir loaded: the face
+            // this call made is its web twin (one per font, shared by its
+            // FontFace names).
+            if (font.WebName(aliases.size() - 1) && !font.web_typeface) {
+              font.web_typeface = typeface;
+            }
+            // The font's own face (or its twin), so the alias name is that
+            // registration (registrationOf finds it) as after a rebuild.
+            this->registerTypeface(font.NameFace(aliases.size() - 1), alias);
           }
           return existing_id;
         }
@@ -872,6 +964,10 @@ struct skiac_font_collection {
     // font. Removing that font drops the alias (dropAliasesOf), whatever
     // names either was registered under; removing another font keeps it.
     uint32_t font_key = 0;
+    // The face is that font's web twin (a FontFace name of a file
+    // loadFontsFromDir loaded: RegisteredFont::web_typeface), so a rebuild
+    // gives the alias the twin made again.
+    bool web_face = false;
   };
   std::vector<SetAlias> set_aliases;
 
@@ -897,7 +993,8 @@ struct skiac_font_collection {
                    bool registered,
                    bool installed,
                    SkTypefaceID face_id) {
-    const uint32_t font_key = assets->registrationOf(face_id);
+    bool web_face = false;
+    const uint32_t font_key = assets->registrationOf(face_id, &web_face);
     if (!registered) {
       for (auto& entry : set_aliases) {
         if (entry.family == family && entry.alias == alias) {
@@ -906,12 +1003,13 @@ struct skiac_font_collection {
           entry.active = true;
           entry.face_id = face_id;
           entry.font_key = font_key;
+          entry.web_face = web_face;
           return changed;
         }
       }
     }
     set_aliases.push_back({family, alias, assets->nextOrder(), installed, true,
-                           face_id, font_key});
+                           face_id, font_key, web_face});
     return true;
   }
   // Set when the dynamic provider gains a face or an alias. FontCollection
@@ -1245,6 +1343,9 @@ struct skiac_font_collection {
     system_typeface_ids.clear();
     // Each font made again, by ID; null when it is not kept.
     std::map<uint32_t, sk_sp<SkTypeface>> made;
+    // The web twin of each font made again that has one
+    // (RegisteredFont::web_typeface).
+    std::map<uint32_t, sk_sp<SkTypeface>> made_web;
     [[maybe_unused]] bool relisted = false;
     for (const auto& [order, kind, id, index] : names) {
       if (kind == kRelist) {
@@ -1281,6 +1382,13 @@ struct skiac_font_collection {
         auto from = entry.font_key ? made.find(entry.font_key) : made.end();
         if (from != made.end()) {
           typeface = from->second;
+          // The web twin, when the alias named a FontFace name of a
+          // preloaded font.
+          auto web =
+              entry.web_face ? made_web.find(entry.font_key) : made_web.end();
+          if (web != made_web.end() && web->second) {
+            typeface = web->second;
+          }
         } else {
           sk_sp<TypefaceFontProviderCustom> old_assets =
               std::exchange(assets, new_assets);
@@ -1292,8 +1400,9 @@ struct skiac_font_collection {
         }
         // An alias made from a registered face never moves to an installed
         // one (removeFont drops the aliases of the removed font:
-        // dropAliasesOf).
-        if (typeface && !entry.installed &&
+        // dropAliasesOf). An alias of a web twin that could not be made
+        // again keeps the font's installed face.
+        if (typeface && !entry.installed && !entry.web_face &&
             IsSystemTypeface(this, typeface.get())) {
           typeface = nullptr;
         }
@@ -1366,12 +1475,42 @@ struct skiac_font_collection {
         if (!typeface) {
           typeface = font_info.typeface;
         }
+        // The web twin of a preloaded font with a FontFace name, made the
+        // same way: this mode's twin, else a new one from the face's data,
+        // else the twin it had.
+        sk_sp<SkTypeface> web_typeface;
+        sk_sp<SkTypeface> web_mode_typefaces[2] = {
+            font_info.web_mode_typefaces[0], font_info.web_mode_typefaces[1]};
+        if (typeface && font_info.HasWebName()) {
+          if (font_info.web_typeface && !web_mode_typefaces[previous_mode] &&
+              font_info.web_typeface != web_mode_typefaces[1 - previous_mode]) {
+            web_mode_typefaces[previous_mode] = font_info.web_typeface;
+          }
+          if (web_mode_typefaces[mode]) {
+            web_typeface = web_mode_typefaces[mode];
+          } else {
+            int index = 0;
+            if (std::unique_ptr<SkStreamAsset> stream =
+                    typeface->openStream(&index)) {
+              web_typeface = MakeCanvasTypeface(std::move(stream));
+            }
+            if (web_typeface) {
+              web_mode_typefaces[mode] = web_typeface;
+            } else {
+              web_typeface = font_info.web_typeface;
+            }
+          }
+        }
         if (typeface) {
           if (system_font_ids.count(id)) {
             kept_system_font_ids.insert(id);
             system_typeface_ids.insert(typeface->uniqueID());
           }
-          new_assets->addRebuiltFont(id, font_info, typeface, mode_typefaces);
+          new_assets->addRebuiltFont(id, font_info, typeface, mode_typefaces,
+                                     web_typeface, web_mode_typefaces);
+        }
+        if (web_typeface) {
+          made_web.emplace(id, web_typeface);
         }
         it = made.emplace(id, std::move(typeface)).first;
       }

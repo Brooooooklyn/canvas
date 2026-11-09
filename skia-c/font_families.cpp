@@ -1760,6 +1760,9 @@ uint32_t skiac_font_collection_register_system_font(
   if (c_collection->assets->getRegisteredFonts().size() > registered) {
     c_collection->system_font_ids.insert(id);
     c_collection->system_typeface_ids.insert(typeface_id);
+    // A name a register call gives this file later is a FontFace of its own
+    // (RegisteredFont::WebName).
+    c_collection->assets->markPreloaded(id);
   }
   c_collection->markCachesDirty();
   return id;

@@ -1241,6 +1241,233 @@ for (const renderer of ['portable', 'system'] as const) {
   })
 }
 
+// Chrome 157, FontFaces of the same files (headless, desktop mode, DPR 1;
+// canvas-align-work/blink-shaper/stages/S18/chrome.json). A FontFace is a
+// font of its own (BinaryDataFontFaceSource::CreateFontData makes its own
+// SimpleFontData), so a name a register call gives a file loadFontsFromDir
+// loaded follows the web-font rules, as the same file registered from a
+// buffer does: tiny ascent and descent round, `oblique 20deg` slants and
+// 600 bolds, font-size-adjust sizes it from its own aspect, and trak is
+// dropped (OTS). The file's own family name stays an installed font.
+const PRELOADED_TWIN_CHROME = {
+  oswaldTiny: [2, 1],
+  iosevkaTiny: [2, 0],
+  trak: 108.79998779296875,
+  // canvas CSS font-size-adjust 0.5, "40px Lato, OswaldWeb" "Ж"
+  fsa: 23.38958740234375,
+  // FontFaces "ReX" added in turn: Lato, Oswald, Lato again, Oswald again.
+  // After each from the second on: "40px ReX" "Ag" [width, font ascent,
+  // font descent] and "2px ReX" "Hg" [font ascent, font descent].
+  reRegister: [
+    [
+      [37.31999206542969, 48, 12],
+      [2, 1],
+    ],
+    [
+      [47.639984130859375, 39, 9],
+      [2, 0],
+    ],
+    [
+      [37.31999206542969, 48, 12],
+      [2, 1],
+    ],
+  ],
+}
+
+const PRELOADED_TWIN_PROBE = `
+  const crypto = require('crypto')
+  const { readFileSync } = require('fs')
+  const { join } = require('path')
+  const { createCanvas, GlobalFonts, setTextRenderer } = require(process.env.PROBE_INDEX)
+  const { RENDERER, PROBE_DIR, PROBE_FONTS, PROBE_CASE } = process.env
+  setTextRenderer(RENDERER)
+  const round = (v) => Math.round(v * 1000) / 1000
+  const tiny = (family) => {
+    const ctx = createCanvas(10, 10).getContext('2d')
+    ctx.font = '2px ' + family
+    const m = ctx.measureText('Hg')
+    return [m.fontBoundingBoxAscent, m.fontBoundingBoxDescent].map(round)
+  }
+  const box = (style, family) => {
+    const ctx = createCanvas(300, 60).getContext('2d')
+    ctx.font = style + ' 40px ' + family
+    ctx.fillText('Hamburg', 5, 45)
+    return ctx.measureText('Hamburg').width + '/' +
+      crypto.createHash('sha1').update(ctx.getImageData(0, 0, 300, 60).data).digest('hex')
+  }
+  const width = (font, text, adjust) => {
+    const ctx = createCanvas(10, 10).getContext('2d')
+    ctx.font = font
+    if (adjust) ctx.fontSizeAdjust = adjust
+    return ctx.measureText(text).width
+  }
+  const ag = (family) => {
+    const ctx = createCanvas(10, 10).getContext('2d')
+    ctx.font = '40px ' + family
+    const m = ctx.measureText('Ag')
+    return [m.width, m.fontBoundingBoxAscent, m.fontBoundingBoxDescent]
+  }
+  const STYLES = ['normal', 'italic', 'oblique 20deg', '600', '700']
+  const FILES = { Oswald: 'Oswald.ttf', Iosevka: 'iosevka-slab-regular.ttf', Trak: 'TrakProbe.ttf' }
+  const out = { states: [] }
+  let state
+  GlobalFonts.registerFromPath(PROBE_FONTS + '/Lato-Regular.ttf')
+  out.loaded = GlobalFonts.loadFontsFromDir(PROBE_DIR)
+  // The paths as loadFontsFromDir spells them (the platform separator).
+  if (PROBE_CASE === 'relist') {
+    const lato = PROBE_FONTS + '/Lato-Regular.ttf'
+    const oswald = join(PROBE_DIR, 'Oswald.ttf')
+    state = () => out.states.push({ ag: ag('ReX'), tiny: tiny('ReX') })
+    out.steps = [lato, oswald, lato, oswald].map((file, i) => {
+      const ok = GlobalFonts.registerFromPath(file, 'ReX') !== null
+      if (i > 0) state()
+      return ok
+    })
+  } else {
+    out.steps = Object.entries(FILES).map(
+      ([name, file]) =>
+        GlobalFonts.registerFromPath(join(PROBE_DIR, file), name + 'Web') !== null &&
+        GlobalFonts.register(readFileSync(join(PROBE_FONTS, file)), name + 'Buf') !== null,
+    )
+    out.steps.push(GlobalFonts.setAlias('OswaldWeb', 'OswaldAlias'))
+    state = () =>
+      out.states.push({
+        tiny: Object.fromEntries(
+          ['Oswald', 'OswaldWeb', 'OswaldAlias', 'OswaldBuf', 'IosevkaWeb', 'IosevkaBuf'].map((f) => [f, tiny(f)]),
+        ),
+        box: Object.fromEntries(
+          ['Iosevka Slab', 'IosevkaWeb', 'IosevkaBuf', 'OswaldWeb', 'OswaldBuf', 'TrakWeb', 'TrakBuf'].map((f) => [
+            f,
+            STYLES.map((style) => box(style, f)),
+          ]),
+        ),
+        trak: Object.fromEntries(['TrakProbe', 'TrakWeb', 'TrakBuf'].map((f) => [f, width('40px ' + f, 'AAAA')])),
+        fsa: Object.fromEntries(
+          ['Oswald', 'OswaldWeb', 'OswaldBuf'].map((f) => [f, width('40px Lato, ' + f, 'Ж', '0.5')]),
+        ),
+      })
+    state()
+  }
+  // An unrelated font removed (a rebuild), then a renderer switch and back.
+  GlobalFonts.remove(GlobalFonts.registerFromPath(PROBE_FONTS + '/EBGaramond-Regular.ttf', 'UnrelatedEBG'))
+  state()
+  setTextRenderer(RENDERER === 'system' ? 'portable' : 'system')
+  setTextRenderer(RENDERER)
+  state()
+  if (PROBE_CASE !== 'relist') {
+    // The same FontKey: removing it drops the file's face, the FontFace
+    // name and the alias of it.
+    out.removed = GlobalFonts.remove(GlobalFonts.registerFromPath(join(PROBE_DIR, 'Oswald.ttf'), 'OswaldWeb'))
+    out.has = ['Oswald', 'OswaldWeb', 'OswaldAlias', 'OswaldBuf'].map((f) => GlobalFonts.has(f))
+  }
+  console.log(JSON.stringify(out))`
+
+function preloadedTwinProbe(t: import('ava').ExecutionContext, renderer: string, probeCase: string) {
+  const dir = mkdtempSync(join(tmpdir(), 'canvas-preloaded-twin-'))
+  t.teardown(() => rmSync(dir, { recursive: true, force: true }))
+  for (const file of ['Oswald.ttf', 'iosevka-slab-regular.ttf', 'TrakProbe.ttf']) {
+    copyFileSync(join(__dirname, 'fonts', file), join(dir, file))
+  }
+  const child = spawnSync(process.execPath, ['-e', PRELOADED_TWIN_PROBE], {
+    encoding: 'utf8',
+    timeout: 60_000,
+    env: {
+      ...process.env,
+      RENDERER: renderer,
+      PROBE_CASE: probeCase,
+      PROBE_DIR: dir,
+      PROBE_FONTS: join(__dirname, 'fonts'),
+      PROBE_INDEX: join(__dirname, '..', 'index.js'),
+    },
+  })
+  t.is(child.status, 0, child.stderr)
+  const out = JSON.parse(child.stdout)
+  t.is(out.loaded, 3)
+  t.true(
+    out.steps.every((ok: boolean) => ok),
+    `steps ${out.steps}`,
+  )
+  return out
+}
+
+// A name registerFromPath gives the file loadFontsFromDir loaded (the same
+// path) is a FontFace: it follows the web-font rules exactly as the same
+// file registered from a buffer, right after the calls, after a rebuild and
+// after a renderer switch.
+for (const renderer of ['portable', 'system'] as const) {
+  test.serial(`a name registered for a file loadFontsFromDir loaded follows the FontFace rules (${renderer})`, (t) => {
+    const near = (a: number, b: number, d = 1e-3) => Math.abs(a - b) <= d
+    const out = preloadedTwinProbe(t, renderer, 'rules')
+    t.is(out.states.length, 3)
+    for (const [i, s] of out.states.entries()) {
+      const at = `state ${i}`
+      // Tiny ascent and descent round (Chrome [2, 1]); the alias follows
+      // the FontFace name. The installed family keeps the fractions.
+      t.deepEqual(s.tiny.OswaldWeb, PRELOADED_TWIN_CHROME.oswaldTiny, at)
+      t.deepEqual(s.tiny.OswaldAlias, PRELOADED_TWIN_CHROME.oswaldTiny, at)
+      t.deepEqual(s.tiny.OswaldBuf, PRELOADED_TWIN_CHROME.oswaldTiny, at)
+      t.deepEqual(s.tiny.Oswald, [2.386, 0.578], at)
+      // Iosevka Slab's 2px descent is 1 in portable mode (its raw descent
+      // differs there), so Chrome's [2, 0] is pinned for system only.
+      t.deepEqual(s.tiny.IosevkaWeb, s.tiny.IosevkaBuf, at)
+      if (renderer === 'system') {
+        t.deepEqual(s.tiny.IosevkaWeb, PRELOADED_TWIN_CHROME.iosevkaTiny, at)
+      }
+      // Web synthesis: oblique 20deg = italic, 600 = 700, both != normal.
+      for (const family of ['IosevkaWeb', 'OswaldWeb', 'TrakWeb']) {
+        const [normal, italic, oblique, w600, w700] = s.box[family]
+        t.deepEqual(s.box[family], s.box[family.replace('Web', 'Buf')], `${at}: ${family}`)
+        t.is(oblique, italic, `${at}: ${family} oblique 20deg`)
+        t.not(italic, normal, `${at}: ${family} italic`)
+        t.not(w600, normal, `${at}: ${family} bold`)
+        // Oswald is variable: Chrome draws a variable FontFace with no
+        // weight descriptor at its default weight (a separate item).
+        if (family !== 'OswaldWeb') {
+          t.is(w600, w700, `${at}: ${family} 600`)
+        }
+      }
+      // The installed family keeps the installed rules.
+      const [normal, , oblique, w600] = s.box['Iosevka Slab']
+      t.is(oblique, normal, `${at}: Iosevka Slab oblique 20deg`)
+      t.is(w600, normal, `${at}: Iosevka Slab 600`)
+      // trak is dropped for the FontFace, kept for the installed font.
+      t.true(near(s.trak.TrakWeb, PRELOADED_TWIN_CHROME.trak), `${at}: TrakWeb ${s.trak.TrakWeb}`)
+      t.is(s.trak.TrakWeb, s.trak.TrakBuf, at)
+      t.false(near(s.trak.TrakProbe, s.trak.TrakWeb), `${at}: TrakProbe ${s.trak.TrakProbe}`)
+      // font-size-adjust sizes the FontFace from its own aspect (portable
+      // mode reads 23.385).
+      t.is(s.fsa.OswaldWeb, s.fsa.OswaldBuf, at)
+      t.true(near(s.fsa.OswaldWeb, PRELOADED_TWIN_CHROME.fsa, 0.01), `${at}: fsa ${s.fsa.OswaldWeb}`)
+      t.false(near(s.fsa.Oswald, s.fsa.OswaldWeb, 0.5), `${at}: fsa Oswald ${s.fsa.Oswald}`)
+    }
+    t.true(out.removed)
+    // `Oswald` stays: the buffer font is listed under its own name too.
+    t.deepEqual(out.has, [true, false, false, true])
+  })
+
+  // Registering the same file again under a FontFace name makes it the
+  // newest face of that name, as for any FontFace (the file's own name
+  // keeps its installed place).
+  test.serial(
+    `a FontFace name of a file loadFontsFromDir loaded moves to the front when registered again (${renderer})`,
+    (t) => {
+      const near = (a: number, b: number) => Math.abs(a - b) <= 1e-3
+      const out = preloadedTwinProbe(t, renderer, 'relist')
+      const expected = [...PRELOADED_TWIN_CHROME.reRegister, PRELOADED_TWIN_CHROME.reRegister[2]]
+      t.is(out.states.length, 5)
+      for (const [i, s] of out.states.entries()) {
+        const [ag, tinyMetrics] = expected[Math.min(i, 2)]
+        for (const [j, value] of ag.entries()) {
+          t.true(near(s.ag[j], value), `step ${i}: Ag ${s.ag}, Chrome ${ag}`)
+        }
+        if (ag[0] < 40) {
+          t.deepEqual(s.tiny, tinyMetrics, `step ${i}`)
+        }
+      }
+    },
+  )
+}
+
 // Steps, separated by commas: reg:FONT[:NAME] (registerFromPath; buf: the
 // same with register(buffer)), alias:FAMILY:NAME, remove:FONT (its latest
 // registration), dir (loadFontsFromDir of PROBE_DIR), state, rebuild (an
