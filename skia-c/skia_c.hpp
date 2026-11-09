@@ -242,6 +242,9 @@ sk_sp<SkFontStyleSet> MakeSplitFamily(skiac_font_collection* c_collection,
 sk_sp<SkTypeface> MatchNamedFamily(skiac_font_collection* c_collection,
                                    const char* family,
                                    const SkFontStyle& style);
+// text_metrics.cpp: an installed face, not a registered one.
+bool IsSystemTypeface(skiac_font_collection* c_collection,
+                      SkTypeface* typeface);
 
 class TypefaceFontProviderCustom : public TypefaceFontProvider {
  public:
@@ -1128,6 +1131,14 @@ struct skiac_font_collection {
             MatchNamedFamily(this, entry.family.c_str(), SkFontStyle());
         ++families_generation;
         assets = std::move(old_assets);
+        // An alias made from a registered face never moves to an installed
+        // one: its font was removed (removeFont drops only the aliases of
+        // the exact spelling: Lato registered as 'helvetica',
+        // setAlias('Helvetica', 'Brand'), then the font removed).
+        if (typeface && !entry.installed &&
+            IsSystemTypeface(this, typeface.get())) {
+          typeface = nullptr;
+        }
         if (!typeface && entry.installed && font_mgr) {
           typeface =
               font_mgr->matchFamilyStyle(entry.family.c_str(), SkFontStyle());

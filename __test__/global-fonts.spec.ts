@@ -645,12 +645,14 @@ const OVER_INSTALLED_PROBE = `
     ctx.font = font
     return ctx.measureText('Ag').width
   }
-  const FONTS = ['40px "Source Serif Pro"', '40px "SOURCE SERIF PRO"', 'bold 40px "source serif pro"', '40px Brand', '40px Brand2']
+  const FONTS = ['40px "Source Serif Pro"', '40px "SOURCE SERIF PRO"', 'bold 40px "source serif pro"', '40px Brand', '40px Brand2', '40px NoSuchFamily']
   const out = { loaded: GlobalFonts.loadFontsFromDir(PROBE_DIR), aliases: [], states: [] }
   const state = () => out.states.push(FONTS.map(width))
+  let lato = null
   for (const step of PROBE_STEPS.split(',')) {
     const [kind, a, b] = step.split(':')
-    if (kind === 'register') GlobalFonts.registerFromPath(PROBE_FONTS + '/Lato-Regular.ttf', a)
+    if (kind === 'register') lato = GlobalFonts.registerFromPath(PROBE_FONTS + '/Lato-Regular.ttf', a)
+    else if (kind === 'remove') GlobalFonts.remove(lato)
     else if (kind === 'alias') out.aliases.push(GlobalFonts.setAlias(a, b))
     else if (kind === 'rebuild') GlobalFonts.remove(GlobalFonts.registerFromPath(PROBE_FONTS + '/Oswald.ttf', 'Unrelated'))
     else if (kind === 'switch') {
@@ -716,5 +718,20 @@ for (const renderer of ['portable', 'system'] as const) {
       ['register:Source Serif Pro', 'state', 'alias:Source Serif Pro:SOURCE SERIF PRO'],
       [true, true, true, null, null],
     )
+    // Removing the registered font drops the aliases made from it, also when
+    // the alias named another spelling: they do not move to the installed
+    // family (Brand and Brand2 fall back like an unknown name).
+    for (const register of ['register:Source Serif Pro', 'register:source serif pro']) {
+      const out = probe([register, 'alias:Source Serif Pro:Brand', 'alias:Brand:Brand2', 'remove'])
+      t.true(
+        out.aliases.every((ok: boolean) => ok),
+        `${register}: setAlias ${out.aliases}`,
+      )
+      for (const [i, widths] of out.states.entries()) {
+        t.true(near(widths[0], installed), `${register} state ${i}: ${widths[0]}`)
+        t.true(near(widths[3], widths[5]), `${register} state ${i}: Brand ${widths[3]}, fallback ${widths[5]}`)
+        t.true(near(widths[4], widths[5]), `${register} state ${i}: Brand2 ${widths[4]}, fallback ${widths[5]}`)
+      }
+    }
   })
 }
