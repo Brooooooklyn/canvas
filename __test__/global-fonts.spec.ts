@@ -1,5 +1,5 @@
 import { spawnSync } from 'node:child_process'
-import { copyFileSync, mkdtempSync, readFileSync, rmSync } from 'node:fs'
+import { copyFileSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -1498,6 +1498,148 @@ for (const renderer of ['portable', 'system'] as const) {
           t.true(near(s.ag[j], value), `state ${i}: Ag ${s.ag}, Oswald ${ag}`)
         }
         t.deepEqual(s.tiny, tinyMetrics, `state ${i}`)
+      }
+    },
+  )
+}
+
+// Lato with no glyf table: FreeType (portable) opens it, CoreText (system,
+// macOS) does not. The tables are kept as they are, only the directory is
+// written again.
+function withoutGlyf(font: Buffer): Buffer {
+  const tables = []
+  for (let i = 0; i < font.readUInt16BE(4); i++) {
+    const at = 12 + 16 * i
+    if (font.toString('latin1', at, at + 4) !== 'glyf') {
+      tables.push({
+        entry: font.subarray(at, at + 16),
+        data: font.subarray(font.readUInt32BE(at + 8)).subarray(0, font.readUInt32BE(at + 12)),
+      })
+    }
+  }
+  const head = Buffer.alloc(12 + 16 * tables.length)
+  font.copy(head, 0, 0, 4)
+  const selector = Math.floor(Math.log2(tables.length))
+  head.writeUInt16BE(tables.length, 4)
+  head.writeUInt16BE(16 << selector, 6)
+  head.writeUInt16BE(selector, 8)
+  head.writeUInt16BE(tables.length * 16 - (16 << selector), 10)
+  const parts = [head]
+  let offset = head.length
+  for (const [i, { entry, data }] of tables.entries()) {
+    entry.copy(head, 12 + 16 * i)
+    head.writeUInt32BE(offset, 12 + 16 * i + 8)
+    const padded = Buffer.alloc((data.length + 3) & ~3)
+    data.copy(padded)
+    parts.push(padded)
+    offset += padded.length
+  }
+  return Buffer.concat(parts)
+}
+
+// Picks a font file the portable renderer loads and the system renderer
+// cannot read: Lato with no glyf table (CoreText), a Type 1 font
+// (Fontations). On Windows both renderers are FreeType: none.
+const REJECTED_PICK = `
+  const { readFileSync } = require('fs')
+  const { GlobalFonts, setTextRenderer } = require(process.env.PROBE_INDEX)
+  const files = JSON.parse(process.env.PROBE_FILES)
+  setTextRenderer('system')
+  const rejected = files.filter((file) => GlobalFonts.register(readFileSync(file)) === null)
+  setTextRenderer('portable')
+  console.log(JSON.stringify(rejected.filter((file) => GlobalFonts.register(readFileSync(file)) !== null)))`
+
+// loadFontsFromDir loads the file with the portable renderer, the system
+// renderer cannot read it, the file is replaced by Oswald, and a FontFace
+// name is registered for it with the system renderer. Each state: "40px"
+// "Ag" [width, font ascent, font descent] and "2px" "Hg" [font ascent,
+// font descent] of the name and of the file's own family.
+const REJECTED_PROBE = `
+  const { dirname, join } = require('path')
+  const { copyFileSync, readFileSync } = require('fs')
+  const { createCanvas, GlobalFonts, setTextRenderer } = require(process.env.PROBE_INDEX)
+  const { RENDERER, PROBE_FILE, PROBE_OWN, PROBE_FONTS } = process.env
+  const round = (v) => Math.round(v * 1000) / 1000
+  const metrics = (family) => {
+    const ctx = createCanvas(10, 10).getContext('2d')
+    ctx.font = '40px ' + family
+    const m = ctx.measureText('Ag')
+    ctx.font = '2px ' + family
+    const tiny = ctx.measureText('Hg')
+    return [m.width, m.fontBoundingBoxAscent, m.fontBoundingBoxDescent, tiny.fontBoundingBoxAscent, tiny.fontBoundingBoxDescent].map(round)
+  }
+  const out = { states: [] }
+  const state = (at) => out.states.push({ at, name: metrics('Rejected'), own: metrics(PROBE_OWN) })
+  setTextRenderer(RENDERER)
+  if (RENDERER === 'system') setTextRenderer('portable')
+  out.loaded = GlobalFonts.loadFontsFromDir(dirname(PROBE_FILE))
+  setTextRenderer('system')
+  copyFileSync(join(PROBE_FONTS, 'Oswald.ttf'), PROBE_FILE)
+  out.registered = GlobalFonts.registerFromPath(PROBE_FILE, 'Rejected') !== null
+  state('system, after the call')
+  GlobalFonts.remove(GlobalFonts.registerFromPath(join(PROBE_FONTS, 'EBGaramond-Regular.ttf'), 'UnrelatedEBG'))
+  state('system, after a rebuild')
+  for (const renderer of ['portable', 'system', 'portable', 'system']) {
+    setTextRenderer(renderer)
+    state(renderer + ', after a switch')
+  }
+  // The file now: Oswald.
+  GlobalFonts.register(readFileSync(PROBE_FILE), 'NowOnDisk')
+  out.onDisk = metrics('NowOnDisk')
+  console.log(JSON.stringify(out))`
+
+// The web twin is made from the preloaded font's own data. When the
+// renderer of the call cannot read that data, the name is not made from
+// the file read again (now another font): the font gets no twin, and the
+// name lists the font's own face in both renderers, right after the call,
+// after a rebuild and after every switch.
+for (const renderer of ['portable', 'system'] as const) {
+  test.serial(
+    `a FontFace name of a preloaded font the renderer cannot read keeps the font's own face (${renderer})`,
+    (t) => {
+      const dir = mkdtempSync(join(tmpdir(), 'canvas-preloaded-rejected-'))
+      t.teardown(() => rmSync(dir, { recursive: true, force: true }))
+      const own: Record<string, string> = {}
+      const files = [
+        ['Lato-Regular.ttf', 'Lato'],
+        ['Roboto2-Regular.pfb', 'Roboto2'],
+      ].map(([font, family], i) => {
+        const file = join(mkdtempSync(join(dir, `${i}-`)), font)
+        const data = readFileSync(join(__dirname, 'fonts', font))
+        writeFileSync(file, font.endsWith('.ttf') ? withoutGlyf(data) : data)
+        own[file] = family
+        return file
+      })
+      const env = {
+        ...process.env,
+        PROBE_INDEX: join(__dirname, '..', 'index.js'),
+        PROBE_FONTS: join(__dirname, 'fonts'),
+      }
+      const pick = spawnSync(process.execPath, ['-e', REJECTED_PICK], {
+        encoding: 'utf8',
+        timeout: 60_000,
+        env: { ...env, PROBE_FILES: JSON.stringify(files) },
+      })
+      t.is(pick.status, 0, pick.stderr)
+      const [file] = JSON.parse(pick.stdout) as string[]
+      if (!file) {
+        t.is(process.platform, 'win32', 'the system renderer reads every test file')
+        return
+      }
+      const child = spawnSync(process.execPath, ['-e', REJECTED_PROBE], {
+        encoding: 'utf8',
+        timeout: 60_000,
+        env: { ...env, RENDERER: renderer, PROBE_FILE: file, PROBE_OWN: own[file] },
+      })
+      t.is(child.status, 0, child.stderr)
+      const out = JSON.parse(child.stdout)
+      t.is(out.loaded, 1)
+      t.true(out.registered)
+      t.is(out.states.length, 6)
+      for (const s of out.states) {
+        t.deepEqual(s.name, s.own, `${s.at}: the font's own face`)
+        t.deepEqual(s, { ...out.states[0], at: s.at }, s.at)
+        t.notDeepEqual(s.name, out.onDisk, `${s.at}: not the file read again`)
       }
     },
   )

@@ -257,11 +257,18 @@ struct RegisteredFont {
   // mode made ([0] portable, [1] system), as mode_typefaces.
   sk_sp<SkTypeface> web_typeface;
   sk_sp<SkTypeface> web_mode_typefaces[2];
+  // The renderer mode of the call that needed the twin could not read the
+  // font's data (a face the other mode made: Fontations and a Type 1 font,
+  // CoreText and a font with no glyf table). The font then has no twin in
+  // any mode: its FontFace names list its own face, in both modes and after
+  // every rebuild, so a name never gets other bytes (a file read again)
+  // or a face that a later switch makes.
+  bool no_web_twin = false;
 
   // Whether name `i` is a FontFace name of a preloaded font: the alias
   // argument of a call and not the face's own family in any case.
   bool WebName(size_t i) const {
-    return preloaded && alias_args[i] &&
+    return preloaded && !no_web_twin && alias_args[i] &&
            FoldFamilyName(aliases[i]) != folded_family;
   }
   bool HasWebName() const {
@@ -654,6 +661,7 @@ class TypefaceFontProviderCustom : public TypefaceFontProvider {
     font_info.installed = old.installed;
     font_info.preloaded = old.preloaded;
     font_info.folded_family = old.folded_family;
+    font_info.no_web_twin = old.no_web_twin;
     font_info.typeface = std::move(typeface);
     font_info.mode_typefaces[0] = mode_typefaces[0];
     font_info.mode_typefaces[1] = mode_typefaces[1];
@@ -795,16 +803,18 @@ class TypefaceFontProviderCustom : public TypefaceFontProvider {
             // twin (one per font, shared by its FontFace names), made from
             // the data of the font's face as a rebuild makes it: the same
             // path is not read again, so a file replaced since then does
-            // not give the name other bytes in one renderer mode only. The
-            // face this call made only when that face gives no data.
+            // not give the name other bytes in one renderer mode only. When
+            // this mode cannot read that data, the font gets no twin
+            // (no_web_twin). The face this call made only when the font's
+            // face gives no data.
             if (font.WebName(aliases.size() - 1) && !font.web_typeface) {
               int index = 0;
               std::unique_ptr<SkStreamAsset> stream =
                   font.typeface ? font.typeface->openStream(&index) : nullptr;
               if (stream) {
                 font.web_typeface = MakeCanvasTypeface(std::move(stream));
-              }
-              if (!font.web_typeface) {
+                font.no_web_twin = !font.web_typeface;
+              } else {
                 font.web_typeface = typeface;
               }
             }
