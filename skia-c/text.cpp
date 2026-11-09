@@ -694,6 +694,14 @@ bool skiac_font_collection_ideographic_advance(
     const skiac_text_request* request,
     float* advance) {
   c_collection->flushCachesIfDirty();
+  // As FindOrLayOutLine: the font argument list of this read only, and the
+  // drop of the caches its noteFontArguments asks for, on every return,
+  // after `typefaces` (declared later, so gone first) lets go of them.
+  c_collection->layout_font_arguments.clear();
+  struct DropCachesIfOverBudget {
+    skiac_font_collection* c_collection;
+    ~DropCachesIfOverBudget() { c_collection->dropCachesIfOverBudget(); }
+  } drop_caches{c_collection};
   // The families and size the text of this font takes (ResolveFontRequest:
   // with the shaper on, the locale's font settings).
   const FontResolution resolution = ResolveFontRequest(c_collection, *request);
@@ -717,6 +725,7 @@ bool skiac_font_collection_ideographic_advance(
     args.setVariationDesignPosition(
         {coords.data(), static_cast<int>(coords.size())});
     font_args.emplace(args);
+    c_collection->noteFontArguments(std::hash<FontArguments>()(*font_args));
   }
   auto typefaces = c_collection->collection->findTypefaces(
       families_vec,

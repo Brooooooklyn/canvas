@@ -7400,6 +7400,29 @@ mod text_line_tests {
     assert!(!kept(&collection, &settings, "a"));
   }
 
+  /// The ic read (ideographic_advance, for letterSpacing, wordSpacing and
+  /// filter lengths) does the same, also when the face has no U+6C34: 300
+  /// variation lists read with no text layout drop the line laid out before.
+  #[test]
+  fn ideographic_advance_drops_the_caches_past_the_budget() {
+    let mut settings = settings();
+    settings.font.size = 16.0;
+    settings.font.families = vec![FamilyName::Named("DropMono".to_owned())];
+    let collection = variable_and_fallback_fonts();
+    assert!(measure(&collection, &settings, "a") > 0.0);
+    assert!(kept(&collection, &settings, "a"));
+    let wght = u32::from_be_bytes(*b"wght");
+    for i in 0..300 {
+      settings.variations = vec![FontVariation {
+        tag: wght,
+        value: 100.0 + i as f32,
+      }];
+      assert_eq!(collection.ideographic_advance(&settings), None, "read {i}");
+    }
+    settings.variations = Vec::new();
+    assert!(!kept(&collection, &settings, "a"));
+  }
+
   /// HarfBuzz's own Unicode data (what the shaper's HarfBuzz uses) gives
   /// what ICU gives (what Chromium's HarfBuzz uses) for every code point. A
   /// Skia bump that breaks this needs ICU-backed unicode funcs in the shaper.
