@@ -1,0 +1,278 @@
+// SVG text draws synthetic bold and italic where the family lacks the face,
+// with the rules canvas text uses (Blink's CSSSegmentedFontFace::GetFontData
+// for a registered font, the installed font's traits), as Chrome 157 does:
+// SVG images, the SVG images nested in them, an SVG image drawn on an SVG
+// canvas, and convertSVGTextToPath. The advances do not change.
+// fixtures/svg-synthetic-style.json holds Chrome's rows.
+//
+// Every probe runs in a child process with only __test__/fonts registered:
+// Lato-Regular as SynthLato (regular only), Source Han Serif CN Bold as
+// SynthShsBold (bold only) and Roboto Mono's variable font (wght 100-700,
+// upright only) as SynthRMono. Rows with Chrome's pixels are pinned on
+// macOS 27 (the capture's Darwin major) with the system renderer.
+import { spawnSync } from 'node:child_process'
+import { readFileSync } from 'node:fs'
+import { release } from 'node:os'
+import { dirname, join } from 'node:path'
+import { fileURLToPath } from 'node:url'
+
+import test from 'ava'
+
+const __dirname = dirname(fileURLToPath(import.meta.url))
+
+interface ChromeRow {
+  id: string
+  file: string | null
+  style: string
+  weight: number
+  form: 'inline' | 'img'
+  length: number
+  bbox: number[]
+  ink: number[]
+  mass: number
+  png: string
+}
+
+const CHROME: ChromeRow[] = JSON.parse(
+  readFileSync(join(__dirname, 'fixtures', 'svg-synthetic-style.json'), 'utf8'),
+).rows
+
+const DARWIN = process.platform === 'darwin' ? Number.parseInt(release(), 10) : 0
+
+type Box = [number, number, number, number]
+
+interface Stats {
+  ink: Box | null
+  mass: number
+  sha: string
+}
+
+interface Probe {
+  // Pixels that differ between the SVG image of "Hagf" at fixed x and
+  // canvas fillText of each glyph at the same x.
+  oracle: Record<string, number>
+  // The "Hamburg" SVG image of each style.
+  hamburg: Record<string, Stats>
+  // Tight bounds of the "H" outline: convertSVGTextToPath, and the SVG
+  // canvas path export of canvas fillText.
+  paths: Record<string, { svg: Box; canvas: Box }>
+  // The bold row: nested in an <image>, and the PNG an SVG canvas embeds.
+  nested: { top: string; nested: string }
+  svgCanvas: { bold: string; regular: string; raster: string }
+  // Chrome rows: gray (255 - min(r, g, b)) differences against Chrome's PNG.
+  chrome: Record<string, { pixels: number; max: number; ink: Box | null; mass: number }>
+}
+
+const PROBE = `
+const { createHash } = require('crypto')
+const path = require('path')
+const { createCanvas, GlobalFonts, setTextRenderer, convertSVGTextToPath, Image, Path2D, SvgExportFlag } = require('./index.js')
+setTextRenderer(process.env.RENDERER)
+const F = path.join('__test__', 'fonts')
+GlobalFonts.registerFromPath(path.join(F, 'Lato-Regular.ttf'), 'SynthLato')
+GlobalFonts.registerFromPath(path.join(F, 'SourceHanSerifCN-Bold.ttf'), 'SynthShsBold')
+GlobalFonts.registerFromPath(path.join(F, 'RobotoMono-VariableFont_wght.ttf'), 'SynthRMono')
+const CHROME = JSON.parse(process.env.CHROME_ROWS)
+const sha1 = (data) => createHash('sha1').update(data).digest('hex')
+const STYLES = {
+  n: ['normal', 400], w500: ['normal', 500], w600: ['normal', 600], b: ['normal', 700],
+  i: ['italic', 400], o: ['oblique', 400], bi: ['italic', 700],
+}
+const FAMILY = { lato: 'SynthLato', shsb: 'SynthShsBold', rmono: 'SynthRMono', chalk: 'Chalkduster' }
+const svgOf = (family, s, text = 'Hamburg', x = 2, w = 260) =>
+  '<svg xmlns="http://www.w3.org/2000/svg" width="' + w + '" height="60"><text x="' + x + '" y="40" font-family="' +
+  family + '" font-size="32" font-weight="' + STYLES[s][1] + '" font-style="' + STYLES[s][0] + '">' + text + '</text></svg>'
+const cssOf = (family, s) => STYLES[s][0] + ' ' + STYLES[s][1] + ' 32px ' + family
+const image = (src) => {
+  const img = new Image()
+  img.src = src
+  return img
+}
+const raster = (svg, w = 260, h = 60, white = false) => {
+  const ctx = createCanvas(w, h).getContext('2d')
+  if (white) {
+    ctx.fillStyle = '#fff'
+    ctx.fillRect(0, 0, w, h)
+  }
+  ctx.drawImage(image(Buffer.from(svg)), 0, 0)
+  return ctx.getImageData(0, 0, w, h).data
+}
+const stats = (data, w, gray) => {
+  let x0 = 1e9, y0 = 1e9, x1 = -1, y1 = -1, mass = 0
+  for (let i = 0; i < data.length / 4; i++) {
+    const v = gray ? 255 - Math.min(data[4 * i], data[4 * i + 1], data[4 * i + 2]) : data[4 * i + 3]
+    if (!v) continue
+    mass += v
+    const x = i % w, y = Math.floor(i / w)
+    x0 = Math.min(x0, x); y0 = Math.min(y0, y); x1 = Math.max(x1, x); y1 = Math.max(y1, y)
+  }
+  return { ink: x1 < 0 ? null : [x0, y0, x1 + 1, y1 + 1], mass, sha: sha1(data) }
+}
+const alphaDiff = (a, b) => {
+  let n = 0
+  for (let i = 3; i < a.length; i += 4) if (a[i] !== b[i]) n++
+  return n
+}
+const bounds = (xml) => {
+  let b = [Infinity, Infinity, -Infinity, -Infinity]
+  for (const m of xml.matchAll(/<path([^>]*)>/g)) {
+    const d = (m[1].match(/ d="([^"]*)"/) || [])[1]
+    if (!d) continue
+    const t = (m[1].match(/translate\\(([-\\d.e]+)[ ,]+([-\\d.e]+)\\)/) || [0, 0, 0]).slice(1).map(Number)
+    const p = new Path2D(d).computeTightBounds()
+    b = [Math.min(b[0], p[0] + t[0]), Math.min(b[1], p[1] + t[1]), Math.max(b[2], p[2] + t[0]), Math.max(b[3], p[3] + t[1])]
+  }
+  return b
+}
+const out = { oracle: {}, hamburg: {}, paths: {}, chrome: {} }
+const XS = [2, 30.5, 61.25, 92.75]
+for (const [f, styles] of [['lato', ['n', 'w500', 'w600', 'b', 'i', 'o', 'bi']], ['shsb', ['n', 'b', 'i', 'bi']], ['rmono', ['n', 'i']]]) {
+  for (const s of styles) {
+    const id = f + '.' + s
+    const svg = raster(svgOf(FAMILY[f], s, 'Hagf', XS.join(' '), 200), 200)
+    const ctx = createCanvas(200, 60).getContext('2d')
+    ctx.font = cssOf(FAMILY[f], s)
+    ;[...'Hagf'].forEach((ch, i) => ctx.fillText(ch, XS[i], 40))
+    out.oracle[id] = alphaDiff(svg, ctx.getImageData(0, 0, 200, 60).data)
+  }
+}
+for (const s of Object.keys(STYLES)) out.hamburg[s] = stats(raster(svgOf('SynthLato', s)), 260, false)
+for (const s of ['n', 'b', 'i', 'bi']) {
+  const canvas = createCanvas(260, 60, SvgExportFlag.ConvertTextToPaths)
+  const ctx = canvas.getContext('2d')
+  ctx.font = cssOf('SynthLato', s)
+  ctx.fillText('H', 2, 40)
+  out.paths[s] = { svg: bounds(convertSVGTextToPath(svgOf('SynthLato', s, 'H')).toString()), canvas: bounds(canvas.getContent().toString()) }
+}
+const bold = svgOf('SynthLato', 'b')
+const outer =
+  '<svg xmlns="http://www.w3.org/2000/svg" width="260" height="120">' + bold.replace(/^<svg[^>]*>|<\\/svg>$/g, '') +
+  '<image y="60" width="260" height="60" href="data:image/svg+xml,' + encodeURIComponent(bold) + '"/></svg>'
+const both = raster(outer, 260, 120)
+out.nested = { top: sha1(both.slice(0, 260 * 60 * 4)), nested: sha1(both.slice(260 * 60 * 4)) }
+const pngOf = (svg) => {
+  const canvas = createCanvas(260, 60, SvgExportFlag.NoPrettyXML)
+  canvas.getContext('2d').drawImage(image(Buffer.from(svg)), 0, 0)
+  const png = /xlink:href="data:image\\/png;base64,([^"]+)"/.exec(canvas.getContent().toString())
+  const ctx = createCanvas(260, 60).getContext('2d')
+  ctx.drawImage(image(Buffer.from(png[1], 'base64')), 0, 0)
+  return sha1(ctx.getImageData(0, 0, 260, 60).data)
+}
+out.svgCanvas = { bold: pngOf(bold), regular: pngOf(svgOf('SynthLato', 'n')), raster: sha1(raster(bold)) }
+if (process.env.CHROME_PIXELS) {
+  for (const row of CHROME) {
+    const [f, s] = row.id.split('.')
+    const ours = raster(svgOf(FAMILY[f], s), 260, 60, true)
+    const ctx = createCanvas(260, 60).getContext('2d')
+    ctx.drawImage(image(Buffer.from(row.png, 'base64')), 0, 0)
+    const theirs = ctx.getImageData(0, 0, 260, 60).data
+    let pixels = 0, max = 0
+    for (let i = 0; i < ours.length; i += 4) {
+      const d = Math.abs(Math.min(ours[i], ours[i + 1], ours[i + 2]) - Math.min(theirs[i], theirs[i + 1], theirs[i + 2]))
+      if (d) pixels++
+      max = Math.max(max, d)
+    }
+    const { ink, mass } = stats(ours, 260, true)
+    out.chrome[row.id] = { pixels, max, ink, mass }
+  }
+}
+console.log(JSON.stringify(out))
+`
+
+function probe(renderer: string): Probe {
+  const pixels = renderer === 'system' && DARWIN === 27
+  const { stdout, stderr, status } = spawnSync(process.execPath, ['-e', PROBE], {
+    cwd: join(__dirname, '..'),
+    env: {
+      ...process.env,
+      RENDERER: renderer,
+      CHROME_ROWS: JSON.stringify(pixels ? CHROME : []),
+      CHROME_PIXELS: pixels ? '1' : '',
+    },
+    encoding: 'utf8',
+    maxBuffer: 16 << 20,
+    timeout: 60_000,
+  })
+  if (status !== 0) throw new Error(stderr)
+  return JSON.parse(stdout)
+}
+
+const probes = new Map<string, Probe>()
+const probeOf = (renderer: string) => {
+  if (!probes.has(renderer)) probes.set(renderer, probe(renderer))
+  return probes.get(renderer)!
+}
+
+// The system renderer draws SVG text with the draw font canvas text uses
+// (TextRasterPolicy::DrawFont sets every raster flag on macOS and Linux), so
+// glyphs at the same x give the same pixels. The portable renderer keeps
+// SkSVG's own raster flags, so only relations are checked there.
+const oracleTest = process.platform === 'darwin' || process.platform === 'linux' ? test : test.skip
+oracleTest('SVG text draws the synthetic styles canvas text draws (system)', (t) => {
+  const { oracle } = probeOf('system')
+  // Regular Lato; bold and italic Lato (regular only); Source Han Serif
+  // Bold (bold only: no extra bold, italic is synthetic); Roboto Mono's
+  // variable font italic (no slnt axis).
+  for (const id of Object.keys(oracle)) t.is(oracle[id], 0, `${id}: ${oracle[id]} px differ from canvas text`)
+  t.is(Object.keys(oracle).length, 13)
+})
+
+for (const renderer of ['portable', 'system'] as const) {
+  test(`SVG text gets synthetic bold at 600 and up, and italic for italic and oblique (${renderer})`, (t) => {
+    const { hamburg } = probeOf(renderer)
+    const { n, w500, w600, b, i, o, bi } = hamburg
+    t.is(w500.sha, n.sha, '500 is not bold')
+    t.not(b.sha, n.sha)
+    t.is(w600.sha, b.sha, '600 is bold')
+    t.true(b.mass > n.mass * 1.05, `bold ink ${b.mass} vs ${n.mass}`)
+    t.not(i.sha, n.sha)
+    t.is(o.sha, i.sha, 'oblique is italic')
+    t.true(i.ink![2] > n.ink![2], `italic right edge ${i.ink![2]} vs ${n.ink![2]}`)
+    t.not(bi.sha, i.sha)
+    t.not(bi.sha, b.sha)
+  })
+
+  test(`convertSVGTextToPath outlines are the SVG canvas export's (${renderer})`, (t) => {
+    const { paths } = probeOf(renderer)
+    for (const [s, { svg, canvas }] of Object.entries(paths)) {
+      svg.forEach((v, k) =>
+        t.true(Math.abs(v - canvas[k]) < 1e-3, `${s}: ${JSON.stringify(svg)} vs ${JSON.stringify(canvas)}`),
+      )
+    }
+    // Fake bold grows the outline by half a pixel per side; the skew moves
+    // the top right.
+    t.true(paths.b.svg[0] < paths.n.svg[0] - 0.4, JSON.stringify(paths.b.svg))
+    t.true(paths.b.svg[2] > paths.n.svg[2] + 0.4, JSON.stringify(paths.b.svg))
+    t.true(paths.i.svg[2] > paths.n.svg[2] + 5, JSON.stringify(paths.i.svg))
+    t.true(Math.abs(paths.i.svg[0] - paths.n.svg[0]) < 1e-3, 'the skew keeps the baseline')
+  })
+
+  test(`a nested SVG image and an SVG canvas keep the synthetic styles (${renderer})`, (t) => {
+    const { nested, svgCanvas, hamburg } = probeOf(renderer)
+    t.is(nested.nested, nested.top)
+    t.is(svgCanvas.raster, hamburg.b.sha)
+    t.is(svgCanvas.bold, svgCanvas.raster, 'the embedded PNG is the bold raster')
+    t.not(svgCanvas.bold, svgCanvas.regular)
+  })
+}
+
+// Chrome 157's pixels, macOS 27, the system renderer. Lato and Roboto Mono
+// have no kerning pair in "Hamburg", so the rows match Chrome's pixels
+// (Chrome rasterizes a fake bold glyph from a slightly wider stroke).
+// Source Han Serif Bold and Chalkduster have kerning, which SkSVG's shaper
+// does not apply; their ink mass and box are checked.
+const darwinSystem = DARWIN === 27 ? test : test.skip
+darwinSystem('SVG text synthetic styles match Chrome 157 (macOS 27, system)', (t) => {
+  const { chrome } = probeOf('system')
+  t.is(Object.keys(chrome).length, CHROME.length)
+  for (const row of CHROME) {
+    const ours = chrome[row.id]
+    const label = `${row.id}: ${ours.pixels} px, max ${ours.max}, ink ${JSON.stringify(ours.ink)} ${ours.mass}`
+    if (row.id.startsWith('lato.') || row.id.startsWith('rmono.')) {
+      t.true(ours.pixels <= 4 && ours.max <= 32, label)
+    } else {
+      t.true(Math.abs(ours.mass - row.mass) <= row.mass * 1e-3, label)
+      ours.ink!.forEach((v, k) => t.true(Math.abs(v - row.ink[k]) <= 2, label))
+    }
+  }
+})
