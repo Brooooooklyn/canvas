@@ -49,12 +49,13 @@ bool IsEmojiPresentationEmoji(Priority priority) {
          priority == Priority::kEmojiEmojiWithVS;
 }
 
-#if defined(__APPLE__)
 uint32_t FloatBits(float value) {
   uint32_t bits;
   memcpy(&bits, &value, sizeof(bits));
   return bits;
 }
+
+#if defined(__APPLE__)
 
 // The variation design position of a typeface, as a hash.
 uint64_t VariationHash(SkTypeface* face) {
@@ -161,16 +162,27 @@ class LineFonts {
     return found->second;
   }
 
-  // Whether this host has a system fallback source the shaper ports: the
-  // CoreText one, with the system renderer once the installed fonts are on.
-  // Without one, SystemFallback finds no font, as Blink's FontCache does on
-  // a platform whose fallback returns none.
-  void set_system_source(bool system_source) { system_source_ = system_source; }
+  // The system fallback sources the shaper ports: `coretext`, with the
+  // system renderer on Apple once the installed fonts are on, and the
+  // installed fonts (InstalledFallback), asked where CoreText is not or
+  // gives none. Without either, SystemFallback finds no font, as Blink's
+  // FontCache does on a platform whose fallback returns none.
+  void set_system_source(bool coretext, bool installed) {
+    coretext_source_ = coretext;
+    system_source_ = coretext || installed;
+  }
+  // The installed source's Han script (HanScriptForLocale of the content
+  // language, else of the host language; 0 for none) and whether the
+  // description's generic family is monospace.
+  void set_installed_inputs(int han_script, bool monospace) {
+    han_script_ = han_script;
+    monospace_ = monospace;
+  }
 
   // FontCache::GetLastResortFallbackFont through the family matching, found
   // before the layout takes any reference into the caches. Set only with a
-  // system source: without one the first font's .notdef is drawn (no font
-  // manager gives a fallback, skia_c.hpp).
+  // system source, and off CoreText only when it is an installed face (the
+  // font cache has no FontFace).
   void set_last_resort(sk_sp<SkTypeface> face, SkTypeface* base) {
     last_resort_face_ = std::move(face);
     last_resort_base_ = base;
@@ -197,52 +209,24 @@ class LineFonts {
   }
 
   // FontCache::FallbackFontForCharacter: none for a private use or
-  // non-character; on Apple, Apple Color Emoji for emoji presentation, else
-  // the CoreText helper from the primary font (the font list's first font,
-  // FontFallbackList::PrimarySimpleFontDataWithSpace).
+  // non-character; on Apple with CoreText, Apple Color Emoji for emoji
+  // presentation, else the CoreText helper from the primary font (the font
+  // list's first font, FontFallbackList::PrimarySimpleFontDataWithSpace);
+  // where CoreText is not asked or gives none, the installed fonts
+  // (InstalledFallback).
   FontEntry* SystemFallback(uint32_t hint, Priority priority) {
     if (!system_source_ || families_.empty() ||
         IsPrivateUseOrNonCharacter(hint)) {
       return nullptr;
     }
-#if defined(__APPLE__)
-    const FontEntry& primary = families_.front();
-    const bool emoji = IsEmojiPresentationEmoji(priority);
-    const bool italic = request_.slope != 0;
-    // The primary font by its family face and its axes, not by the
-    // instance's typeface ID: a dropped and remade instance (the font
-    // arguments' caches) is the same font, and a new CTFont per line would
-    // grow CoreText's per-font fallback tables.
-    const SystemFallbackKey key = {
-        hint, emoji,
-        primary.base ? primary.base->uniqueID() : primary.face->uniqueID(),
-        VariationHash(primary.face.get()), FloatBits(request_.weight),
-        FloatBits(request_.slope),
-        // FontDescription::ComputedPixelSize.
-        static_cast<int>(request_.size + 0.5f)};
     SystemFallbackFont font;
-    if (const SystemFallbackFont* found =
-            FindSystemFallback(c_collection_, key)) {
-      font = *found;
-    } else {
-      if (emoji && c_collection_->font_mgr) {
-        const SkFontStyle style(
-            static_cast<int>(roundf(request_.weight)), request_.stretch,
-            static_cast<SkFontStyle::Slant>(request_.style));
-        font.face = c_collection_->font_mgr->matchFamilyStyle(
-            "Apple Color Emoji", style);
-        if (font.face) {
-          font.synthetic =
-              MacMatchedFontSynthetic(font.face.get(), request_.weight, italic);
-        }
-      }
-      if (!font.face) {
-        font = MacAlternateFont(
-            primary.face.get(), SystemFallbackInputs(c_collection_), key,
-            primary.synthetic, hint, static_cast<int>(request_.weight), italic,
-            static_cast<float>(key.pixel_size));
-      }
-      StoreSystemFallback(c_collection_, key, font);
+#if defined(__APPLE__)
+    if (coretext_source_) {
+      font = CoreTextFont(hint, priority);
+    }
+#endif
+    if (!font.face) {
+      font = InstalledFont(hint, priority);
     }
     if (!font.face) {
       return nullptr;
@@ -270,13 +254,88 @@ class LineFonts {
     }
     others_.push_back(std::move(entry));
     return &others_.back();
-#else
-    (void)priority;
-    return nullptr;
-#endif
   }
 
  private:
+#if defined(__APPLE__)
+  SystemFallbackFont CoreTextFont(uint32_t hint, Priority priority) {
+    const FontEntry& primary = families_.front();
+    const bool emoji = IsEmojiPresentationEmoji(priority);
+    const bool italic = request_.slope != 0;
+    // The primary font by its family face and its axes, not by the
+    // instance's typeface ID: a dropped and remade instance (the font
+    // arguments' caches) is the same font, and a new CTFont per line would
+    // grow CoreText's per-font fallback tables.
+    const SystemFallbackKey key = {
+        hint, emoji,
+        primary.base ? primary.base->uniqueID() : primary.face->uniqueID(),
+        VariationHash(primary.face.get()), FloatBits(request_.weight),
+        FloatBits(request_.slope),
+        // FontDescription::ComputedPixelSize.
+        static_cast<int>(request_.size + 0.5f)};
+    if (const SystemFallbackFont* found =
+            FindSystemFallback(c_collection_, key)) {
+      return *found;
+    }
+    SystemFallbackFont font;
+    if (emoji && c_collection_->font_mgr) {
+      const SkFontStyle style(static_cast<int>(roundf(request_.weight)),
+                              request_.stretch,
+                              static_cast<SkFontStyle::Slant>(request_.style));
+      font.face =
+          c_collection_->font_mgr->matchFamilyStyle("Apple Color Emoji", style);
+      if (font.face) {
+        font.synthetic =
+            MacMatchedFontSynthetic(font.face.get(), request_.weight, italic);
+      }
+    }
+    if (!font.face) {
+      font = MacAlternateFont(
+          primary.face.get(), SystemFallbackInputs(c_collection_), key,
+          primary.synthetic, hint, static_cast<int>(request_.weight), italic,
+          static_cast<float>(key.pixel_size));
+    }
+    StoreSystemFallback(c_collection_, key, font);
+    return font;
+  }
+#endif
+
+  // The installed fonts' font for `hint` (shaper_fallback_installed.cpp),
+  // with the first family's face for FallbackOnStandardFontStyle when it is
+  // an installed one (Blink asks the font cache, which has no FontFace).
+  SystemFallbackFont InstalledFont(uint32_t hint, Priority priority) {
+    InstalledFallbackIndex* index = InstalledFallbacks(c_collection_);
+    const FontEntry& primary = families_.front();
+    SkTypeface* first = primary.base ? primary.base : primary.face.get();
+    if (!IsSystemTypeface(c_collection_, first)) {
+      first = nullptr;
+    }
+    const bool emoji = IsEmojiPresentationEmoji(priority);
+    SystemFallbackKey key = {hint,
+                             emoji,
+                             first ? first->uniqueID() : 0,
+                             0,
+                             FloatBits(request_.weight),
+                             FloatBits(request_.slope),
+                             0};
+    key.source = SystemFallbackSource::kInstalled;
+    key.stretch = request_.stretch;
+    key.han_script = han_script_;
+    key.monospace = monospace_;
+    // Text that is an emoji character is asked for as text presentation
+    // emoji (InstalledFallback), so the priority class is in the key.
+    key.primary_axes = static_cast<uint64_t>(priority);
+    if (const SystemFallbackFont* found =
+            FindSystemFallback(c_collection_, key)) {
+      return *found;
+    }
+    SystemFallbackFont font =
+        InstalledFallback(c_collection_, index, request_, first, hint, priority,
+                          han_script_, monospace_);
+    StoreSystemFallback(c_collection_, key, font);
+    return font;
+  }
+
   skiac_font_collection* c_collection_;
   const skiac_text_request& request_;
   const TextRasterPolicy& policy_;
@@ -288,6 +347,9 @@ class LineFonts {
   std::deque<FontEntry> small_caps_;
   std::unordered_map<const FontEntry*, FontEntry*> small_caps_index_;
   bool system_source_ = false;
+  bool coretext_source_ = false;
+  int han_script_ = 0;
+  bool monospace_ = false;
   sk_sp<SkTypeface> last_resort_face_;
   SkTypeface* last_resort_base_ = nullptr;
   bool last_resort_made_ = false;
@@ -299,9 +361,9 @@ class LineFonts {
 // segment one font for the first hint with the segment's priority; one
 // system font per call for the hint ChooseHintIndex picks, each hint asked
 // once; the last resort font; the first candidate, whose .notdef is drawn.
-// Without a system source (off Apple, or the portable renderer) the system
-// stages find no font and there is no last resort font, so a character no
-// family has is drawn with the first candidate's .notdef.
+// When no system source has the character (no installed font has it) the
+// system stages find no font, so a character no family has is drawn with
+// the first candidate's .notdef.
 class FallbackIterator {
  public:
   FallbackIterator(LineFonts& fonts, Priority priority)
@@ -1455,23 +1517,28 @@ void LayOutLineBlink(skiac_font_collection* c_collection,
     return;
   }
   PreparedText prepared = PrepareText(request.text, request.text_len);
-  // The system fallback source: CoreText's, with the system renderer and
+  // The system fallback sources: CoreText's, with the system renderer and
   // the installed fonts on (the manager FontCollection::defaultFallback
-  // asks). Elsewhere there is none: a character no family has is drawn with
+  // asks), and the installed fonts everywhere CoreText is not asked or finds
+  // none (InstalledFallback). A character none of them has is drawn with
   // the first family font's .notdef.
-  bool system_source = false;
+  bool coretext_source = false;
+#if defined(__APPLE__)
+  coretext_source = SystemFontRenderer() && c_collection->font_mgr;
+#endif
+  const bool installed_source = true;
   sk_sp<SkTypeface> last_resort_face;
   sk_sp<SkTypeface> last_resort_base;
-#if defined(__APPLE__)
-  system_source = SystemFontRenderer() && c_collection->font_mgr;
-  if (system_source) {
+  {
     const std::string name = LastResortFamily(c_collection, request);
     if (!name.empty()) {
       const std::vector<SkString> last_resort = {
           SkString(name.c_str(), name.size())};
       const std::vector<sk_sp<SkTypeface>> base =
           font_collection->findTypefaces(last_resort, font_style);
-      if (!base.empty()) {
+      if (!base.empty() &&
+          (coretext_source ||
+           IsSystemTypeface(c_collection, base.front().get()))) {
         last_resort_base = base.front();
         last_resort_face = base.front();
         if (font_args) {
@@ -1485,7 +1552,6 @@ void LayOutLineBlink(skiac_font_collection* c_collection,
       }
     }
   }
-#endif
 
   // From here the layout holds references into the caches (HarfBuzz fonts,
   // the buffer): none may be dropped before it ends.
@@ -1512,7 +1578,23 @@ void LayOutLineBlink(skiac_font_collection* c_collection,
     fonts.AddFamily(SkTypeface::MakeEmpty(), nullptr, sizes.effective,
                     sizes.opsz);
   }
-  fonts.set_system_source(system_source);
+  fonts.set_system_source(coretext_source, installed_source);
+  {
+    // FontDescription::GenericFamily: the last generic family of the list
+    // (LastResortFamily's rule; 5 is monospace).
+    int generic = 0;
+    for (size_t i = 0; i < request.family_count; ++i) {
+      const int family_generic = request.families[i].generic;
+      if (family_generic && family_generic != 6 && family_generic != 8) {
+        generic = family_generic;
+      }
+    }
+    int fallback_han_script = HanScriptForLocale(lang);
+    if (!fallback_han_script) {
+      fallback_han_script = HanScriptForLocale(HostLanguage());
+    }
+    fonts.set_installed_inputs(fallback_han_script, generic == 5);
+  }
   fonts.set_last_resort(last_resort_face, last_resort_base.get());
 
   const bool word_by_word = CanShapeWordByWord(

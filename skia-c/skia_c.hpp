@@ -954,11 +954,11 @@ struct skiac_font_collection {
   // renderer on macOS it is null until loadSystemFonts turns CoreText's on.
   // On Android the
   // prefix is /usr/share/fonts/, which is not there, so it has no fonts;
-  // loadSystemFonts puts /system/fonts in `assets` instead. Only CoreText
-  // picks a fallback font for a character no family has: SkFontMgr_Custom
+  // loadSystemFonts puts /system/fonts in `assets` instead. SkFontMgr_Custom
   // and TypefaceFontProvider (`assets`) return null from
-  // onMatchFamilyStyleCharacter, so on Linux, Windows and Android such a
-  // character draws the first font's .notdef.
+  // onMatchFamilyStyleCharacter: the shaper picks the fallback font for a
+  // character no family has itself, from CoreText (macOS system renderer)
+  // or from the installed faces (shaper_fallback_installed.cpp).
   // Registered fonts are made by MakeCanvasTypeface.
   sk_sp<SkFontMgr> font_mgr;
   sk_sp<TypefaceFontProviderCustom> assets;
