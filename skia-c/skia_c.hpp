@@ -791,11 +791,22 @@ class TypefaceFontProviderCustom : public TypefaceFontProvider {
             aliases.push_back(aliasStr);
             font.orders.push_back(++registrations);
             font.alias_args.push_back(true);
-            // A FontFace name of a file loadFontsFromDir loaded: the face
-            // this call made is its web twin (one per font, shared by its
-            // FontFace names).
+            // A FontFace name of a file loadFontsFromDir loaded gets its web
+            // twin (one per font, shared by its FontFace names), made from
+            // the data of the font's face as a rebuild makes it: the same
+            // path is not read again, so a file replaced since then does
+            // not give the name other bytes in one renderer mode only. The
+            // face this call made only when that face gives no data.
             if (font.WebName(aliases.size() - 1) && !font.web_typeface) {
-              font.web_typeface = typeface;
+              int index = 0;
+              std::unique_ptr<SkStreamAsset> stream =
+                  font.typeface ? font.typeface->openStream(&index) : nullptr;
+              if (stream) {
+                font.web_typeface = MakeCanvasTypeface(std::move(stream));
+              }
+              if (!font.web_typeface) {
+                font.web_typeface = typeface;
+              }
             }
             // The font's own face (or its twin), so the alias name is that
             // registration (registrationOf finds it) as after a rebuild.

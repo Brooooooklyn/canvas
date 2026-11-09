@@ -1323,7 +1323,7 @@ const PRELOADED_TWIN_PROBE = `
       if (i > 0) state()
       return ok
     })
-  } else {
+  } else if (PROBE_CASE === 'rules') {
     out.steps = Object.entries(FILES).map(
       ([name, file]) =>
         GlobalFonts.registerFromPath(join(PROBE_DIR, file), name + 'Web') !== null &&
@@ -1348,13 +1348,24 @@ const PRELOADED_TWIN_PROBE = `
       })
     state()
   }
+  if (PROBE_CASE === 'replaced') {
+    // The file is replaced on disk after loadFontsFromDir. The same path is
+    // not read again (path dedup), so the name keeps the bytes the font was
+    // loaded from in every state and in both renderer modes.
+    const file = join(PROBE_DIR, 'Oswald.ttf')
+    require('fs').copyFileSync(PROBE_FONTS + '/Lato-Regular.ttf', file)
+    state = () => out.states.push({ ag: ag('Replaced'), tiny: tiny('Replaced') })
+    out.steps = [GlobalFonts.registerFromPath(file, 'Replaced') !== null]
+    state()
+  }
   // An unrelated font removed (a rebuild), then a renderer switch and back.
   GlobalFonts.remove(GlobalFonts.registerFromPath(PROBE_FONTS + '/EBGaramond-Regular.ttf', 'UnrelatedEBG'))
   state()
   setTextRenderer(RENDERER === 'system' ? 'portable' : 'system')
+  if (PROBE_CASE === 'replaced') state()
   setTextRenderer(RENDERER)
   state()
-  if (PROBE_CASE !== 'relist') {
+  if (PROBE_CASE === 'rules') {
     // The same FontKey: removing it drops the file's face, the FontFace
     // name and the alias of it.
     out.removed = GlobalFonts.remove(GlobalFonts.registerFromPath(join(PROBE_DIR, 'Oswald.ttf'), 'OswaldWeb'))
@@ -1463,6 +1474,30 @@ for (const renderer of ['portable', 'system'] as const) {
         if (ag[0] < 40) {
           t.deepEqual(s.tiny, tinyMetrics, `step ${i}`)
         }
+      }
+    },
+  )
+
+  // The web twin is made from the font's own data, not from the file read
+  // again: a name given after the file changed on disk lists the bytes
+  // loadFontsFromDir loaded, also in the other renderer mode.
+  test.serial(
+    `a FontFace name of a file loadFontsFromDir loaded keeps its bytes after the file is replaced (${renderer})`,
+    (t) => {
+      // Windows does not let a mapped font file be overwritten.
+      if (process.platform === 'win32') {
+        t.pass()
+        return
+      }
+      const near = (a: number, b: number) => Math.abs(a - b) <= 1e-3
+      const out = preloadedTwinProbe(t, renderer, 'replaced')
+      const [ag, tinyMetrics] = PRELOADED_TWIN_CHROME.reRegister[0]
+      t.is(out.states.length, 4)
+      for (const [i, s] of out.states.entries()) {
+        for (const [j, value] of ag.entries()) {
+          t.true(near(s.ag[j], value), `state ${i}: Ag ${s.ag}, Oswald ${ag}`)
+        }
+        t.deepEqual(s.tiny, tinyMetrics, `state ${i}`)
       }
     },
   )
