@@ -12,6 +12,9 @@
 #include <vector>
 
 #include "skia_c.hpp"
+
+#include <modules/svg/include/SkSVGAttributeParser.h>
+
 #include "svg_image.hpp"
 
 // libskia is built with SK_RELEASE; a debug skia-c would see other class
@@ -4954,28 +4957,89 @@ void skiac_sk_w_stream_destroy(skiac_w_memory_stream* c_w_memory_stream) {
 }
 
 // SkSVG
-void skiac_svg_text_to_path(const uint8_t* data,
-                            size_t length,
-                            skiac_font_collection* c_collection,
-                            skiac_sk_data* output_data) {
-  SkMemoryStream svg_stream(data, length, false);
+}  // extern "C"
+
+namespace {
+
+// The document's paths, text as paths, in an SVG of `size`.
+void WriteTextToPath(SkSVGDOM* dom,
+                     const SkSize& size,
+                     skiac_sk_data* output_data) {
   SkDynamicMemoryWStream w_stream;
-  c_collection->prepareLookup();
-  auto svg_dom = SkSVGDOM::Builder()
-                     .setFontManager(napi_svg::MakeNamedFontMgr(c_collection))
-                     .make(svg_stream);
-  auto svg_root = svg_dom->getRoot();
-  auto svg_container_size =
-      svg_root->intrinsicSize(SkSVGLengthContext(SkSize::Make(0, 0)));
-  auto canvas =
-      SkSVGCanvas::Make(SkRect::MakeSize(svg_container_size), &w_stream,
-                        SkSVGCanvas::kConvertTextToPaths_Flag);
-  svg_dom->render(canvas.get());
+  auto canvas = SkSVGCanvas::Make(SkRect::MakeSize(size), &w_stream,
+                                  SkSVGCanvas::kConvertTextToPaths_Flag);
+  dom->render(canvas.get());
+  napi_svg::EndSvgText();
   canvas.reset();
   auto d = w_stream.detachAsData().release();
   output_data->data = reinterpret_cast<skiac_data*>(d);
   output_data->size = d->size();
   output_data->ptr = d->bytes();
+}
+
+// SkSVGSVG's width or height attribute: 100% when absent or invalid.
+SkSVGLength RootLength(const char* value, size_t length) {
+  if (value) {
+    const SkString text(value, length);
+    if (auto parsed = SkSVGAttributeParser::parse<SkSVGLength>(text.c_str())) {
+      return *parsed;
+    }
+  }
+  return SkSVGLength(100, SkSVGLength::Unit::kPercentage);
+}
+
+}  // namespace
+
+extern "C" {
+
+void skiac_svg_text_to_path(const uint8_t* data,
+                            size_t length,
+                            skiac_font_collection* c_collection,
+                            skiac_sk_data* output_data) {
+  SkMemoryStream svg_stream(data, length, false);
+  c_collection->prepareLookup();
+  auto svg_dom = napi_svg::MakeTextToPathDocument(svg_stream, c_collection,
+                                                  nullptr, 0, false);
+  auto svg_root = svg_dom->getRoot();
+  auto svg_container_size =
+      svg_root->intrinsicSize(SkSVGLengthContext(SkSize::Make(0, 0)));
+  WriteTextToPath(svg_dom.get(), svg_container_size, output_data);
+}
+
+void skiac_svg_text_to_path_prepared(const uint8_t* data,
+                                     size_t length,
+                                     const skiac_svg_font_list* fonts,
+                                     size_t font_count,
+                                     const char* width,
+                                     size_t width_len,
+                                     const char* height,
+                                     size_t height_len,
+                                     skiac_font_collection* c_collection,
+                                     skiac_sk_data* output_data) {
+  SkMemoryStream svg_stream(data, length, false);
+  c_collection->prepareLookup();
+  auto svg_dom = napi_svg::MakeTextToPathDocument(svg_stream, c_collection,
+                                                  fonts, font_count, true);
+  if (!svg_dom) {
+    return;
+  }
+  // SkSVGSVG::intrinsicSize of the root as written: the prepared root has
+  // no width or height (an SVG image is laid out at the size it is drawn
+  // at), and its viewBox maps the written size onto the container.
+  const SkSVGLength root_width = RootLength(width, width_len);
+  const SkSVGLength root_height = RootLength(height, height_len);
+  SkSize size = SkSize::Make(0, 0);
+  if (root_width.unit() != SkSVGLength::Unit::kPercentage &&
+      root_height.unit() != SkSVGLength::Unit::kPercentage) {
+    const SkSVGLengthContext context(SkSize::Make(0, 0));
+    size = SkSize::Make(
+        context.resolve(root_width,
+                        SkSVGLengthContext::LengthType::kHorizontal),
+        context.resolve(root_height,
+                        SkSVGLengthContext::LengthType::kVertical));
+  }
+  svg_dom->setContainerSize(size);
+  WriteTextToPath(svg_dom.get(), size, output_data);
 }
 
 // SkDocument

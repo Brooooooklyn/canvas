@@ -1637,6 +1637,20 @@ pub mod ffi {
       output_data: *mut skiac_sk_data,
     );
 
+    #[allow(clippy::too_many_arguments)]
+    pub fn skiac_svg_text_to_path_prepared(
+      data: *const u8,
+      length: usize,
+      fonts: *const skiac_svg_font_list,
+      font_count: usize,
+      width: *const c_char,
+      width_len: usize,
+      height: *const c_char,
+      height_len: usize,
+      font_collection: *mut skiac_font_collection,
+      output_data: *mut skiac_sk_data,
+    );
+
     // SkPictureRecorder
     pub fn skiac_picture_recorder_create() -> *mut skiac_picture_recorder;
     pub fn skiac_picture_recorder_destroy(picture_recorder: *mut skiac_picture_recorder);
@@ -5721,6 +5735,44 @@ impl Drop for Bitmap {
   }
 }
 
+/// The font-family lists of a prepared document for the C side; they point
+/// into `prepared`.
+fn svg_font_families(prepared: &crate::svg_doc::Prepared) -> Vec<Vec<ffi::skiac_text_family>> {
+  use crate::svg_doc::Family;
+  prepared
+    .families
+    .iter()
+    .map(|list| {
+      list
+        .iter()
+        .map(|family| match family {
+          Family::Generic(generic) => ffi::skiac_text_family {
+            name: ptr::null(),
+            name_len: 0,
+            generic: *generic,
+          },
+          Family::Named(name) => ffi::skiac_text_family {
+            name: name.as_ptr().cast(),
+            name_len: name.len(),
+            generic: 0,
+          },
+        })
+        .collect()
+    })
+    .collect()
+}
+
+/// `napi-font:K` is `families[K]`; the lists point into `families`.
+fn svg_font_lists(families: &[Vec<ffi::skiac_text_family>]) -> Vec<ffi::skiac_svg_font_list> {
+  families
+    .iter()
+    .map(|list| ffi::skiac_svg_font_list {
+      families: list.as_ptr(),
+      count: list.len(),
+    })
+    .collect()
+}
+
 /// A parsed SVG image (Skia's SVG DOM) and the raw root attributes that give
 /// its natural size.
 pub struct SvgDocument(*mut ffi::skiac_svg_document);
@@ -5760,7 +5812,7 @@ impl SvgDocument {
   /// A document `crate::svg_doc::prepare` wrote, drawn with its images and
   /// font lists (skia-c/svg_image.cpp). None when Skia cannot use it.
   pub fn parse_prepared(prepared: &crate::svg_doc::Prepared, fc: &FontCollection) -> Option<Self> {
-    use crate::svg_doc::{Family, Resource};
+    use crate::svg_doc::Resource;
     let images: Vec<ffi::skiac_svg_resource> = prepared
       .resources
       .iter()
@@ -5787,34 +5839,8 @@ impl SvgDocument {
         },
       })
       .collect();
-    let families: Vec<Vec<ffi::skiac_text_family>> = prepared
-      .families
-      .iter()
-      .map(|list| {
-        list
-          .iter()
-          .map(|family| match family {
-            Family::Generic(generic) => ffi::skiac_text_family {
-              name: ptr::null(),
-              name_len: 0,
-              generic: *generic,
-            },
-            Family::Named(name) => ffi::skiac_text_family {
-              name: name.as_ptr().cast(),
-              name_len: name.len(),
-              generic: 0,
-            },
-          })
-          .collect()
-      })
-      .collect();
-    let fonts: Vec<ffi::skiac_svg_font_list> = families
-      .iter()
-      .map(|list| ffi::skiac_svg_font_list {
-        families: list.as_ptr(),
-        count: list.len(),
-      })
-      .collect();
+    let families = svg_font_families(prepared);
+    let fonts = svg_font_lists(&families);
     // The C side copies what it keeps.
     let document = unsafe {
       ffi::skiac_svg_document_make(
@@ -7200,6 +7226,47 @@ pub fn sk_svg_text_to_path(svg: &[u8], fc: &FontCollection) -> Option<SkiaDataRe
   };
   unsafe {
     ffi::skiac_svg_text_to_path(svg.as_ptr(), svg.len(), fc.0, &mut output_data);
+  };
+  if output_data.ptr.is_null() {
+    return None;
+  }
+  Some(SkiaDataRef(output_data))
+}
+
+/// convertSVGTextToPath of a document `crate::svg_doc::prepare` wrote: its
+/// text resolves its font lists as an SVG image's does. `root` gives the
+/// output's size as SkSVG reads the root's width and height.
+pub fn sk_svg_text_to_path_prepared(
+  prepared: &crate::svg_doc::Prepared,
+  root: &crate::svg_doc::RootAttributes,
+  fc: &FontCollection,
+) -> Option<SkiaDataRef> {
+  let families = svg_font_families(prepared);
+  let fonts = svg_font_lists(&families);
+  let attribute = |value: &Option<String>| match value {
+    Some(value) => (value.as_ptr().cast::<c_char>(), value.len()),
+    None => (ptr::null(), 0),
+  };
+  let (width, width_len) = attribute(&root.width);
+  let (height, height_len) = attribute(&root.height);
+  let mut output_data = ffi::skiac_sk_data {
+    ptr: ptr::null_mut(),
+    data: ptr::null_mut(),
+    size: 0,
+  };
+  unsafe {
+    ffi::skiac_svg_text_to_path_prepared(
+      prepared.svg.as_ptr(),
+      prepared.svg.len(),
+      fonts.as_ptr(),
+      fonts.len(),
+      width,
+      width_len,
+      height,
+      height_len,
+      fc.0,
+      &mut output_data,
+    );
   };
   if output_data.ptr.is_null() {
     return None;

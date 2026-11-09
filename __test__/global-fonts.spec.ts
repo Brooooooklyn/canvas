@@ -1811,7 +1811,16 @@ for (const renderer of ['portable', 'system'] as const) {
       for (const [key, newest] of Object.entries(FACE_ORDER_NEWEST)) {
         const row = FACE_ORDER.rows[key]
         for (const how of ['reg', 'buf'] as const) {
-          const out = faceOrderProbe(t, renderer, faceOrderSteps(row.steps, how), [row.name], [newest])
+          // sibling-glyphs: the newest face (Devanagari) lacks "Ag", which
+          // SVG text, as canvas text, takes from the older face (Lato).
+          const glyphs = key === 'sibling-glyphs' ? 'Lato' : newest
+          const out = faceOrderProbe(
+            t,
+            renderer,
+            faceOrderSteps(row.steps, how),
+            [row.name],
+            [...new Set([newest, glyphs])],
+          )
           const ref = out.refs[newest]
           for (const [i, state] of out.states.entries()) {
             const s = state[row.name]
@@ -1834,8 +1843,9 @@ for (const renderer of ['portable', 'system'] as const) {
                 t.true(near(s.wb[j], value), `${at}: bold Ag ${s.wb}, Chrome ${row.wb.Ag}`)
               }
             }
-            // SVG paths and the variation queries take the newest face.
-            t.is(s.path400, ref.path400, `${at}: path`)
+            // SVG paths and the variation queries take the newest face; SVG
+            // text takes a glyph it lacks from an older face.
+            t.is(s.path400, out.refs[glyphs].path400, `${at}: path`)
             t.is(s.variations, ref.variations, `${at}: hasVariations`)
             t.deepEqual(s.axes, ref.axes, `${at}: axes`)
             // font-variation-settings reach the newest face, with its

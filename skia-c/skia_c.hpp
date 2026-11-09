@@ -2623,10 +2623,26 @@ void skiac_sk_w_stream_get(skiac_w_memory_stream* c_w_memory_stream,
 void skiac_sk_w_stream_destroy(skiac_w_memory_stream* c_w_memory_stream);
 
 // SkSVG
+// convertSVGTextToPath of a document src/svg_doc could not read: SkSVGDOM
+// reads it as it is, and each font-family is a family name.
 void skiac_svg_text_to_path(const uint8_t* data,
                             size_t length,
                             skiac_font_collection* c_collection,
                             skiac_sk_data* output_data);
+// convertSVGTextToPath of a document src/svg_doc prepared (`data`), with the
+// font lists its font-family attributes name, as an SVG image draws its
+// text. `width` and `height` are the root's attributes as written (null for
+// none): they size the output as SkSVG sizes the document itself.
+void skiac_svg_text_to_path_prepared(const uint8_t* data,
+                                     size_t length,
+                                     const skiac_svg_font_list* fonts,
+                                     size_t font_count,
+                                     const char* width,
+                                     size_t width_len,
+                                     const char* height,
+                                     size_t height_len,
+                                     skiac_font_collection* c_collection,
+                                     skiac_sk_data* output_data);
 
 // SkPictureRecorder
 void skiac_picture_ref(skiac_picture* c_picture);
