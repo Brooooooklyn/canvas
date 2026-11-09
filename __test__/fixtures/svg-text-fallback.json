@@ -1,0 +1,119 @@
+{
+  "chrome": "Chrome 157.0.0.0 (157.0.8103.38), headless, desktop mode, --disable-gpu, en-US, DPR 1, macOS 27",
+  "note": "<svg width=200 height=60><text x=2 y=40 font-size=32 font-weight=700 font-family=FAMILY>TEXT</text>, inline in the page with Lato-Regular as MyLatoOnly and SourceHanSerifCN-Bold as SHSReg (FontFace). length: getComputedTextLength; x: getStartPositionOfChar per character; platformFonts: CSS.getPlatformFontsForNode [postScriptName, glyphCount]; ink: the inline SVG screenshot ink box [x0, y0, x1, y1]; imageInk: the same SVG as an <img> (it sees installed fonts only). Rows with darwin hold system fonts (macOS 27). Captured with Playwright, one headless Chrome per run.",
+  "rows": [
+    {
+      "id": "list.A中",
+      "family": "MyLatoOnly, SHSReg",
+      "text": "A中",
+      "length": 53.765625,
+      "x": [2, 23.75],
+      "platformFonts": [
+        ["SourceHanSerifCN-Bold", 1],
+        ["Lato-Regular", 1]
+      ],
+      "ink": [0, 12, 55, 43]
+    },
+    {
+      "id": "list.中",
+      "family": "MyLatoOnly, SHSReg",
+      "text": "中",
+      "length": 32,
+      "x": [2],
+      "platformFonts": [["SourceHanSerifCN-Bold", 1]],
+      "ink": [4, 12, 33, 43]
+    },
+    {
+      "id": "list.中中",
+      "family": "MyLatoOnly, SHSReg",
+      "text": "中中",
+      "length": 64,
+      "x": [2, 34],
+      "platformFonts": [["SourceHanSerifCN-Bold", 2]],
+      "ink": [0, 12, 65, 43]
+    },
+    {
+      "id": "list.中A",
+      "family": "MyLatoOnly, SHSReg",
+      "text": "中A",
+      "length": 53.765625,
+      "x": [2, 34],
+      "platformFonts": [
+        ["SourceHanSerifCN-Bold", 1],
+        ["Lato-Regular", 1]
+      ],
+      "ink": [4, 12, 57, 43]
+    },
+    {
+      "id": "lato.A中",
+      "family": "MyLatoOnly",
+      "text": "A中",
+      "length": 53.765625,
+      "x": [2, 23.75],
+      "platformFonts": [
+        ["Lato-Regular", 1],
+        ["PingFangSC-Semibold", 1]
+      ],
+      "ink": [0, 13, 54, 44],
+      "darwin": 27
+    },
+    {
+      "id": "arial.中",
+      "family": "Arial",
+      "text": "中",
+      "length": 32,
+      "x": [2],
+      "platformFonts": [["PingFangSC-Semibold", 1]],
+      "ink": [4, 13, 32, 44],
+      "imageInk": [4, 13, 32, 44],
+      "darwin": 27
+    },
+    {
+      "id": "list.é中",
+      "family": "MyLatoOnly, SHSReg",
+      "text": "é中",
+      "length": 48.78125,
+      "x": [2, 18.765625],
+      "platformFonts": [
+        ["SourceHanSerifCN-Bold", 1],
+        ["Lato-Regular", 1]
+      ],
+      "ink": [1, 12, 50, 43]
+    },
+    {
+      "id": "list.é中",
+      "family": "MyLatoOnly, SHSReg",
+      "text": "é中",
+      "length": 48.78125,
+      "x": [2, 2, 18.765625],
+      "platformFonts": [
+        ["SourceHanSerifCN-Bold", 1],
+        ["Lato-Regular", 1]
+      ],
+      "ink": [0, 12, 50, 43]
+    },
+    {
+      "id": "lato.A😀",
+      "family": "MyLatoOnly",
+      "text": "A😀",
+      "length": 53.765625,
+      "x": [2, 23.75, 23.75],
+      "platformFonts": [
+        ["Lato-Regular", 1],
+        ["AppleColorEmoji", 1]
+      ],
+      "ink": [0, 12, 56, 44],
+      "darwin": 27
+    },
+    {
+      "id": "list.中́",
+      "family": "MyLatoOnly, SHSReg",
+      "text": "中́",
+      "length": 32,
+      "x": [2, 2],
+      "platformFonts": [["PingFangSC-Semibold", 2]],
+      "ink": [1, 13, 46, 44],
+      "darwin": 27
+    }
+  ]
+}
