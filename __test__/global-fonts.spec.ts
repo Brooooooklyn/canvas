@@ -1509,17 +1509,21 @@ for (const renderer of ['portable', 'system'] as const) {
         'roboto mono',
         'SspAlias',
       ]
-      const out = faceOrderProbe(t, renderer, ['dir', 'alias:source serif pro:SspAlias'], NAMES, [], dir)
+      // Each font is also registered alone (RefSSP, RefRM) at the end, so a
+      // spelling's path is checked against that font itself. A check against
+      // the fallback path does not hold on a host with no fonts installed:
+      // there the fallback is one of these two fonts.
+      const out = faceOrderProbe(t, renderer, ['dir', 'alias:source serif pro:SspAlias'], NAMES, ['SSP', 'RM'], dir)
       const WGHT = 0x77676874
       for (const [i, s] of out.states.entries()) {
         const at = `state ${i}`
-        for (const [spelling, exact] of [
-          ['source serif pro', 'Source Serif Pro'],
-          ['SOURCE SERIF PRO', 'Source Serif Pro'],
-          ['roboto mono', 'Roboto Mono'],
+        for (const [spelling, exact, font] of [
+          ['source serif pro', 'Source Serif Pro', 'SSP'],
+          ['SOURCE SERIF PRO', 'Source Serif Pro', 'SSP'],
+          ['roboto mono', 'Roboto Mono', 'RM'],
         ]) {
           t.is(s[spelling].path400, s[exact].path400, `${at}: ${spelling} path`)
-          t.not(s[spelling].path400, out.refs.none.path400, `${at}: ${spelling} path is not the fallback`)
+          t.is(s[spelling].path400, out.refs[font].path400, `${at}: ${spelling} path is ${exact}`)
           t.is(s[spelling].variations, s[exact].variations, `${at}: ${spelling} hasVariations`)
           t.deepEqual(s[spelling].axes, s[exact].axes, `${at}: ${spelling} axes`)
         }
