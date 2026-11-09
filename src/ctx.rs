@@ -2551,17 +2551,19 @@ impl Context {
     let Ok(font) = get_font() else {
       return units;
     };
-    if reads.glyphs
-      && let Some(primary) = font.primary_font_units(&settings)
-    {
+    let Some(primary) = font.primary_font_units(&settings) else {
+      return units;
+    };
+    if reads.glyphs {
       // FontMetrics::HasXHeight: an x-height of 0 or less (an "x" glyph
       // all below the baseline on Apple) is no x-height.
       units.x_height = (primary.x_height > 0.0).then_some(primary.x_height as f64);
       units.zero_width = primary.zero_width as f64;
       units.cap_height = primary.cap_height as f64;
     }
-    if reads.ideographic {
-      units.ideographic_advance = font.ideographic_advance(&settings).map(f64::from);
+    if reads.ideographic && primary.has_ideographic_advance {
+      // The same font instance as ex and ch (automatic wght and opsz).
+      units.ideographic_advance = Some(primary.ideographic_advance as f64);
     }
     units
   }

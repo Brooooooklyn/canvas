@@ -277,17 +277,20 @@ struct skiac_font_units {
   float lh;
 };
 
-// The primary font's x-height (0 when the font has none), "0" advance and
-// cap height, in px (skiac_font_collection_primary_font_units).
+// The primary font's x-height (0 when the font has none), "0" advance, cap
+// height and U+6C34 advance (when it has the glyph), in px
+// (skiac_font_collection_primary_font_units).
 struct skiac_primary_font_units {
   float x_height;
   float zero_width;
   float cap_height;
+  float ideographic_advance;
+  bool has_ideographic_advance;
 };
 
 extern "C" {
-// The ex, ch and cap metrics of the primary font of `request`, read off the
-// font without shaping; false when it has no family font (shaper.cpp).
+// The ex, ch, cap and ic metrics of the primary font of `request`, read off
+// the font without shaping; false when it has no family font (shaper.cpp).
 bool skiac_font_collection_primary_font_units(
     skiac_font_collection* c_collection,
     const skiac_text_request* request,

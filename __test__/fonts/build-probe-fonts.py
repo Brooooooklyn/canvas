@@ -4,8 +4,9 @@
 #   uv run --with fonttools --with brotli python __test__/fonts/build-probe-fonts.py \
 #     <NotoSansDevanagari-Regular source (.ttf/.woff2)> <Noto CJK subset-halt .otf>
 #
-# `build-probe-fonts.py nominal` builds only NominalProbe.ttf, and
-# `build-probe-fonts.py lowx` only LowXProbe.ttf.
+# `build-probe-fonts.py nominal` builds only NominalProbe.ttf,
+# `build-probe-fonts.py lowx` only LowXProbe.ttf, and `build-probe-fonts.py ic`
+# only IcWghtProbe.ttf and IcOpszProbe.ttf.
 #
 # Sources:
 # - Lato-Regular.ttf, Harmattan-Regular.ttf: in this folder.
@@ -14,6 +15,8 @@
 #   Reserved Font Name).
 # - NotoSansCJKjp-Regular-subset-halt.otf: WPT fonts/noto/cjk (OFL 1.1),
 #   copied as is.
+# - ScienceGothic-VariableFont.ttf, Newsreader-opsz-only.ttf: in this folder
+#   (OFL 1.1).
 #
 # Lato has the Reserved Font Name "Lato" and Harmattan "Fouta" (and the
 # trademark "Harmattan"), so each modified copy gets a new family name.
@@ -28,10 +31,13 @@ from fontTools.subset import Options, Subsetter
 from fontTools.ttLib import TTFont, newTable
 from fontTools.ttLib.tables._c_m_a_p import cmap_format_4
 from fontTools.ttLib.tables._t_r_a_k import TrackData, TrackTableEntry
+from fontTools.varLib.instancer import instantiateVariableFont
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 LATO = os.path.join(HERE, 'Lato-Regular.ttf')
 HARMATTAN = os.path.join(HERE, 'Harmattan-Regular.ttf')
+SCIENCE_GOTHIC = os.path.join(HERE, 'ScienceGothic-VariableFont.ttf')
+NEWSREADER_OPSZ = os.path.join(HERE, 'Newsreader-opsz-only.ttf')
 
 
 def rename(font, family):
@@ -122,6 +128,38 @@ def low_x_probe():
             table.cmap[ord('x')] = underscore
     rename(f, 'LowXProbe')
     save(f, 'LowXProbe.ttf')
+
+
+def ic_probe(src, pin, family, name):
+    # The ASCII subset of a variable font, the axes of `pin` pinned, and
+    # U+6C34 mapped to the "M" glyph, whose advance moves with the axis left,
+    # so the ic unit tells which instance of the font it was read from.
+    f = TTFont(src)
+    opts = Options()
+    opts.layout_features = ['*']
+    opts.name_IDs = ['*']
+    opts.name_languages = ['*']
+    opts.notdef_outline = True
+    s = Subsetter(opts)
+    s.populate(unicodes=range(0x20, 0x7F))
+    s.subset(f)
+    if pin:
+        f = instantiateVariableFont(f, pin)
+    m = f.getBestCmap()[ord('M')]
+    for table in f['cmap'].tables:
+        if table.isUnicode():
+            table.cmap[0x6C34] = m
+    rename(f, family)
+    save(f, name)
+
+
+def ic_probes():
+    # IcWghtProbe: Science Gothic's wght axis (100..900), "M" 1930/1986/2188
+    # units at 100/400/900. IcOpszProbe: Newsreader's opsz axis (6..72),
+    # "M" 2196/1910/2048 units at 6/18/72.
+    ic_probe(SCIENCE_GOTHIC, {'CTRS': 0, 'slnt': 0, 'wdth': 100}, 'IcWghtProbe',
+             'IcWghtProbe.ttf')
+    ic_probe(NEWSREADER_OPSZ, None, 'IcOpszProbe', 'IcOpszProbe.ttf')
 
 
 def chws_probe(halt_src):
@@ -227,11 +265,17 @@ def main():
         # Only LowXProbe.ttf, which needs no outside source.
         low_x_probe()
         return
+    if sys.argv[1:] == ['ic']:
+        # Only IcWghtProbe.ttf and IcOpszProbe.ttf, which need no outside
+        # source.
+        ic_probes()
+        return
     deva_src, halt_src = sys.argv[1], sys.argv[2]
     locl_probe()
     script_probe()
     nominal_probe()
     low_x_probe()
+    ic_probes()
     chws_probe(halt_src)
     arabic_split()
     sym_cmap_probe()

@@ -27,8 +27,8 @@ const std::string& HostLanguage();
 
 // The inputs a canvas font request picks its fonts with, made in one place
 // (ResolveFontRequest) for every path that must pick the fonts the shaper
-// picks: the shaper and the ic unit
-// (skiac_font_collection_ideographic_advance: Blink's FontSizes::Ic reads the
+// picks: the shaper and the ex, ch, cap and ic units
+// (skiac_font_collection_primary_font_units: Blink's FontSizes reads the
 // primary font of the canvas font, the one its text uses):
 // FontDescription::LocaleOrDefault (D19) and that locale's font settings
 // (LocaleFontFamilies, D20).

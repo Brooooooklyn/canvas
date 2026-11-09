@@ -345,6 +345,8 @@ pub mod ffi {
     pub x_height: f32,
     pub zero_width: f32,
     pub cap_height: f32,
+    pub ideographic_advance: f32,
+    pub has_ideographic_advance: bool,
   }
 
   /// skia_c.hpp skiac_text_request: the text (not NUL-terminated) and the
@@ -1566,12 +1568,6 @@ pub mod ffi {
     ) -> bool;
 
     pub fn skiac_font_collection_destroy(c_font_collection: *mut skiac_font_collection);
-
-    pub fn skiac_font_collection_ideographic_advance(
-      c_collection: *mut skiac_font_collection,
-      request: *const skiac_text_request,
-      advance: *mut f32,
-    ) -> bool;
 
     pub fn skiac_font_collection_primary_font_units(
       c_collection: *mut skiac_font_collection,
@@ -6622,23 +6618,11 @@ impl FontCollection {
     unsafe { ffi::skiac_font_collection_set_alias(self.0, family.as_ptr(), alias_name.as_ptr()) }
   }
 
-  /// The advance of U+6C34 in the primary face of the `settings` font (the
-  /// first of its families that exists), or None when no family exists or
-  /// that face has no such glyph. Blink's ideographic advance, for the ic
-  /// unit.
-  pub fn ideographic_advance(&self, settings: &TextSettings) -> Option<f32> {
-    let mut advance = 0.0;
-    settings
-      .with_request("", |request| unsafe {
-        ffi::skiac_font_collection_ideographic_advance(self.0, request, &mut advance)
-      })
-      .then_some(advance)
-  }
-
-  /// The x-height (0 when the font has none), "0" advance and cap height of
-  /// the primary font of the `settings` font, read off the font without
-  /// shaping (Blink's SimpleFontData metrics for ex, ch and cap); None when
-  /// no family font with glyphs exists.
+  /// The x-height (0 when the font has none), "0" advance, cap height and
+  /// U+6C34 advance (when it has the glyph) of the primary font of the
+  /// `settings` font, read off the font without shaping (Blink's
+  /// SimpleFontData metrics for ex, ch, cap and ic); None when no family font
+  /// with glyphs exists.
   pub fn primary_font_units(
     &self,
     settings: &TextSettings,
@@ -7400,9 +7384,10 @@ mod text_line_tests {
     assert!(!kept(&collection, &settings, "a"));
   }
 
-  /// The ic read (ideographic_advance, for letterSpacing, wordSpacing and
-  /// filter lengths) does the same, also when the face has no U+6C34: 300
-  /// variation lists read with no text layout drop the line laid out before.
+  /// The ic read (primary_font_units' U+6C34 advance, for letterSpacing,
+  /// wordSpacing and filter lengths) does the same, also when the face has
+  /// no U+6C34: 300 variation lists read with no text layout drop the line
+  /// laid out before.
   #[test]
   fn ideographic_advance_drops_the_caches_past_the_budget() {
     let mut settings = settings();
@@ -7417,7 +7402,11 @@ mod text_line_tests {
         tag: wght,
         value: 100.0 + i as f32,
       }];
-      assert_eq!(collection.ideographic_advance(&settings), None, "read {i}");
+      let units = collection.primary_font_units(&settings);
+      assert!(
+        units.is_some_and(|units| !units.has_ideographic_advance),
+        "read {i}"
+      );
     }
     settings.variations = Vec::new();
     assert!(!kept(&collection, &settings, "a"));

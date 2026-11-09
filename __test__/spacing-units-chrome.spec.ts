@@ -232,3 +232,46 @@ test.serial('ex is 0.5em when the "x" glyph is all below the baseline', (t) => {
     }
   })
 })
+
+// Chrome 157 reads ic off the primary font as it reads ch and ex: the advance
+// of the nominal U+6C34 in the font instance its text uses
+// (SimpleFontData::IdeographicAdvanceWidth, simple_font_data.cc:435-445), so
+// with the automatic wght of the weight and the automatic opsz of the size.
+// IcWghtProbe.ttf (Science Gothic, wght 100..900) and IcOpszProbe.ttf
+// (Newsreader, opsz 6..72) map U+6C34 to "M", whose advance moves with the
+// axis: 900 40px is 43.76px, not the default instance's 39.72px. Fixture:
+// fixtures/text-fonts/spacing-units-ic-axes.json (FontFace SpIcWght with
+// weight 100 900, SpIcOpsz).
+const IC_AXES: { shaped: Record<string, number>; spacing: Row[] } = JSON.parse(
+  readFileSync(join(__dirname, 'fixtures', 'text-fonts', 'spacing-units-ic-axes.json'), 'utf8'),
+)
+
+GlobalFonts.registerFromPath(join(__dirname, 'fonts', 'IcWghtProbe.ttf'), 'SpIcWght')
+GlobalFonts.registerFromPath(join(__dirname, 'fonts', 'IcOpszProbe.ttf'), 'SpIcOpsz')
+
+test.serial('ic spacing reads U+6C34 from the instance of the automatic wght and opsz', (t) => {
+  t.is(IC_AXES.spacing.length, 48)
+  t.true(Math.abs(IC_AXES.shaped['900 40px SpIcWght'] - 43.76) < 1e-3)
+  withBothRenderers((renderer) => {
+    for (const row of IC_AXES.spacing) {
+      const ours = run(row)
+      const c = row.chrome
+      const label = `${renderer} ${row.id}`
+      t.is(ours.letterSpacing, c.letterSpacing, label)
+      t.is(ours.wordSpacing, c.wordSpacing, label)
+      t.is(ours.font, c.font, label)
+      // Chrome's px. Our portable renderer's variable font advances can be
+      // a few thousandths of a px off CoreText's (its text too), so 0.01.
+      t.true(
+        Math.abs(ours.lsPx - c.lsPx) < 0.01 && Math.abs(ours.wsPx - c.wsPx) < 0.01,
+        `${label} ${ours.lsPx} ${ours.wsPx}`,
+      )
+      // Exactly our own shaped U+6C34 in that font, times the number.
+      const ctx = context()
+      ctx.font = c.font
+      const water = ctx.measureText('\u6C34').width
+      const n = parseFloat(row.ops[1][1]!)
+      t.true(Math.abs(Math.max(ours.lsPx, ours.wsPx) - n * water) < 1e-3, `${label} ${water}`)
+    }
+  })
+})

@@ -1832,10 +1832,6 @@ void skiac_text_draw(skiac_canvas* c_canvas,
 // marking it used (tests).
 bool skiac_text_line_kept(skiac_font_collection* c_collection,
                           const skiac_text_request* request);
-bool skiac_font_collection_ideographic_advance(
-    skiac_font_collection* c_collection,
-    const skiac_text_request* request,
-    float* advance);
 void skiac_canvas_reset_transform(skiac_canvas* c_canvas);
 bool skiac_canvas_get_device_clip_bounds(skiac_canvas* c_canvas, int32_t* ltrb);
 void skiac_canvas_clip_rect(skiac_canvas* c_canvas,

@@ -1556,21 +1556,23 @@ void LayOutLineBlink(skiac_font_collection* c_collection,
   *line = std::move(scratch);
 }
 
-// The x-height, "0" advance and cap height of the primary font of `request`
-// for the ex, ch and cap units: Blink's FontSizes::Ex, Ch and Cap
-// (css_to_length_conversion_data.cc:101-195) read the SimpleFontData of
-// Font::PrimaryFont() and PrimaryFontWithDigitZero(), the first family font
-// whether or not it has the glyph (font_fallback_list.cc:88-148), whose
-// metrics come from the font itself, not from shaping
-// (simple_font_data.cc:137-161 and :234-244): the cap height and x-height
-// are SkFontMetrics', on Apple the x-height is the top of the nominal "x"
-// glyph's outline, and the "0" advance is the nominal glyph's
-// (WidthForGlyph, :549-557), 0.5em when the font has none (:559-596). So a
-// ccmp that substitutes "0" or "x" changes nothing. The glyph reads use the
-// primary family entry's font, as LineFonts::Finish makes it (Blink's
-// SimpleFontData::font_, synthetic bold and italic too). False when the
-// request has no family font with glyphs: then ex is 0.5em and ch and cap
-// are 0, as the shaped empty typeface gave.
+// The x-height, "0" advance, cap height and U+6C34 advance of the primary
+// font of `request` for the ex, ch, cap and ic units: Blink's FontSizes::Ex,
+// Ch, Cap and Ic (css_to_length_conversion_data.cc:101-195) read the
+// SimpleFontData of Font::PrimaryFont(), PrimaryFontWithDigitZero() and
+// PrimaryFontWithCjkWater(), the first family font whether or not it has the
+// glyph (font_fallback_list.cc:88-148), whose metrics come from the font
+// itself, not from shaping (simple_font_data.cc:137-161, :234-244 and
+// :435-473): the cap height and x-height are SkFontMetrics', on Apple the
+// x-height is the top of the nominal "x" glyph's outline, and the "0" and
+// U+6C34 advances are the nominal glyphs' (WidthForGlyph, :549-557), 0.5em
+// for a font with no "0" (:559-596), none for a font with no U+6C34 (then ic
+// is 1em). So a ccmp that substitutes "0" or "x" changes nothing. The glyph
+// reads use the primary family entry's font, as LineFonts::Finish makes it
+// (Blink's SimpleFontData::font_: the instance text uses, automatic wght and
+// opsz too, synthetic bold and italic too). False when the request has no
+// family font with glyphs: then ex is 0.5em, ch and cap are 0, as the shaped
+// empty typeface gave, and ic is 1em.
 bool skiac_font_collection_primary_font_units(
     skiac_font_collection* c_collection,
     const skiac_text_request* request,
@@ -1605,6 +1607,12 @@ bool skiac_font_collection_primary_font_units(
   // SimpleFontData::GlyphForCharacter: HarfBuzz's cmap.
   const SkGlyphID zero = HbNominalGlyph(c_collection, family.face.get(), '0');
   units->zero_width = zero ? font.getWidth(zero) : family.size / 2;
+  // SimpleFontData::IdeographicAdvanceWidth (simple_font_data.cc:435-445):
+  // the nominal U+6C34's advance, none when the font has no such glyph.
+  const SkGlyphID water =
+      HbNominalGlyph(c_collection, family.face.get(), 0x6C34);
+  units->has_ideographic_advance = water != 0;
+  units->ideographic_advance = water ? font.getWidth(water) : 0;
 #if defined(__APPLE__)
   if (SystemFontRenderer() && units->x_height != 0) {
     if (const SkGlyphID x =

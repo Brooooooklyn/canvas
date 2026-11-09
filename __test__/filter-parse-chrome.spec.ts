@@ -864,6 +864,62 @@ test('ch and ex in ctx.filter read the nominal "0" and "x", not the ccmp glyphs'
   }
 })
 
+// Chrome 157 OffscreenCanvas: ic and ric in ctx.filter read the nominal
+// U+6C34 of the instance the canvas font's text uses (automatic wght and
+// opsz), as the spacings do. IcWghtProbe.ttf and IcOpszProbe.ttf map U+6C34
+// to "M", whose advance moves with the wght and opsz axes. Rows:
+// fixtures/text-fonts/spacing-units-ic-axes.json, both text renderers.
+test('ic in ctx.filter reads U+6C34 from the instance of the automatic wght and opsz', (t) => {
+  interface FilterRow {
+    id: string
+    font: string
+    filter: string
+    chrome: { filter: string; pixel?: number[]; center?: number }
+  }
+  const { filter: rows }: { filter: FilterRow[] } = JSON.parse(
+    readFileSync(join(__dirname, 'fixtures', 'text-fonts', 'spacing-units-ic-axes.json'), 'utf8'),
+  )
+  t.is(rows.length, 32)
+  GlobalFonts.registerFromPath(join(__dirname, 'fonts', 'IcWghtProbe.ttf'), 'SpIcWght')
+  GlobalFonts.registerFromPath(join(__dirname, 'fonts', 'IcOpszProbe.ttf'), 'SpIcOpsz')
+  const before = getTextRenderer()
+  try {
+    for (const renderer of ['portable', 'system'] as const) {
+      setTextRenderer(renderer)
+      for (const row of rows) {
+        const label = `${renderer} ${row.id}`
+        if (row.chrome.pixel) {
+          const ctx = createCanvas(100, 40).getContext('2d')
+          ctx.font = row.font
+          ctx.filter = row.filter
+          t.is(ctx.filter, row.chrome.filter, label)
+          ctx.fillStyle = 'rgb(0 0 255)'
+          ctx.fillRect(10, 10, 20, 20)
+          t.deepEqual(px(ctx, 40, 20), row.chrome.pixel, label)
+        } else {
+          const ctx = createCanvas(400, 4).getContext('2d')
+          ctx.font = row.font
+          ctx.filter = row.filter
+          ctx.fillStyle = 'blue'
+          ctx.fillRect(0, 0, 1, 4)
+          const data = ctx.getImageData(0, 1, 400, 1).data
+          let sum = 0
+          let weight = 0
+          for (let x = 2; x < 400; x++) {
+            if (data[x * 4] > 0) {
+              sum += (x + 0.5) * data[x * 4 + 3]
+              weight += data[x * 4 + 3]
+            }
+          }
+          t.true(weight > 0 && Math.abs(sum / weight - row.chrome.center!) < 0.02, `${label} ${sum / weight}`)
+        }
+      }
+    }
+  } finally {
+    setTextRenderer(before)
+  }
+})
+
 // Chrome 157 OffscreenCanvas on macOS: LowXProbe.ttf (Lato whose "x" is the
 // underscore glyph, all below the baseline) has no x-height there
 // (FontMetrics::HasXHeight), so ex in ctx.filter is 0.5 x the offscreen em
