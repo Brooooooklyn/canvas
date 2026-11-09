@@ -887,8 +887,11 @@ const DEDUPED_PROBE = `
       ? GlobalFonts.registerFromPath(PROBE_FONTS + '/' + file, name)
       : GlobalFonts.register(readFileSync(PROBE_FONTS + '/' + file), name)
   const FONTS = ['40px A', '40px B', '40px C', '40px D', '40px NoSuchFamily', '40px Lato', '40px "EB Garamond"']
-  const out = { states: [] }
-  const state = () => out.states.push(FONTS.map(width))
+  const out = { states: [], has: [] }
+  const state = () => {
+    out.states.push(FONTS.map(width))
+    out.has.push(['A', 'B', 'C', 'D'].map((name) => GlobalFonts.has(name)))
+  }
   const lato = register('Lato-Regular.ttf', 'A')
   const again = register('Lato-Regular.ttf', 'B')
   out.sameKey = lato.typefaceId === again.typefaceId
@@ -942,6 +945,14 @@ for (const renderer of ['portable', 'system'] as const) {
           }
           for (const [i, widths] of after.entries()) {
             const state = `${at}, state ${i + 1}`
+            // The names listed, which tells a dropped alias from one that
+            // moved to EB Garamond also where the fallback is EB Garamond
+            // (a host with no installed fonts).
+            t.deepEqual(
+              out.has[i + 1],
+              target === 'lato' ? [false, true, false, false] : [true, true, true, true],
+              state,
+            )
             if (target === 'lato') {
               // A, C and D fall back like an unknown name; B is EB Garamond.
               for (const j of [0, 2, 3]) {
