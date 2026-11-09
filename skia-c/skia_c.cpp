@@ -4729,6 +4729,10 @@ size_t skiac_font_collection_unregister_all(
 bool skiac_font_collection_set_alias(skiac_font_collection* c_font_collection,
                                      const char* family,
                                      const char* alias) {
+  // A name that starts with \x01 is no family (font_families.cpp tags).
+  if (family[0] == '\x01' || alias[0] == '\x01') {
+    return false;
+  }
   c_font_collection->prepareLookup();
   auto style = SkFontStyle();
   auto typeface = c_font_collection->assets->matchFamilyStyle(family, style);
@@ -4753,14 +4757,15 @@ bool skiac_font_collection_set_alias(skiac_font_collection* c_font_collection,
     // local(Arial), lang ja "40px Arial, -webkit-body" draws Arial, 48.93,
     // also after the same text was measured before.
     if (c_font_collection->addSetAlias(family, alias, /*registered=*/false,
-                                       installed)) {
+                                       installed, typeface->uniqueID())) {
       c_font_collection->markCachesDirty();
     }
     return true;
   }
 
   // Track the alias for rebuild (only valid mappings)
-  c_font_collection->addSetAlias(family, alias, /*registered=*/true, installed);
+  c_font_collection->addSetAlias(family, alias, /*registered=*/true, installed,
+                                 typeface->uniqueID());
 
   // Register the alias - this will shadow any existing font with the same name
   c_font_collection->assets->registerTypeface(std::move(typeface),

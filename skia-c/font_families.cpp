@@ -300,12 +300,164 @@ class FamilyResolver {
   }
 
   // FontCache::GetFontData(description, name): the platform font manager's
-  // match for one family name.
+  // match for one family name. A family registered over an installed one
+  // (both kinds of faces, Kinds) is a FontFace that only a family list
+  // naming it uses (CSSFontSelector::GetFontData asks FontFaceCache for a
+  // named family only): the font cache gives the installed faces, under the
+  // tagged name "\x01i\x01" + family (MakeSplitFamily). Chrome 157, Lato
+  // FontFace "Helvetica": "40px sans-serif" is still Helvetica, 48.93;
+  // "Times": "40px serif" is still Times, 48.89 (followups/
+  // item1-registered-installed-family/cmp.txt). A name no installed font
+  // has keeps serving every lookup (Node has no other way to give a
+  // fontless host its fonts; a deviation).
   bool FindSystem(std::string_view name, std::string* out) const {
-    return FindSystem(name, out, true);
+    if (!name.empty() && name.front() == '\x01') {
+      return false;  // a tagged name is never asked for
+    }
+    if (!FindSystem(name, out, true)) {
+      return false;
+    }
+#if defined(__APPLE__)
+    if (system_ && *out == kSystemUiFamily) {
+      return true;
+    }
+#endif
+    const uint8_t kinds = Kinds(*out);
+    if ((kinds & kWebFaces) &&
+        (kinds & (kInstalledFaces | kInstalledElsewhere))) {
+      *out = std::string(kInstalledTag) + *out;
+    }
+    return true;
+  }
+
+  // A web font (IsWebFont) named by a family list: FontFaceCache's faces
+  // only, for every style (CSSSegmentedFontFace picks among them, and
+  // synthesizes bold or italic from them). When the family also has
+  // installed faces in `assets`, under the tagged name "\x01w\x01" +
+  // family (MakeSplitFamily). Chrome 157, Lato FontFace "Helvetica":
+  // "bold 40px Helvetica" is Lato, 47.64; FontFace "Helvetica" with
+  // local(Arial) (setAlias('Arial', 'Helvetica')): bold is Arial made bold,
+  // 48.93.
+  bool FindWebFont(std::string_view name, std::string* out) const {
+    if (!Find(name, out)) {
+      return false;
+    }
+    if (Kinds(*out) & kInstalledFaces) {
+      *out = std::string(kWebTag) + *out;
+    }
+    return true;
+  }
+
+  // The faces of a tagged name (MakeSplitFamily): `web` the family's web
+  // faces, in registration order, else its installed faces in `assets`.
+  // `elsewhere` gets the installed family outside `assets` when there is
+  // none in it.
+  std::vector<sk_sp<SkTypeface>> Faces(std::string_view name,
+                                       bool web,
+                                       sk_sp<SkFontStyleSet>* elsewhere) const {
+    std::vector<sk_sp<SkTypeface>> faces;
+    const std::string folded = Fold(name);
+    std::vector<SkTypefaceID> aliases;
+    for (const auto& entry : c_collection_->set_aliases) {
+      if (entry.active && entry.face_id && Fold(entry.alias) == folded) {
+        aliases.push_back(entry.face_id);
+      }
+    }
+    auto it = c_collection_->folded_families.find(folded);
+    if (it != c_collection_->folded_families.end()) {
+      for (const auto& spelling : it->second) {
+        // The provider's own family, not a tagged one.
+        const sk_sp<SkFontStyleSet> set =
+            c_collection_->assets->TypefaceFontProvider::onMatchFamily(
+                spelling.c_str());
+        for (int i = 0; set && i < set->count(); ++i) {
+          sk_sp<SkTypeface> face = set->createTypeface(i);
+          if (!face) {
+            continue;
+          }
+          const bool alias = std::find(aliases.begin(), aliases.end(),
+                                       face->uniqueID()) != aliases.end();
+          const bool system = IsSystemTypeface(c_collection_, face.get());
+          SkString family;
+          face->getFamilyName(&family);
+          const bool own = Fold({family.c_str(), family.size()}) == folded;
+          // A registered face of the family itself (registerFromPath of a
+          // font file, which also registers it under its own name next to
+          // an alias) is that family again, not a FontFace over it: it is
+          // neither kind, and the family keeps its installed faces first
+          // (a deviation: a FontFace of its own name would win in Chrome).
+          const bool keep = web ? alias || (!system && !own) : system && own;
+          if (keep &&
+              std::find(faces.begin(), faces.end(), face) == faces.end()) {
+            faces.push_back(std::move(face));
+          }
+        }
+      }
+    }
+    if (!web && faces.empty() && elsewhere) {
+      *elsewhere = InstalledElsewhere(name);
+    }
+    return faces;
   }
 
  private:
+  static constexpr char kInstalledTag[] = "\x01i\x01";
+  static constexpr char kWebTag[] = "\x01w\x01";
+  static constexpr uint8_t kWebFaces = 1;
+  static constexpr uint8_t kInstalledFaces = 2;
+  static constexpr uint8_t kInstalledElsewhere = 4;
+
+  // Which kinds of faces the family `name` has, all its spellings
+  // together (FontFaceCache folds case): web faces (a registered face of
+  // another family, or the face a setAlias call names), installed faces in
+  // `assets` (an installed face of that family: loadSystemFonts,
+  // loadFontsFromDir), and an installed family outside `assets` (CoreText's
+  // match with the system renderer, else the asset font manager's). Only a
+  // family `assets` has can have web faces; cached per families_generation.
+  uint8_t Kinds(std::string_view name) const {
+    if (!IsRegistered(name)) {
+      return 0;
+    }
+    if (c_collection_->family_kinds_generation !=
+        c_collection_->families_generation) {
+      c_collection_->family_kinds.clear();
+      c_collection_->family_kinds_generation =
+          c_collection_->families_generation;
+    }
+    std::string key = Fold(name);
+    auto found = c_collection_->family_kinds.find(key);
+    if (found != c_collection_->family_kinds.end()) {
+      return found->second;
+    }
+    uint8_t kinds = 0;
+    if (!Faces(name, true, nullptr).empty()) {
+      kinds |= kWebFaces;
+      if (!Faces(name, false, nullptr).empty()) {
+        kinds |= kInstalledFaces;
+      } else if (InstalledElsewhere(name)) {
+        kinds |= kInstalledElsewhere;
+      }
+    }
+    c_collection_->family_kinds.emplace(std::move(key), kinds);
+    return kinds;
+  }
+
+  // The installed family `name` outside `assets`, null for none.
+  sk_sp<SkFontStyleSet> InstalledElsewhere(std::string_view name) const {
+    const sk_sp<SkFontMgr>& manager = c_collection_->font_mgr;
+    if (!manager) {
+      return nullptr;
+    }
+    std::string family(name);
+#if defined(__APPLE__)
+    // CoreText's match, never a download (MatchCoreText).
+    if (system_ && !MatchCoreText(name, &family)) {
+      return nullptr;
+    }
+#endif
+    sk_sp<SkFontStyleSet> set = manager->matchFamily(family.c_str());
+    return set && set->count() > 0 ? set : nullptr;
+  }
   bool FindSystem(std::string_view name,
                   std::string* out,
                   bool allow_alternate) const {
@@ -991,9 +1143,12 @@ std::vector<SkString> ResolveFontFamilies(skiac_font_collection* c_collection,
                              : std::string_view(),
                          &name, &registered);
     } else {
-      // FontFallbackList does not ask the system for an empty name.
-      found = family.name_len > 0 &&
-              resolver.FindSystem({family.name, family.name_len}, &name);
+      // FontFallbackList does not ask the system for an empty name. A web
+      // font comes from FontFaceCache, before the font cache.
+      const std::string_view named(family.name, family.name_len);
+      found = !named.empty() && named.front() != '\x01' &&
+              (resolver.IsWebFont(named) ? resolver.FindWebFont(named, &name)
+                                         : resolver.FindSystem(named, &name));
     }
     if (found) {
       // A -webkit-body that is not the description's generic family is
@@ -1273,6 +1428,29 @@ bool skiac_font_collection_default_font_units(
   units->lh = static_cast<float>(lroundf(ascent) + lroundf(descent) +
                                  lroundf(metrics.fLeading));
   return true;
+}
+
+sk_sp<SkFontStyleSet> MakeSplitFamily(skiac_font_collection* c_collection,
+                                      std::string_view tagged) {
+  // "\x01" kind "\x01" family (FamilyResolver::FindSystem, FindWebFont).
+  if (tagged.size() < 4 || tagged[0] != '\x01' || tagged[2] != '\x01' ||
+      (tagged[1] != 'i' && tagged[1] != 'w')) {
+    return nullptr;
+  }
+  const std::string_view name = tagged.substr(3);
+  FamilyResolver resolver(c_collection);
+  sk_sp<SkFontStyleSet> elsewhere;
+  std::vector<sk_sp<SkTypeface>> faces =
+      resolver.Faces(name, tagged[1] == 'w', &elsewhere);
+  if (faces.empty()) {
+    return elsewhere;
+  }
+  auto set =
+      sk_make_sp<TypefaceFontStyleSet>(SkString(name.data(), name.size()));
+  for (auto& face : faces) {
+    set->appendTypeface(std::move(face));
+  }
+  return set;
 }
 
 uint32_t skiac_font_collection_register_system_font(

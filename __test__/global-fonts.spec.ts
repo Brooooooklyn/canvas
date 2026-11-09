@@ -1,3 +1,4 @@
+import { spawnSync } from 'node:child_process'
 import { copyFileSync, mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, dirname } from 'node:path'
@@ -566,4 +567,65 @@ test.serial('a kept font draws the same pixels after another font is removed', (
   ctx.font = '28px FreedKeepA'
   ctx.fillText('Kept glyphs 123', 4, 36)
   t.deepEqual(ctx.getImageData(0, 0, 240, 50).data, before)
+})
+
+// A name registered over an installed family works like a FontFace (Chrome's
+// FontFaceCache): a family list that names it draws the registered faces,
+// for every style; the generic families and the standard font keep the
+// installed faces. In a child process, as the registrations would change the
+// other tests. Lato "Ag" 40px = 47.64 on every OS.
+test.serial('a name registered over an installed family is used only where it is named', (t) => {
+  const dir = mkdtempSync(join(tmpdir(), 'canvas-installed-family-'))
+  t.teardown(() => rmSync(dir, { recursive: true, force: true }))
+  copyFileSync(fontPath, join(dir, 'SourceSerifPro-Regular.ttf'))
+  // The serif setting and fontconfig's serif list (font_families.cpp
+  // SettingsFamily, FindFontconfig, AlternateFamilyName), in lookup order.
+  const SERIF = [
+    'Times New Roman',
+    'Tinos',
+    'Liberation Serif',
+    'Times',
+    'Noto Serif',
+    'DejaVu Serif',
+    'Thorndale AMT',
+    'Luxi Serif',
+    'Nimbus Roman No9 L',
+    'Nimbus Roman',
+  ]
+  const script = `
+    const { createCanvas, GlobalFonts } = require(${JSON.stringify(join(__dirname, '..', 'index.js'))})
+    const width = (font) => {
+      const ctx = createCanvas(10, 10).getContext('2d')
+      ctx.font = font
+      return ctx.measureText('Ag').width
+    }
+    const FONTS = ['40px "Source Serif Pro"', 'bold 40px "Source Serif Pro"', '40px NoSuchFamily, "Source Serif Pro"']
+    const out = { loaded: GlobalFonts.loadFontsFromDir(${JSON.stringify(dir)}) }
+    out.before = FONTS.map(width)
+    GlobalFonts.registerFromPath(${JSON.stringify(join(__dirname, 'fonts', 'Lato-Regular.ttf'))}, 'Source Serif Pro')
+    out.after = FONTS.map(width)
+    out.serifName = ${JSON.stringify(SERIF)}.find((name) => GlobalFonts.has(name)) ?? null
+    if (out.serifName) {
+      out.serifBefore = width('40px serif')
+      GlobalFonts.registerFromPath(${JSON.stringify(join(__dirname, 'fonts', 'Lato-Regular.ttf'))}, out.serifName)
+      out.serifAfter = width('40px serif')
+      out.serifNamed = width('40px "' + out.serifName + '"')
+    }
+    console.log(JSON.stringify(out))`
+  const child = spawnSync(process.execPath, ['-e', script], { encoding: 'utf8', timeout: 30_000 })
+  t.is(child.status, 0, child.stderr)
+  const out = JSON.parse(child.stdout)
+  const LATO = 47.63996887207031
+  const near = (a: number, b: number) => Math.abs(a - b) <= 1e-3
+  t.is(out.loaded, 1)
+  for (const before of out.before) {
+    t.false(near(before, LATO), `before: ${before}`)
+  }
+  for (const after of out.after) {
+    t.true(near(after, LATO), `after: ${after}`)
+  }
+  if (out.serifName) {
+    t.true(near(out.serifAfter, out.serifBefore), `serif (${out.serifName}): ${out.serifBefore} -> ${out.serifAfter}`)
+    t.true(near(out.serifNamed, LATO), `"${out.serifName}": ${out.serifNamed}`)
+  }
 })
