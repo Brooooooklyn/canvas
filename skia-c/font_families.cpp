@@ -373,6 +373,12 @@ class FamilyResolver {
   // faces, in registration order, else its installed faces in `assets`.
   // `elsewhere` gets the installed family outside `assets` when there is
   // none in it.
+  // The provider lists each spelling's faces in the order they were
+  // registered under it; with several spellings the faces are merged by
+  // the order of the registrations and setAlias calls that listed them, so
+  // the spelling a font is registered under does not change which face
+  // comes first (installed Helvetica, EB Garamond as "helvetica", then Lato
+  // as "Helvetica": EB Garamond, as with Lato as "helvetica").
   std::vector<sk_sp<SkTypeface>> Faces(std::string_view name,
                                        bool web,
                                        sk_sp<SkFontStyleSet>* elsewhere) const {
@@ -386,6 +392,9 @@ class FamilyResolver {
     }
     auto it = c_collection_->folded_families.find(folded);
     if (it != c_collection_->folded_families.end()) {
+      // {registration order, face}, merged across the spellings below.
+      std::vector<std::pair<uint64_t, sk_sp<SkTypeface>>> listed;
+      const bool merge = it->second.size() > 1;
       for (const auto& spelling : it->second) {
         // The provider's own family, not a tagged one.
         const sk_sp<SkFontStyleSet> set =
@@ -408,10 +417,19 @@ class FamilyResolver {
           // neither kind, and the family keeps its installed faces first
           // (a deviation: a FontFace of its own name would win in Chrome).
           const bool keep = web ? alias || (!system && !own) : system && own;
-          if (keep &&
-              std::find(faces.begin(), faces.end(), face) == faces.end()) {
-            faces.push_back(std::move(face));
+          if (keep) {
+            const uint64_t order =
+                merge ? Order(spelling, face->uniqueID()) : 0;
+            listed.emplace_back(order, std::move(face));
           }
+        }
+      }
+      std::stable_sort(
+          listed.begin(), listed.end(),
+          [](const auto& a, const auto& b) { return a.first < b.first; });
+      for (auto& [order, face] : listed) {
+        if (std::find(faces.begin(), faces.end(), face) == faces.end()) {
+          faces.push_back(std::move(face));
         }
       }
     }
@@ -461,6 +479,18 @@ class FamilyResolver {
     }
     c_collection_->family_kinds.emplace(std::move(key), kinds);
     return kinds;
+  }
+
+  // When the provider listed the face `id` under `spelling`: the earliest
+  // registration (a font's name) or active setAlias call that did.
+  uint64_t Order(const std::string& spelling, SkTypefaceID id) const {
+    uint64_t order = c_collection_->assets->orderOf(spelling, id);
+    for (const auto& entry : c_collection_->set_aliases) {
+      if (entry.active && entry.face_id == id && entry.alias == spelling) {
+        order = std::min(order, entry.order);
+      }
+    }
+    return order;
   }
 
   // Whether `assets` itself has the family spelled `spelling`.

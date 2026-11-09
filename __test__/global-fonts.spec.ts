@@ -1033,3 +1033,111 @@ for (const renderer of ['portable', 'system'] as const) {
     }
   })
 }
+
+// Fonts registered under several spellings of an installed family: the face
+// text draws follows the order of the registrations and setAlias calls,
+// whatever spelling each used (EB Garamond first, then Roboto Mono: EB
+// Garamond, as with both under one spelling). And convertSVGTextToPath uses
+// the face canvas text and SVG images use: Lato registered as the installed
+// family gives the same path bytes as Lato under its own name. Right after
+// the calls, after an unrelated removal (a rebuild) and a renderer switch.
+const SPELLINGS_PROBE = `
+  const { createCanvas, GlobalFonts, setTextRenderer, convertSVGTextToPath } = require(process.env.PROBE_INDEX)
+  const { RENDERER, PROBE_STEPS, PROBE_DIR, PROBE_FONTS } = process.env
+  setTextRenderer(RENDERER)
+  const NAMES = ['Source Serif Pro', 'source serif pro', 'EB Garamond', 'Roboto Mono', 'Lato']
+  const width = (family) => {
+    const ctx = createCanvas(10, 10).getContext('2d')
+    ctx.font = '40px "' + family + '"'
+    return ctx.measureText('Ag').width
+  }
+  const path = (family) =>
+    convertSVGTextToPath(
+      '<svg xmlns="http://www.w3.org/2000/svg" width="200" height="60"><text x="5" y="45" font-size="40" font-family="' +
+        family + '">Ag</text></svg>',
+    ).toString('base64')
+  const out = { loaded: GlobalFonts.loadFontsFromDir(PROBE_DIR), installedPath: path('Source Serif Pro'), steps: [], states: [] }
+  const state = () =>
+    out.states.push({
+      widths: NAMES.map(width),
+      variations: NAMES.map((name) => GlobalFonts.hasVariations(name, 400, 5, 0)),
+      has: NAMES.map((name) => GlobalFonts.has(name)),
+      paths: NAMES.map(path),
+    })
+  // register:name:file, alias:from:to
+  for (const step of PROBE_STEPS.split(',')) {
+    const [kind, a, b] = step.split(':')
+    if (kind === 'register') out.steps.push(GlobalFonts.registerFromPath(PROBE_FONTS + '/' + b, a) !== null)
+    else if (kind === 'alias') out.steps.push(GlobalFonts.setAlias(a, b))
+    else if (kind === 'rebuild') GlobalFonts.remove(GlobalFonts.registerFromPath(PROBE_FONTS + '/Oswald.ttf', 'Unrelated'))
+    else if (kind === 'switch') {
+      setTextRenderer(RENDERER === 'system' ? 'portable' : 'system')
+      setTextRenderer(RENDERER)
+    } else state()
+  }
+  console.log(JSON.stringify(out))`
+
+for (const renderer of ['portable', 'system'] as const) {
+  test.serial(
+    `spellings of an installed family keep registration order, and SVG paths use the drawn face (${renderer})`,
+    (t) => {
+      const dir = mkdtempSync(join(tmpdir(), 'canvas-spellings-'))
+      t.teardown(() => rmSync(dir, { recursive: true, force: true }))
+      copyFileSync(fontPath, join(dir, 'SourceSerifPro-Regular.ttf'))
+      const near = (a: number, b: number) => Math.abs(a - b) <= 1e-3
+      const probe = (steps: string[]) => {
+        const child = spawnSync(process.execPath, ['-e', SPELLINGS_PROBE], {
+          encoding: 'utf8',
+          timeout: 30_000,
+          env: {
+            ...process.env,
+            RENDERER: renderer,
+            PROBE_STEPS: [...steps, 'state', 'rebuild', 'state', 'switch', 'state'].join(','),
+            PROBE_DIR: dir,
+            PROBE_FONTS: join(__dirname, 'fonts'),
+            PROBE_INDEX: join(__dirname, '..', 'index.js'),
+          },
+        })
+        t.is(child.status, 0, child.stderr)
+        const out = JSON.parse(child.stdout)
+        t.is(out.loaded, 1)
+        t.true(
+          out.steps.every((ok: boolean) => ok),
+          `${steps}: ${out.steps}`,
+        )
+        t.is(out.states.length, 3)
+        return out
+      }
+      const GARAMOND = 'register:EB Garamond:EBGaramond-Regular.ttf'
+      const ROBOTO = 'RobotoMono-VariableFont_wght.ttf'
+      for (const steps of [
+        ['register:source serif pro:EBGaramond-Regular.ttf', `register:Source Serif Pro:${ROBOTO}`],
+        ['register:Source Serif Pro:EBGaramond-Regular.ttf', `register:source serif pro:${ROBOTO}`],
+        [GARAMOND, 'alias:EB Garamond:source serif pro', `register:Source Serif Pro:${ROBOTO}`],
+        [GARAMOND, 'alias:EB Garamond:Source Serif Pro', `register:source serif pro:${ROBOTO}`],
+      ]) {
+        for (const [i, s] of probe(steps).states.entries()) {
+          const at = `${steps} state ${i}`
+          // Roboto Mono has a wght axis, EB Garamond and Source Serif Pro none.
+          t.true(s.variations[3], at)
+          for (const j of [0, 1]) {
+            t.true(near(s.widths[j], s.widths[2]), `${at}: ${s.widths[j]}, EB Garamond ${s.widths[2]}`)
+            t.false(s.variations[j], at)
+            t.true(s.has[j], at)
+            t.is(s.paths[j], s.paths[2], at)
+          }
+        }
+      }
+      const out = probe(['register:Source Serif Pro:Lato-Regular.ttf'])
+      for (const [i, s] of out.states.entries()) {
+        const at = `Lato as Source Serif Pro, state ${i}`
+        t.true(s.has[4], at)
+        t.not(s.paths[4], out.installedPath, at)
+        for (const j of [0, 1]) {
+          t.true(near(s.widths[j], s.widths[4]), `${at}: ${s.widths[j]}, Lato ${s.widths[4]}`)
+          t.is(s.paths[j], s.paths[4], at)
+        }
+      }
+    },
+  )
+}

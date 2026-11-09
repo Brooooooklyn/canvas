@@ -4921,8 +4921,9 @@ void skiac_svg_text_to_path(const uint8_t* data,
   SkMemoryStream svg_stream(data, length, false);
   SkDynamicMemoryWStream w_stream;
   c_collection->prepareLookup();
-  auto svg_dom =
-      SkSVGDOM::Builder().setFontManager(c_collection->assets).make(svg_stream);
+  auto svg_dom = SkSVGDOM::Builder()
+                     .setFontManager(napi_svg::MakeNamedFontMgr(c_collection))
+                     .make(svg_stream);
   auto svg_root = svg_dom->getRoot();
   auto svg_container_size =
       svg_root->intrinsicSize(SkSVGLengthContext(SkSize::Make(0, 0)));

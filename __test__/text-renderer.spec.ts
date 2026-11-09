@@ -813,6 +813,90 @@ macTest('variation queries of a name registered over Helvetica use the face text
   }
 })
 
+// Fonts registered under two spellings of Helvetica follow the order of the
+// registrations and setAlias calls, whatever spelling each used: EB Garamond
+// as "helvetica", then Roboto Mono as "Helvetica" draws EB Garamond, as with
+// Roboto Mono as "helvetica". convertSVGTextToPath uses the same face: Lato
+// registered as Helvetica gives the path bytes of Lato. Kept after a rebuild
+// and a renderer switch.
+const HELVETICA_SPELLINGS_PROBE = `
+const { join } = require('path')
+const { GlobalFonts, createCanvas, setTextRenderer, convertSVGTextToPath } = require('./index.js')
+const { RENDERER, PROBE_STEPS } = process.env
+setTextRenderer(RENDERER)
+const NAMES = ['Helvetica', 'helvetica', 'EB Garamond', 'Lato']
+const width = (family) => {
+  const ctx = createCanvas(10, 10).getContext('2d')
+  ctx.font = '40px "' + family + '"'
+  return ctx.measureText('Ag').width
+}
+const path = (family) =>
+  convertSVGTextToPath(
+    '<svg xmlns="http://www.w3.org/2000/svg" width="200" height="60"><text x="5" y="45" font-size="40" font-family="' +
+      family + '">Ag</text></svg>',
+  ).toString('base64')
+const out = { installedPath: path('Helvetica'), steps: [], states: [] }
+for (const step of PROBE_STEPS.split(',')) {
+  const [kind, a, b] = step.split(':')
+  if (kind === 'register') out.steps.push(GlobalFonts.registerFromPath(join('__test__', 'fonts', b), a) !== null)
+  else if (kind === 'alias') out.steps.push(GlobalFonts.setAlias(a, b))
+  else if (kind === 'rebuild') GlobalFonts.remove(GlobalFonts.registerFromPath(join('__test__', 'fonts', 'Oswald.ttf'), 'Unrelated'))
+  else if (kind === 'switch') {
+    setTextRenderer(RENDERER === 'system' ? 'portable' : 'system')
+    setTextRenderer(RENDERER)
+  } else
+    out.states.push({
+      widths: NAMES.map(width),
+      variations: NAMES.map((name) => GlobalFonts.hasVariations(name, 400, 5, 0)),
+      paths: NAMES.map(path),
+    })
+}
+console.log(JSON.stringify(out))
+`
+
+macTest('spellings of Helvetica keep registration order, and SVG paths use the drawn face on macOS', (t) => {
+  const near = (a: number, b: number) => Math.abs(a - b) <= 1e-3
+  const ROBOTO = 'RobotoMono-VariableFont_wght.ttf'
+  for (const renderer of ['portable', 'system']) {
+    const probe = (steps: string[]) => {
+      const out = macProbe(HELVETICA_SPELLINGS_PROBE, {
+        RENDERER: renderer,
+        PROBE_STEPS: [...steps, 'state', 'rebuild', 'state', 'switch', 'state'].join(','),
+      })
+      t.true(
+        out.steps.every((ok: boolean) => ok),
+        `${renderer} ${steps}: ${out.steps}`,
+      )
+      t.is(out.states.length, 3)
+      return out
+    }
+    for (const steps of [
+      ['register:helvetica:EBGaramond-Regular.ttf', `register:Helvetica:${ROBOTO}`],
+      ['register:Helvetica:EBGaramond-Regular.ttf', `register:helvetica:${ROBOTO}`],
+      ['register:EB Garamond:EBGaramond-Regular.ttf', 'alias:EB Garamond:helvetica', `register:Helvetica:${ROBOTO}`],
+    ]) {
+      for (const [i, s] of probe(steps).states.entries()) {
+        const at = `${renderer} ${steps} state ${i}`
+        for (const j of [0, 1]) {
+          t.true(near(s.widths[j], s.widths[2]), `${at}: ${s.widths[j]}, EB Garamond ${s.widths[2]}`)
+          // Roboto Mono has a wght axis, EB Garamond none.
+          t.false(s.variations[j], at)
+          t.is(s.paths[j], s.paths[2], at)
+        }
+      }
+    }
+    const out = probe(['register:Helvetica:Lato-Regular.ttf'])
+    for (const [i, s] of out.states.entries()) {
+      const at = `${renderer} Lato as Helvetica, state ${i}`
+      t.not(s.paths[3], out.installedPath, at)
+      for (const j of [0, 1]) {
+        t.true(near(s.widths[j], s.widths[3]), `${at}: ${s.widths[j]}, Lato ${s.widths[3]}`)
+        t.is(s.paths[j], s.paths[3], at)
+      }
+    }
+  }
+})
+
 const REMOVE_ALL_PROBE = `
 const { GlobalFonts, createCanvas, setTextRenderer } = require('./index.js')
 const width = () => {

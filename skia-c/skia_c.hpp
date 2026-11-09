@@ -447,6 +447,24 @@ class TypefaceFontProviderCustom : public TypefaceFontProvider {
     return id;
   }
 
+  // When the face `typeface_id` was registered under `name` (the earliest
+  // such name of a registration, installed ones too), UINT64_MAX for never.
+  uint64_t orderOf(const std::string& name, SkTypefaceID typeface_id) const {
+    uint64_t order = UINT64_MAX;
+    for (const auto& [id, font_info] : registered_fonts) {
+      if (!font_info.typeface ||
+          font_info.typeface->uniqueID() != typeface_id) {
+        continue;
+      }
+      for (size_t i = 0; i < font_info.aliases.size(); ++i) {
+        if (font_info.aliases[i] == name) {
+          order = std::min(order, font_info.orders[i]);
+        }
+      }
+    }
+    return order;
+  }
+
   // The registration (FontKey) whose face is `typeface_id`, 0 when it is an
   // installed font (macOS loadSystemFonts) or no registered one. An alias
   // face is the face of the font it names, so this also finds the font an
