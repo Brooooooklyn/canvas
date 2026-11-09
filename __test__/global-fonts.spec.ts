@@ -864,3 +864,98 @@ for (const renderer of ['portable', 'system'] as const) {
     }
   })
 }
+
+// The same file or buffer registered again under another name is the same
+// registration (one FontKey): an alias of that name, and an alias of the
+// alias, came from it, so removing it drops them (they do not move to
+// another font registered under the name, EB Garamond here). Removing the
+// other font keeps them. Kept after a rebuild (an unrelated font removed)
+// and a renderer switch, with each renderer, for remove() and
+// removeBatch().
+const DEDUPED_PROBE = `
+  const { readFileSync } = require('fs')
+  const { createCanvas, GlobalFonts, setTextRenderer } = require(process.env.PROBE_INDEX)
+  const { RENDERER, PROBE_HOW, PROBE_REMOVAL, PROBE_TARGET, PROBE_FONTS } = process.env
+  setTextRenderer(RENDERER)
+  const width = (font) => {
+    const ctx = createCanvas(10, 10).getContext('2d')
+    ctx.font = font
+    return ctx.measureText('Hamburgefonstiv').width
+  }
+  const register = (file, name) =>
+    PROBE_HOW === 'path'
+      ? GlobalFonts.registerFromPath(PROBE_FONTS + '/' + file, name)
+      : GlobalFonts.register(readFileSync(PROBE_FONTS + '/' + file), name)
+  const FONTS = ['40px A', '40px B', '40px C', '40px D', '40px NoSuchFamily', '40px Lato', '40px "EB Garamond"']
+  const out = { states: [] }
+  const state = () => out.states.push(FONTS.map(width))
+  const lato = register('Lato-Regular.ttf', 'A')
+  const again = register('Lato-Regular.ttf', 'B')
+  out.sameKey = lato.typefaceId === again.typefaceId
+  const garamond = register('EBGaramond-Regular.ttf', 'B')
+  out.aliases = [GlobalFonts.setAlias('B', 'C'), GlobalFonts.setAlias('C', 'D')]
+  state()
+  const removed = PROBE_TARGET === 'lato' ? lato : garamond
+  out.removed = PROBE_REMOVAL === 'batch' ? GlobalFonts.removeBatch([removed]) : Number(GlobalFonts.remove(removed))
+  state()
+  GlobalFonts.remove(GlobalFonts.registerFromPath(PROBE_FONTS + '/Oswald.ttf', 'Unrelated'))
+  state()
+  setTextRenderer(RENDERER === 'system' ? 'portable' : 'system')
+  setTextRenderer(RENDERER)
+  state()
+  console.log(JSON.stringify(out))`
+
+for (const renderer of ['portable', 'system'] as const) {
+  test.serial(`an alias of a font registered again under another name goes with it (${renderer})`, (t) => {
+    const near = (a: number, b: number) => Math.abs(a - b) <= 1e-3
+    for (const how of ['path', 'buffer']) {
+      for (const removal of ['single', 'batch']) {
+        for (const target of ['lato', 'garamond']) {
+          const at = `${how}, ${removal}, ${target} removed`
+          const child = spawnSync(process.execPath, ['-e', DEDUPED_PROBE], {
+            encoding: 'utf8',
+            timeout: 30_000,
+            env: {
+              ...process.env,
+              RENDERER: renderer,
+              PROBE_HOW: how,
+              PROBE_REMOVAL: removal,
+              PROBE_TARGET: target,
+              PROBE_FONTS: join(__dirname, 'fonts'),
+              PROBE_INDEX: join(__dirname, '..', 'index.js'),
+            },
+          })
+          t.is(child.status, 0, child.stderr)
+          const out = JSON.parse(child.stdout)
+          t.true(out.sameKey, `${at}: one FontKey`)
+          t.deepEqual(out.aliases, [true, true], at)
+          t.is(out.removed, 1, at)
+          // [A, B, C, D, fallback, Lato, EB Garamond]
+          const [before, ...after] = out.states
+          const lato = before[5]
+          const garamond = before[6]
+          t.false(near(lato, garamond), `${at}: Lato ${lato}, EB Garamond ${garamond}`)
+          // B has both fonts; the alias copies what text naming B draws:
+          // Lato, registered under B first.
+          for (const j of [0, 1, 2, 3]) {
+            t.true(near(before[j], lato), `${at}, before: ${j} ${before[j]}, Lato ${lato}`)
+          }
+          for (const [i, widths] of after.entries()) {
+            const state = `${at}, state ${i + 1}`
+            if (target === 'lato') {
+              // A, C and D fall back like an unknown name; B is EB Garamond.
+              for (const j of [0, 2, 3]) {
+                t.true(near(widths[j], widths[4]), `${state}: ${j} ${widths[j]}, fallback ${widths[4]}`)
+              }
+              t.true(near(widths[1], garamond), `${state}: B ${widths[1]}, EB Garamond ${garamond}`)
+            } else {
+              for (const j of [0, 1, 2, 3, 5]) {
+                t.true(near(widths[j], lato), `${state}: ${j} ${widths[j]}, Lato ${lato}`)
+              }
+            }
+          }
+        }
+      }
+    }
+  })
+}

@@ -376,7 +376,9 @@ class TypefaceFontProviderCustom : public TypefaceFontProvider {
                 aliases.end()) {
               aliases.push_back(aliasStr);
               font_it->second.orders.push_back(++registrations);
-              this->registerTypeface(typeface, alias);
+              // The font's own face, so the alias name is that registration
+              // (registrationOf finds it) as after a rebuild.
+              this->registerTypeface(font_it->second.typeface, alias);
             }
             return existing_id;
           }
@@ -599,7 +601,9 @@ class TypefaceFontProviderCustom : public TypefaceFontProvider {
               aliases.end()) {
             aliases.push_back(aliasStr);
             font_it->second.orders.push_back(++registrations);
-            this->registerTypeface(typeface, alias);
+            // The font's own face, so the alias name is that registration
+            // (registrationOf finds it) as after a rebuild.
+            this->registerTypeface(font_it->second.typeface, alias);
           }
           return existing_id;
         }
