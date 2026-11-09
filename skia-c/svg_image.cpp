@@ -324,7 +324,7 @@ class SvgRunShaper final : public SkShaper {
     }
     std::vector<Run> runs;
     if (FontRequest().mgr == mgr_ && !utf8.empty() && primary.getTypeface() &&
-        options.width >= SK_ScalarMax) {
+        options.width >= SK_ScalarMax && !Covers(primary.getTypeface(), utf8)) {
       runs = PickFonts(utf8, primary);
     }
     if (runs.empty() || (runs.size() == 1 && runs.front().font.getTypeface() ==
@@ -344,6 +344,24 @@ class SvgRunShaper final : public SkShaper {
     size_t start;
     size_t end;
   };
+
+  // Whether `face` has every character of the text: then every cluster
+  // takes it, as the list's first font. (A missing default ignorable goes
+  // to PickFonts, which loads ICU before asking for the property.)
+  static bool Covers(SkTypeface* face, SkSpan<const char> utf8) {
+    const char* at = utf8.data();
+    const char* end = at + utf8.size();
+    while (at < end) {
+      const SkUnichar c = SkUTF::NextUTF8(&at, end);
+      if (c < 0) {
+        return true;
+      }
+      if (!face->unicharToGlyph(c)) {
+        return false;
+      }
+    }
+    return true;
+  }
 
   // The fonts of the text's grapheme clusters, as runs of one font.
   std::vector<Run> PickFonts(SkSpan<const char> utf8,
