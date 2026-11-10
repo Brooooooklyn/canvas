@@ -72,6 +72,21 @@ test('convertSVGTextToPath keeps the elements past the SVG image element budget'
   t.true(convertSVGTextToPath(svg).toString().includes('<rect width="5" height="5"/>'))
 })
 
+// The same past the reference check's budget (2^16 steps): each clip path of
+// 15 levels clips its two rects with both clip paths of the next level, so
+// the check takes 2^15 paths. An SVG image drops the clip there.
+test('convertSVGTextToPath keeps references past the SVG image cycle check budget', (t) => {
+  let defs =
+    '<clipPath id="a14"><rect width="3" height="3"/></clipPath><clipPath id="b14"><rect width="3" height="3"/></clipPath>'
+  for (let i = 13; i >= 0; i--) {
+    for (const n of 'ab') {
+      defs += `<clipPath id="${n}${i}"><rect width="9" height="9" clip-path="url(#a${i + 1})"/><rect width="9" height="9" clip-path="url(#b${i + 1})"/></clipPath>`
+    }
+  }
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20"><defs>${defs}</defs><rect width="20" height="20" clip-path="url(#a0)"/></svg>`
+  t.true(convertSVGTextToPath(svg).toString().includes('<clipPath'))
+})
+
 // convertSVGTextToPath keeps the root's size, coordinates and transform:
 // a root sized by its style="" declarations, a root sized in physical units
 // with no viewBox (1in is 96px, for the root as for its content, as the SVG

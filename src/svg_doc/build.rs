@@ -36,7 +36,8 @@ const PAINT_SERVERS: &[&str] = &["linearGradient", "radialGradient", "pattern"];
 const MAX_FILTER_PRIMITIVES: usize = 1024;
 
 /// Steps the resource cycle check may take for one document; past them a
-/// reference counts as closing a cycle.
+/// reference counts as closing a cycle. convertSVGTextToPath leaves such a
+/// document to SkSVG.
 const CYCLE_CHECK_BUDGET: usize = 1 << 16;
 
 /// Styles `style_at` keeps before starting over.
@@ -272,6 +273,8 @@ struct CycleSolver {
   /// Resources referenced from outside any resource: checked once.
   roots: HashMap<NodeId, bool>,
   steps: usize,
+  /// Whether the check ran out of `CYCLE_CHECK_BUDGET`.
+  out_of_steps: bool,
   cycles_broken: bool,
 }
 
@@ -316,7 +319,11 @@ impl CycleSolver {
 
   /// FindCycle of resource `r`, its references in order.
   fn check(&mut self, r: NodeId, depth: usize) -> bool {
-    if depth >= Self::MAX_DEPTH || self.steps >= CYCLE_CHECK_BUDGET {
+    if self.steps >= CYCLE_CHECK_BUDGET {
+      self.out_of_steps = true;
+      return true;
+    }
+    if depth >= Self::MAX_DEPTH {
       return true;
     }
     self.steps += 1;
@@ -641,6 +648,7 @@ impl<'d> Builder<'d, '_, '_> {
       at = p.at;
     }
     s.push_str(&self.out[at..]);
+    self.shared.budget_hit |= solver.out_of_steps;
     s
   }
 

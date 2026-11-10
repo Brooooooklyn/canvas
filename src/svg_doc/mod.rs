@@ -83,8 +83,8 @@ pub(crate) enum PrepareError {
   /// Deeper than Chrome's XML parser takes: the image fails to load.
   TooDeep,
   /// Not something this module reads (not UTF-8, not well-formed, not an
-  /// SVG root; for convertSVGTextToPath, more elements than
-  /// `ELEMENT_BUDGET`): left to SkSVGDOM as before.
+  /// SVG root; for convertSVGTextToPath, past `ELEMENT_BUDGET` or the
+  /// reference check's budget): left to SkSVGDOM as before.
   Unsupported,
 }
 
@@ -149,7 +149,8 @@ pub(crate) struct Shared<'u> {
   prepared: Prepared,
   units: &'u FontUnits,
   elements_left: usize,
-  /// Whether an element was not written for want of budget.
+  /// Whether a work budget left part of the document out: an element not
+  /// written, or a reference the cycle check ran out of steps on.
   budget_hit: bool,
   /// Bytes of substituted var() text left (cascade::VAR_TEXT_BUDGET).
   var_budget: Rc<Cell<usize>>,

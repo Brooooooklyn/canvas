@@ -13,8 +13,8 @@ use crate::{
 /// The SVG with its text as paths. The document is read as an SVG image
 /// reads it (`svg_doc::prepare_for_paths`), so its text takes the whole font-family
 /// list, as an SVG image's text does. A document `svg_doc` cannot read, or
-/// one with more elements than it writes (`svg_doc::ELEMENT_BUDGET`), is
-/// left to SkSVG as it is: its font-family is the list's first name.
+/// one past its work budgets (elements, reference checks), is left to SkSVG
+/// as it is: its font-family is the list's first name.
 #[napi(js_name = "convertSVGTextToPath")]
 pub fn convert_svg_text_to_path<'env>(
   env: &'env Env,
