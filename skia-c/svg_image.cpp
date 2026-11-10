@@ -555,24 +555,28 @@ class SvgRunShaper final : public SkShaper {
       request_.size = primary.getSize();
       // Each list face is its family's face, so its own base.
       allowed_ = slot.allowed;
+      std::vector<SyntheticStyle> wanted;
       for (const sk_sp<SkTypeface>& face : list_) {
-        list_synthetic_.push_back(Allowed(
-            SynthesizeStyle(c_collection, face.get(), face.get(), request_),
-            allowed_));
+        wanted.push_back(
+            SynthesizeStyle(c_collection, face.get(), face.get(), request_));
+        list_synthetic_.push_back(Allowed(wanted.back(), allowed_));
       }
       SkTypeface* first = list_.front().get();
       query_.request = &request_;
       query_.primary_face = first;
       query_.primary_base = first;
-      query_.primary_synthetic = list_synthetic_.front();
+      // The system fallback is asked with the first font's synthetic styles
+      // before font-synthesis, and its answer is masked (FontFor). Blink
+      // asks with the masked ones, but SystemFallbackFor's cache (shared
+      // with canvas text) is keyed as if they follow from the face, weight
+      // and slope, so a masked query would change later draws.
+      query_.primary_synthetic = wanted.front();
       query_.coretext = HasCoreTextFallbackSource(c_collection);
       query_.han_script = FallbackHanScript("");
       query_.monospace = FallbackMonospace(request_);
     }
 
-    SyntheticStyle primary_synthetic() const {
-      return query_.primary_synthetic;
-    }
+    SyntheticStyle primary_synthetic() const { return list_synthetic_.front(); }
 
     // The font of a cluster of `count` characters; one with only default
     // ignorables stays with the font before it.

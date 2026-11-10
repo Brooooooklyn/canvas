@@ -356,6 +356,55 @@ for (const renderer of ['portable', 'system'] as const) {
   })
 }
 
+// A draw under font-synthesis: none does not change later draws, and is not
+// changed by earlier ones: the system fallback (CoreText on macOS) is asked
+// as for any other text and keeps one answer per key. 中 bold italic (Lato
+// has no 中) as SVG text with and without font-synthesis and as canvas
+// text, each process drawing STEPS in order.
+const ORDER = `
+const { createHash } = require('crypto')
+const { createCanvas, GlobalFonts, setTextRenderer, Image } = require('./index.js')
+setTextRenderer(process.env.RENDERER)
+GlobalFonts.registerFromPath(require('path').join('__test__', 'fonts', 'Lato-Regular.ttf'), 'SynthLato')
+const svg = (decl) => '<svg xmlns="http://www.w3.org/2000/svg" width="200" height="80"><text x="4" y="64" font-family="SynthLato" ' +
+  'font-size="64" font-weight="700" font-style="italic" style="' + decl + '">\u4e2d</text></svg>'
+const sha = (ctx) => createHash('sha1').update(ctx.getImageData(0, 0, 200, 80).data).digest('hex')
+const image = (decl) => {
+  const ctx = createCanvas(200, 80).getContext('2d')
+  const img = new Image()
+  img.src = Buffer.from(svg(decl))
+  ctx.drawImage(img, 0, 0)
+  return sha(ctx)
+}
+const text = () => {
+  const ctx = createCanvas(200, 80).getContext('2d')
+  ctx.font = 'italic 700 64px SynthLato'
+  ctx.fillText('\u4e2d', 4, 64)
+  return sha(ctx)
+}
+const draws = { image: () => image(''), none: () => image('font-synthesis: none'), text }
+console.log(JSON.stringify(process.env.STEPS.split(' ').map((step) => draws[step]())))
+`
+
+for (const renderer of ['portable', 'system'] as const) {
+  test(`a font-synthesis: none draw does not change later text (${renderer})`, (t) => {
+    const run = (steps: string): string[] => {
+      const { stdout, stderr, status } = spawnSync(process.execPath, ['-e', ORDER], {
+        cwd: join(__dirname, '..'),
+        env: { ...process.env, RENDERER: renderer, STEPS: steps },
+        encoding: 'utf8',
+        timeout: 60_000,
+      })
+      if (status !== 0) throw new Error(stderr)
+      return JSON.parse(stdout)
+    }
+    const [image, text] = run('image text')
+    const [none] = run('none')
+    t.deepEqual(run('none image text'), [none, image, text])
+    t.deepEqual(run('image text none'), [image, text, none])
+  })
+}
+
 // Chrome 157's pixels, macOS 27, the system renderer. Lato and Roboto Mono
 // have no kerning pair in "Hamburg", so the rows match Chrome's pixels
 // (Chrome rasterizes a fake bold glyph from a slightly wider stroke).
