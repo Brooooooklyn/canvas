@@ -1213,8 +1213,15 @@ impl<'d> Builder<'d, '_, '_> {
         // visibility: hidden paints nothing and keeps the advance
         // (SVGInlineTextBoxPainter). SkSVG drops a hidden fragment with its
         // advance, so the fragment gets no paint instead; a visible
-        // fragment in it writes its own paint again.
-        if style.keyword(Prop::Visibility) != "visible" {
+        // fragment in it writes its own paint again. A clip path's text is
+        // its glyph outlines (SkSVGText::onAsPath), whatever the paint, so
+        // there the fragment is dropped, advance and all.
+        let in_clip = path
+          .iter()
+          .any(|f| matches!(f.ctx, Ctx::Clip | Ctx::ClipUse));
+        if style.keyword(Prop::Visibility) != "visible" && in_clip {
+          pieces.push(attr("visibility", "hidden"));
+        } else if style.keyword(Prop::Visibility) != "visible" {
           let unpainted = |p: &Piece| matches!(p.name(), "fill" | "stroke");
           pieces.retain(|p| !unpainted(p));
           pieces.push(attr("fill", "none"));

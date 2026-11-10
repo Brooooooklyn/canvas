@@ -4976,43 +4976,20 @@ void WriteTextToPath(SkSVGDOM* dom,
   output_data->ptr = d->bytes();
 }
 
-// SkSVGSVG's width or height: its style="" declaration, else its
-// attribute (SkSVG keeps the attribute when the declaration is invalid);
-// 100% when both are absent or invalid.
-SkSVGLength RootLength(const char* style,
-                       size_t style_length,
-                       const char* value,
-                       size_t length) {
-  for (const auto& [text, size] :
-       {std::pair{style, style_length}, std::pair{value, length}}) {
-    if (text) {
-      const SkString string(text, size);
-      if (auto parsed =
-              SkSVGAttributeParser::parse<SkSVGLength>(string.c_str())) {
-        return *parsed;
-      }
-    }
-  }
-  return SkSVGLength(100, SkSVGLength::Unit::kPercentage);
-}
-
-// SkSVGSVG::intrinsicSize of the root as written, at 96 dpi (the resolution
-// svg_doc gives the content's physical lengths; SkSVG's default is 90).
-// False, with a 0x0 size, when a side is a percentage.
-bool RootSize(const char* width,
-              size_t width_len,
-              const char* height,
-              size_t height_len,
-              const char* style_width,
-              size_t style_width_len,
-              const char* style_height,
-              size_t style_height_len,
-              SkSize* size) {
-  const SkSVGLength root_width =
-      RootLength(style_width, style_width_len, width, width_len);
-  const SkSVGLength root_height =
-      RootLength(style_height, style_height_len, height, height_len);
+// SkSVGSVG::intrinsicSize of `root`, an <svg> with only the root's width,
+// height and style attributes as written (SkSVG reads them in document
+// order; an invalid value keeps the one before it), at 96 dpi (the
+// resolution svg_doc gives the content's physical lengths; SkSVG's default
+// is 90). False, with a 0x0 size, when a side is a percentage.
+bool RootSize(const char* root, size_t root_len, SkSize* size) {
   *size = SkSize::Make(0, 0);
+  SkMemoryStream stream(root, root_len, false);
+  auto dom = SkSVGDOM::Builder().make(stream);
+  if (!dom || !dom->getRoot()) {
+    return false;
+  }
+  const SkSVGLength root_width = dom->getRoot()->getWidth();
+  const SkSVGLength root_height = dom->getRoot()->getHeight();
   if (root_width.unit() == SkSVGLength::Unit::kPercentage ||
       root_height.unit() == SkSVGLength::Unit::kPercentage) {
     return false;
@@ -5051,14 +5028,8 @@ void skiac_svg_text_to_path_prepared(const uint8_t* data,
                                      size_t length,
                                      const skiac_svg_font_list* fonts,
                                      size_t font_count,
-                                     const char* width,
-                                     size_t width_len,
-                                     const char* height,
-                                     size_t height_len,
-                                     const char* style_width,
-                                     size_t style_width_len,
-                                     const char* style_height,
-                                     size_t style_height_len,
+                                     const char* root,
+                                     size_t root_len,
                                      skiac_font_collection* c_collection,
                                      skiac_sk_data* output_data) {
   SkMemoryStream svg_stream(data, length, false);
@@ -5073,26 +5044,17 @@ void skiac_svg_text_to_path_prepared(const uint8_t* data,
   // content keeps its coordinates in a container of the root's size, the
   // size svg_doc laid the content out at (skiac_svg_root_size).
   SkSize size;
-  RootSize(width, width_len, height, height_len, style_width, style_width_len,
-           style_height, style_height_len, &size);
+  RootSize(root, root_len, &size);
   svg_dom->setContainerSize(size);
   WriteTextToPath(svg_dom.get(), size, output_data);
 }
 
-bool skiac_svg_root_size(const char* width,
-                         size_t width_len,
-                         const char* height,
-                         size_t height_len,
-                         const char* style_width,
-                         size_t style_width_len,
-                         const char* style_height,
-                         size_t style_height_len,
+bool skiac_svg_root_size(const char* root,
+                         size_t root_len,
                          float* out_width,
                          float* out_height) {
   SkSize size;
-  const bool known =
-      RootSize(width, width_len, height, height_len, style_width,
-               style_width_len, style_height, style_height_len, &size);
+  const bool known = RootSize(root, root_len, &size);
   *out_width = size.width();
   *out_height = size.height();
   return known;

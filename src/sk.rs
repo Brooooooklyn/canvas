@@ -1643,28 +1643,15 @@ pub mod ffi {
       length: usize,
       fonts: *const skiac_svg_font_list,
       font_count: usize,
-      width: *const c_char,
-      width_len: usize,
-      height: *const c_char,
-      height_len: usize,
-      style_width: *const c_char,
-      style_width_len: usize,
-      style_height: *const c_char,
-      style_height_len: usize,
+      root: *const c_char,
+      root_len: usize,
       font_collection: *mut skiac_font_collection,
       output_data: *mut skiac_sk_data,
     );
 
-    #[allow(clippy::too_many_arguments)]
     pub fn skiac_svg_root_size(
-      width: *const c_char,
-      width_len: usize,
-      height: *const c_char,
-      height_len: usize,
-      style_width: *const c_char,
-      style_width_len: usize,
-      style_height: *const c_char,
-      style_height_len: usize,
+      root: *const c_char,
+      root_len: usize,
       out_width: *mut f32,
       out_height: *mut f32,
     ) -> bool;
@@ -7262,14 +7249,6 @@ pub fn sk_svg_text_to_path_prepared(
 ) -> Option<SkiaDataRef> {
   let families = svg_font_families(prepared);
   let fonts = svg_font_lists(&families);
-  let attribute = |value: &Option<String>| match value {
-    Some(value) => (value.as_ptr().cast::<c_char>(), value.len()),
-    None => (ptr::null(), 0),
-  };
-  let (width, width_len) = attribute(&root.width);
-  let (height, height_len) = attribute(&root.height);
-  let (style_width, style_width_len) = attribute(&root.style_width);
-  let (style_height, style_height_len) = attribute(&root.style_height);
   let mut output_data = ffi::skiac_sk_data {
     ptr: ptr::null_mut(),
     data: ptr::null_mut(),
@@ -7281,14 +7260,8 @@ pub fn sk_svg_text_to_path_prepared(
       prepared.svg.len(),
       fonts.as_ptr(),
       fonts.len(),
-      width,
-      width_len,
-      height,
-      height_len,
-      style_width,
-      style_width_len,
-      style_height,
-      style_height_len,
+      root.sizing_svg.as_ptr().cast::<c_char>(),
+      root.sizing_svg.len(),
       fc.0,
       &mut output_data,
     );
@@ -7299,28 +7272,14 @@ pub fn sk_svg_text_to_path_prepared(
   Some(SkiaDataRef(output_data))
 }
 
-/// The size `sk_svg_text_to_path_prepared` gives the root (SkSVG reads its
-/// `style=""` width and height first), None when a side is a percentage.
+/// The size `sk_svg_text_to_path_prepared` gives the root, as SkSVG reads
+/// its width, height and `style=""`; None when a side is a percentage.
 pub fn sk_svg_root_size(root: &crate::svg_doc::RootAttributes) -> Option<(f32, f32)> {
-  let attribute = |value: &Option<String>| match value {
-    Some(value) => (value.as_ptr().cast::<c_char>(), value.len()),
-    None => (ptr::null(), 0),
-  };
-  let (width, width_len) = attribute(&root.width);
-  let (height, height_len) = attribute(&root.height);
-  let (style_width, style_width_len) = attribute(&root.style_width);
-  let (style_height, style_height_len) = attribute(&root.style_height);
   let (mut out_width, mut out_height) = (0.0f32, 0.0f32);
   let known = unsafe {
     ffi::skiac_svg_root_size(
-      width,
-      width_len,
-      height,
-      height_len,
-      style_width,
-      style_width_len,
-      style_height,
-      style_height_len,
+      root.sizing_svg.as_ptr().cast::<c_char>(),
+      root.sizing_svg.len(),
       &mut out_width,
       &mut out_height,
     )

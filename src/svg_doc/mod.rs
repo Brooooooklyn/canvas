@@ -92,33 +92,30 @@ pub(crate) struct RootAttributes {
   pub height: Option<String>,
   pub view_box: Option<String>,
   pub preserve_aspect_ratio: Option<String>,
-  /// The root's `style=""` width and height. An SVG image's size does not
-  /// read them (SVGSVGElement::IntrinsicWidth reads the attribute); SkSVG,
-  /// which sizes convertSVGTextToPath's output, does.
-  pub style_width: Option<String>,
-  pub style_height: Option<String>,
+  /// An `<svg>` with only the root's width, height and `style=""` as
+  /// written, in document order. An SVG image's size does not read the
+  /// style (SVGSVGElement::IntrinsicWidth reads the attribute); SkSVG,
+  /// which sizes convertSVGTextToPath's output, reads all three in order
+  /// and keeps the last valid one, so it sizes this document.
+  pub sizing_svg: String,
 }
 
 impl RootAttributes {
   fn of(doc: &dom::Doc) -> Self {
     let attr = |name| doc.attr(doc.root, name).map(str::to_owned);
-    let declared = |name: &str| {
-      let decls = sheet::parse_style_attr(doc.attr(doc.root, "style")?);
-      // The last one, an !important one first (max_by_key keeps the last
-      // of equal keys).
-      let decl = decls
-        .iter()
-        .filter(|d| d.name == name)
-        .max_by_key(|d| d.important)?;
-      Some(decl.value.clone())
-    };
+    let mut sizing_svg = format!(r#"<svg xmlns="{}""#, dom::SVG_NS);
+    for a in doc.attrs(doc.root) {
+      if a.ns == dom::Ns::None && matches!(a.name.as_str(), "width" | "height" | "style") {
+        sizing_svg.push_str(&format!(r#" {}="{}""#, a.name, build::esc(&a.value)));
+      }
+    }
+    sizing_svg.push_str("/>");
     RootAttributes {
       width: attr("width"),
       height: attr("height"),
       view_box: attr("viewBox"),
       preserve_aspect_ratio: attr("preserveAspectRatio"),
-      style_width: declared("width"),
-      style_height: declared("height"),
+      sizing_svg,
     }
   }
 

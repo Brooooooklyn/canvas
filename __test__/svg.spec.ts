@@ -170,3 +170,37 @@ test('convertSVGTextToPath lays out at the root size it writes; clip text and ts
   t.deepEqual(xs(tspan), xs(whole))
   t.deepEqual(pixels(tspan, 200, 60), pixels(whole, 200, 60))
 })
+
+// SkSVG sizes convertSVGTextToPath's output from the root's width, height
+// and style="" in document order, an invalid value keeping the one before
+// it; and a hidden tspan in a clip path's text adds no outline to the clip
+// (Chrome 157 clips to A and B only).
+test('convertSVGTextToPath root size takes the last valid value; hidden clip text adds no outline', (t) => {
+  GlobalFonts.registerFromPath(join(__dirname, 'fonts', 'Lato-Regular.ttf'), 'SvgSpecLato')
+  const root = (attrs: string) =>
+    /<svg [^>]*>/
+      .exec(
+        convertSVGTextToPath(`<svg xmlns="http://www.w3.org/2000/svg" ${attrs}><rect width="50" height="20"/></svg>`)
+          .toString()
+          .replace(/<\?xml[^>]*>\s*/, ''),
+      )![0]
+      .replace(/ xmlns(:xlink)?="[^"]*"/g, '')
+  t.is(root('height="60" style="width:400px;width:invalid"'), '<svg width="400" height="60">')
+  t.is(root('width="100" style="height:60px;height:bad"'), '<svg width="100" height="60">')
+  t.is(root('style="width:200px;height:60px" width="100" height="30"'), '<svg width="100" height="30">')
+  const clipped =
+    '<svg xmlns="http://www.w3.org/2000/svg" width="200" height="60"><clipPath id="c">' +
+    '<text x="2" y="40" font-family="SvgSpecLato" font-size="20">A<tspan visibility="hidden">SECRET</tspan>B</text>' +
+    '</clipPath><rect width="200" height="60" clip-path="url(#c)"/></svg>'
+  // Ink right of A and left of where Chrome puts B (87.84): SECRET's outlines.
+  const secret = (svg: string) => {
+    const image = new Image()
+    image.src = Buffer.from(svg)
+    const ctx = createCanvas(200, 60).getContext('2d')
+    ctx.drawImage(image, 0, 0)
+    const data = ctx.getImageData(30, 0, 55, 60).data
+    return data.filter((_, i) => i % 4 === 3 && data[i] > 0).length
+  }
+  t.is(secret(clipped), 0)
+  t.is(secret(convertSVGTextToPath(clipped).toString()), 0)
+})
