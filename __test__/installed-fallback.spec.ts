@@ -356,13 +356,15 @@ const macTest = MEASURED_MACOS ? test : test.skip
 //
 // The manager only scans SK_FONT_FILE_PREFIX, so the test copies
 // NamedInstanceProbe.ttf (its Bold instance at CTRS 85) there: the CI's Linux
-// containers run as root and its Windows runners as an administrator; where
-// the copy fails, nothing is checked. macOS's /System/Library/Fonts is
-// read-only.
+// containers run as root and its Windows runners as an administrator. There
+// (root, or CI set) a failed copy or another font with U+1E290 fails the
+// test, so it cannot pass without checking; elsewhere nothing is checked.
+// macOS's /System/Library/Fonts is read-only.
 const MANAGER_DIR = ({ linux: '/usr/share/fonts', win32: 'C:/Windows/Fonts' } as Record<string, string>)[
   process.platform
 ]
 const managerTest = MANAGER_DIR ? test : test.skip
+const MUST_CHECK = Boolean(process.env.CI) || process.getuid?.() === 0
 
 managerTest(`portable: a named instance of a loaded variable face is not another fallback face`, (t) => {
   const createdDir = !existsSync(MANAGER_DIR)
@@ -371,7 +373,10 @@ managerTest(`portable: a named instance of a loaded variable face is not another
     mkdirSync(MANAGER_DIR, { recursive: true })
     copyFileSync(join(__dirname, 'fonts', 'NamedInstanceProbe.ttf'), file)
   } catch (e) {
-    t.pass(`${MANAGER_DIR} is not writable (${(e as NodeJS.ErrnoException).code})`)
+    if (createdDir && existsSync(MANAGER_DIR)) rmdirSync(MANAGER_DIR)
+    const why = `${MANAGER_DIR} is not writable (${(e as NodeJS.ErrnoException).code})`
+    if (MUST_CHECK) t.fail(why)
+    else t.pass(why)
     return
   }
   let out: Record<string, Box> & { gFamily: string }
@@ -387,7 +392,9 @@ managerTest(`portable: a named instance of a loaded variable face is not another
   }
   t.not(out.gFamily, 'Lato')
   if (out.gFamily !== 'Named Instance Probe') {
-    t.pass(`the host has another font with U+1E290 (${out.gFamily})`)
+    const why = `the host has another font with U+1E290 (${out.gFamily})`
+    if (MUST_CHECK) t.fail(why)
+    else t.pass(why)
     return
   }
   t.deepEqual(out.g700, out.gNamed700)
