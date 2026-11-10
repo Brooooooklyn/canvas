@@ -106,6 +106,20 @@ switch (process.env.CASE) {
     fs.rmSync(dir, { recursive: true, force: true })
     break
   }
+  case 'S': {
+    // A symbol font (only a (3,0) cmap, U+F020..U+F0FF): HarfBuzz draws
+    // U+00E9 with its U+F0E9 glyph, and fontconfig's charset and Windows
+    // list U+0000..U+00FF for it too.
+    GlobalFonts.registerFromPath(path.join(F, 'NotoSansDevanagari-subset.ttf'), 'MyDevaOnly')
+    out.sNotdef = m('32px MyDevaOnly', '\uE000')
+    out.sBefore = m('32px MyDevaOnly', '\u00E9')
+    const dir = dirOf(['SymCmapProbe.ttf'])
+    GlobalFonts.loadFontsFromDir(dir)
+    out.s = m('32px MyDevaOnly', '\u00E9')
+    out.sym = m('32px SymCmapProbe', '\u00E9')
+    fs.rmSync(dir, { recursive: true, force: true })
+    break
+  }
   case 'mac': {
     const ctx = createCanvas(10, 10).getContext('2d')
     ctx.font = '700 32px MyLatoOnly'
@@ -198,6 +212,17 @@ for (const renderer of ['portable', 'system']) {
       return
     }
     t.deepEqual(out.w, out.cascadia)
+  })
+
+  test(`${renderer}: a symbol font loadFontsFromDir loaded is a fallback font for U+0000..U+00FF`, (t) => {
+    const out = run(renderer, 'S')
+    t.notDeepEqual(out.s, out.sNotdef)
+    if (JSON.stringify(out.sBefore) !== JSON.stringify(out.sNotdef)) {
+      t.pass('the host has a font with U+00E9')
+      return
+    }
+    t.notDeepEqual(out.sym, out.sNotdef)
+    t.deepEqual(out.s, out.sym)
   })
 }
 

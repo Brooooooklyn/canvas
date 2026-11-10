@@ -320,6 +320,8 @@ hb_bool_t hb_ot_layout_get_baseline(hb_font_t* font,
 hb_set_t* hb_set_create(void);
 void hb_set_destroy(hb_set_t* set);
 hb_bool_t hb_set_has(const hb_set_t* set, hb_codepoint_t codepoint);
+void hb_set_add(hb_set_t* set, hb_codepoint_t codepoint);
+hb_bool_t hb_set_next(const hb_set_t* set, hb_codepoint_t* codepoint);
 // HB_SET_VALUE_INVALID (hb-set.h).
 #define HB_SET_VALUE_INVALID ((hb_codepoint_t) - 1)
 hb_bool_t hb_set_next_range(const hb_set_t* set,

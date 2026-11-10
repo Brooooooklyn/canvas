@@ -90,6 +90,21 @@ Coverage ReadCoverage(SkTypeface* face) {
   }
   hb_set_t* set = hb_set_create();
   hb_face_collect_unicodes(hb_face, set);
+  // A symbol font (a (3,0) cmap): HarfBuzz's nominal glyph also maps
+  // U+0000..U+00FF to U+F000..U+F0FF (_hb_symbol_pua_map), as fontconfig's
+  // charset (FcFreeTypeCharSet) and Windows do, but collect_unicodes lists
+  // only the U+F0xx codes. The codes the lookup maps are added.
+  hb_codepoint_t pua = 0xEFFF;
+  if (hb_set_next(set, &pua) && pua <= 0xF0FF) {
+    hb_font_t* font = hb_font_create(hb_face);
+    for (hb_codepoint_t c = 0; c <= 0xFF; ++c) {
+      hb_codepoint_t glyph = 0;
+      if (hb_font_get_nominal_glyph(font, c, &glyph)) {
+        hb_set_add(set, c);
+      }
+    }
+    hb_font_destroy(font);
+  }
   hb_codepoint_t first = HB_SET_VALUE_INVALID;
   hb_codepoint_t last = HB_SET_VALUE_INVALID;
   while (hb_set_next_range(set, &first, &last)) {
