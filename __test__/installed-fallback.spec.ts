@@ -341,22 +341,29 @@ batakTest(`portable: a loaded face of an installed family keeps the family's oth
   t.deepEqual(out.bBold, out.bBoldBefore)
 })
 
+// macOS 27 (the Chrome 157 capture's host), the installed fonts on.
+const MEASURED_MACOS = process.platform === 'darwin' && Number.parseInt(release(), 10) === 27
+const macTest = MEASURED_MACOS ? test : test.skip
+
 // loadSystemFonts registers a variable face once; the font manager also
 // lists each of its named instances. An instance is the same face, so with
 // the installed fonts on the fallback face is the one the family name
 // gives, at the request's axes, not a named instance's other axes (opsz).
+// macOS 27's SFIndia.ttc has U+0A76; macOS 26 has no installed font with it
+// (the run stays on Lato), so there only a fallback face, if any, is checked.
 const SF_INDIA = '/System/Library/Fonts/SFIndia.ttc'
 const sfIndiaTest = process.platform === 'darwin' && existsSync(SF_INDIA) ? test : test.skip
 
 sfIndiaTest(`portable: a named instance of a loaded variable face is not another fallback face`, (t) => {
   const out = run('portable', 'G', {}) as unknown as Record<string, Box> & { gFamily: string }
-  t.is(out.gFamily, '.SF Gurmukhi')
+  if (MEASURED_MACOS) {
+    t.is(out.gFamily, '.SF Gurmukhi')
+  } else if (out.gFamily === 'Lato') {
+    t.pass('the host has no installed font with U+0A76')
+    return
+  }
   t.deepEqual(out.g700, out.gNamed700)
 })
-
-// macOS 27 (the Chrome 157 capture's host), the installed fonts on.
-const MEASURED_MACOS = process.platform === 'darwin' && Number.parseInt(release(), 10) === 27
-const macTest = MEASURED_MACOS ? test : test.skip
 
 // Portable: the font Chrome mac's CoreText cascade picks for Han, by name
 // (Chrome 157: PingFang SC). PingFang is a MobileAsset font that
