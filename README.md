@@ -151,7 +151,7 @@ These still depend on the OS and the machine:
 - PDF font embedding depends on the build target.
 - x64 and arm64 builds can differ by 1 color level on some edge pixels.
 - A `FREETYPE_PROPERTIES` env var changes FreeType's hinting.
-- The host language. The default `ctx.lang` (`'inherit'`) follows the OS UI language (the macOS language list, the Windows user locale, or `LANGUAGE` / `LC_ALL` / `LC_MESSAGES` / `LANG` elsewhere), as Chrome does. It changes `locl` glyphs, case mapping (`small-caps` under `tr`) and CJK punctuation spacing. Set `ctx.lang` (for example `'en'`) to pin it. The installed font picked for a Han character still follows the host language unless `ctx.lang` names a CJK language (for example `'ja'` or `'zh-Hans'`).
+- The host language. The default `ctx.lang` (`'inherit'`) follows the OS UI language (the macOS language list, the Windows user locale, or `LANGUAGE` / `LC_ALL` / `LC_MESSAGES` / `LANG` elsewhere), as Chrome does. It changes `locl` glyphs, case mapping (`small-caps` under `tr`) and CJK punctuation spacing. Set `ctx.lang` (for example `'en'`) to pin it. The installed font picked for a Han character still follows the host language unless `ctx.lang` names a CJK language (for example `'ja'` or `'zh-Hans'`). On macOS with `setTextRenderer('system')`, the generic families also follow a `ja`, `ko`, `zh-CN`, `zh-TW`, `ar`, `he` or `fa` UI language whatever `ctx.lang` is, as in Chrome (`serif` is Hiragino Mincho ProN under a Japanese UI).
 
 Set `DISABLE_SYSTEM_FONTS_LOAD=1` to keep installed fonts out of `GlobalFonts.families`. By default they can still be found by name, on every OS.
 
