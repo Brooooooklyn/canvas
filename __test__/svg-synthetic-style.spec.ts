@@ -203,6 +203,10 @@ out.synthesis = {
   sheet: sha(withSynthesis(BI, '', '<style>text { font-synthesis: none }</style>')),
   attribute: sha(withSynthesis(BI, 'font-synthesis="none"')),
   variable: sha(withSynthesis(BI, 'style="--syn: none; font-synthesis: var(--syn)"')),
+  commented: sha(withSynthesis(BI, 'style="font-synthesis: none/**/"')),
+  commentedWeight: sha(withSynthesis(BI, 'style="font-synthesis:/*c*/weight"')),
+  escaped: sha(withSynthesis(BI, 'style="font-synthesis: \\\\6e one"')),
+  commentedVariable: sha(withSynthesis(BI, 'style="--syn: /**/none; font-synthesis: var(--syn)"')),
   variableWeight: sha(withSynthesis(BI, 'style="--syn: weight; font-synthesis: var(--syn)"')),
   w550: sha(svgOf('SynthLato', 'n').replace('font-weight="400"', 'font-weight="550"')),
   w599: sha(svgOf('SynthLato', 'n').replace('font-weight="400"', 'font-weight="599"')),
@@ -332,6 +336,12 @@ for (const renderer of ['portable', 'system'] as const) {
     t.is(synthesis.attribute, hamburg.bi.sha)
     t.is(synthesis.variable, hamburg.n.sha)
     t.is(synthesis.variableWeight, hamburg.b.sha)
+    // CSS tokens: comments are not part of the value, an escape is its
+    // character (Chrome 157).
+    t.is(synthesis.commented, hamburg.n.sha)
+    t.is(synthesis.commentedWeight, hamburg.b.sha)
+    t.is(synthesis.escaped, hamburg.n.sha)
+    t.is(synthesis.commentedVariable, hamburg.n.sha)
     // 中 is Source Han Serif Bold's, a list font after Lato.
     t.is(synthesis.mixedNone, synthesis.mixedN)
     t.not(synthesis.mixedBi, synthesis.mixedN)

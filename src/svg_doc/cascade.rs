@@ -199,15 +199,26 @@ fn expand_font_synthesis(value: &str) -> Option<Vec<(&'static str, String)>> {
       ("font-synthesis-style", style.to_string()),
     ])
   };
-  let value = value.trim();
-  if let Some(keyword) = css_wide(value) {
-    return longhands(keyword, keyword);
+  // The value's CSS tokens: whitespace and comments are not tokens, and an
+  // identifier is its unescaped name. Only identifiers are valid.
+  let mut p = Parser::new(value);
+  let mut words = Vec::new();
+  while let Ok(token) = p.next() {
+    match token {
+      Token::Ident(word) => words.push(word.to_string()),
+      _ => return None,
+    }
   }
-  if value.eq_ignore_ascii_case("none") {
-    return longhands("none", "none");
+  if let [word] = words.as_slice() {
+    if let Some(keyword) = css_wide(word) {
+      return longhands(keyword, keyword);
+    }
+    if word.eq_ignore_ascii_case("none") {
+      return longhands("none", "none");
+    }
   }
   let mut seen = [false; 3];
-  for word in value.split_ascii_whitespace() {
+  for word in &words {
     let k = ["weight", "style", "small-caps"]
       .iter()
       .position(|k| word.eq_ignore_ascii_case(k))?;
@@ -1218,6 +1229,20 @@ mod tests {
       assert_eq!(synthesis(&decl, "", ""), auto, "{decl}");
     }
     assert_eq!(synthesis("", "", r#" font-synthesis="none""#), auto);
+    // CSS tokens: comments are not part of the value, an escaped
+    // identifier is its unescaped name (Chrome 157).
+    for (decl, expected) in [
+      ("font-synthesis: none/**/", none),
+      ("font-synthesis: /*c*/none", none),
+      ("font-synthesis:/**/weight", ("auto", "none")),
+      ("font-synthesis: weight/**/style", auto),
+      (r"font-synthesis: \6e one", none),
+      ("font-synthesis: inherit/**/", auto),
+      ("--s: none/**/; font-synthesis: var(--s)", none),
+      ("font-synthesis: none/**/weight", auto),
+    ] {
+      assert_eq!(synthesis(decl, "", ""), expected, "{decl}");
+    }
     // A var() in the shorthand is expanded after substitution; an invalid
     // result is unset (inherited).
     assert_eq!(
