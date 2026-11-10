@@ -935,12 +935,15 @@ impl<'d> Builder<'d, '_, '_> {
       Value::Number(w) => *w,
       _ => 400.0,
     };
-    let key = self.shared.family_key(FontList {
-      families,
-      weight: weight.to_bits(),
-      synthetic_bold: keyword(Prop::FontSynthesisWeight) != "none",
-      synthetic_italic: keyword(Prop::FontSynthesisStyle) != "none",
-    });
+    let key = self.shared.family_key(
+      &families,
+      FontList {
+        families: 0,
+        weight: weight.to_bits(),
+        synthetic_bold: keyword(Prop::FontSynthesisWeight) != "none",
+        synthetic_italic: keyword(Prop::FontSynthesisStyle) != "none",
+      },
+    );
     out.push(attr("font-family", format!("napi-font:{key}")));
     out.push(attr("font-size", num(style.font_size())));
     out.push(attr("font-style", keyword(Prop::FontStyle)));

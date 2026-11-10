@@ -20,8 +20,10 @@
 
 #include "svg_image.hpp"
 
+#include <cstdint>
 #include <cstdlib>
 #include <cstring>
+#include <map>
 #include <memory>
 #include <optional>
 #include <string>
@@ -123,14 +125,24 @@ class SvgFontMgr final : public SkFontMgr {
              size_t count,
              bool names = false)
       : c_collection_(c_collection), names_(names) {
+    // Fonts that differ only in weight or font-synthesis point at one
+    // family array (sk.rs svg_font_lists); it is copied once.
+    std::map<std::pair<const skiac_text_family*, size_t>, size_t> copied;
     lists_.resize(count);
     for (size_t i = 0; i < count; ++i) {
-      for (size_t j = 0; j < lists[i].count; ++j) {
-        const skiac_text_family& family = lists[i].families[j];
-        lists_[i].families.push_back(
-            {std::string(family.name ? family.name : "", family.name_len),
-             family.generic});
+      auto [it, added] = copied.try_emplace({lists[i].families, lists[i].count},
+                                            families_.size());
+      if (added) {
+        std::vector<Family>& families = families_.emplace_back();
+        families.reserve(lists[i].count);
+        for (size_t j = 0; j < lists[i].count; ++j) {
+          const skiac_text_family& family = lists[i].families[j];
+          families.push_back(
+              {std::string(family.name ? family.name : "", family.name_len),
+               family.generic});
+        }
       }
+      lists_[i].families = it->second;
       lists_[i].weight = lists[i].weight;
       lists_[i].allowed = {lists[i].synthetic_bold, lists[i].synthetic_italic};
     }
@@ -220,7 +232,10 @@ class SvgFontMgr final : public SkFontMgr {
     const List& font = index >= 0 && static_cast<size_t>(index) < lists_.size()
                            ? lists_[index]
                            : kNone;
-    const std::vector<Family>& list = font.families;
+    static const std::vector<Family> kNoFamilies;
+    const std::vector<Family>& list = font.families < families_.size()
+                                          ? families_[font.families]
+                                          : kNoFamilies;
     request.weight = font.weight;
     request.allowed = font.allowed;
     std::vector<skiac_text_family> families;
@@ -248,7 +263,8 @@ class SvgFontMgr final : public SkFontMgr {
     int generic;
   };
   struct List {
-    std::vector<Family> families;
+    // An index into families_; kNone's is past its end.
+    size_t families = SIZE_MAX;
     float weight = 400;
     SyntheticStyle allowed = {true, true};
   };
@@ -261,6 +277,7 @@ class SvgFontMgr final : public SkFontMgr {
 
   skiac_font_collection* c_collection_;
   bool names_;
+  std::vector<std::vector<Family>> families_;
   std::vector<List> lists_;
   mutable SvgFontRequest request_;
 };

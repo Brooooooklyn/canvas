@@ -76,17 +76,21 @@ pub(crate) enum Resource {
 pub(crate) struct Prepared {
   pub svg: String,
   pub resources: Vec<Resource>,
-  pub families: Vec<FontList>,
+  /// The distinct font-family lists the fonts name, each kept once.
+  pub families: Vec<Rc<[Family]>>,
+  /// `napi-font:K` is `fonts[K]`.
+  pub fonts: Vec<FontList>,
 }
 
-/// The font of a `napi-font:K` attribute: its font-family list, its
-/// computed font-weight (the font-weight attribute SkSVG reads is rounded to
-/// a multiple of 100) as f32 bits, and what font-synthesis lets it
-/// synthesize (FontDescription::SyntheticBoldAllowed,
-/// SyntheticItalicAllowed).
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+/// The font of a `napi-font:K` attribute: its font-family list (an index
+/// into `Prepared::families`, so fonts that differ only in weight or
+/// font-synthesis share it), its computed font-weight (the font-weight
+/// attribute SkSVG reads is rounded to a multiple of 100) as f32 bits, and
+/// what font-synthesis lets it synthesize
+/// (FontDescription::SyntheticBoldAllowed, SyntheticItalicAllowed).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub(crate) struct FontList {
-  pub families: Rc<[Family]>,
+  pub families: usize,
   pub weight: u32,
   pub synthetic_bold: bool,
   pub synthetic_italic: bool,
@@ -178,7 +182,8 @@ pub(crate) struct Shared<'u> {
   loaded: HashMap<Rc<str>, Rc<Loaded>>,
   rasters: HashMap<(Rc<str>, u8), Option<usize>>,
   nested: HashMap<NestedKey, Option<usize>>,
-  families: HashMap<FontList, usize>,
+  families: HashMap<Rc<[Family]>, usize>,
+  fonts: HashMap<FontList, usize>,
   nesting: u32,
 }
 
@@ -195,6 +200,7 @@ impl<'u> Shared<'u> {
       rasters: HashMap::new(),
       nested: HashMap::new(),
       families: HashMap::new(),
+      fonts: HashMap::new(),
       nesting: 0,
     }
   }
@@ -209,13 +215,24 @@ impl<'u> Shared<'u> {
     true
   }
 
-  fn family_key(&mut self, font: FontList) -> usize {
-    if let Some(k) = self.families.get(&font) {
+  /// The K of `napi-font:K` for a font-family list and the rest of
+  /// FontList (whose `families` this sets).
+  fn family_key(&mut self, families: &Rc<[Family]>, mut font: FontList) -> usize {
+    font.families = match self.families.get(families) {
+      Some(k) => *k,
+      None => {
+        let k = self.prepared.families.len();
+        self.prepared.families.push(families.clone());
+        self.families.insert(families.clone(), k);
+        k
+      }
+    };
+    if let Some(k) = self.fonts.get(&font) {
       return *k;
     }
-    let k = self.prepared.families.len();
-    self.prepared.families.push(font.clone());
-    self.families.insert(font, k);
+    let k = self.prepared.fonts.len();
+    self.prepared.fonts.push(font);
+    self.fonts.insert(font, k);
     k
   }
 
@@ -416,6 +433,28 @@ mod tests {
     // convertSVGTextToPath leaves it to SkSVG, which converts all of it.
     let paths = prepare_for_paths(svg(&body).as_bytes(), &FontUnits::fallback(), |_| None);
     assert!(matches!(paths.err(), Some(PrepareError::OverBudget(_))));
+  }
+
+  #[test]
+  fn weights_share_one_family_list() {
+    // Groups with distinct weights inherit one long family list: the list
+    // is kept once, each weight names it.
+    let families = (0..200)
+      .map(|i| format!("f{i}"))
+      .collect::<Vec<_>>()
+      .join(",");
+    let mut body = format!(r#"<g font-family="{families}">"#);
+    for i in 0..100 {
+      body += &format!(r#"<g font-weight="{}"/>"#, 300.0 + i as f32 * 0.5);
+    }
+    body += "</g>";
+    let (prepared, _) = prepare(svg(&body).as_bytes(), &FontUnits::fallback()).unwrap();
+    let long = prepared
+      .families
+      .iter()
+      .filter(|list| format!("{list:?}").contains("f199"))
+      .count();
+    assert_eq!(long, 1, "{} lists", prepared.families.len());
   }
 
   #[test]

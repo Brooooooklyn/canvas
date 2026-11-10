@@ -5752,7 +5752,6 @@ fn svg_font_families(prepared: &crate::svg_doc::Prepared) -> Vec<Vec<ffi::skiac_
     .iter()
     .map(|list| {
       list
-        .families
         .iter()
         .map(|family| match family {
           Family::Generic(generic) => ffi::skiac_text_family {
@@ -5771,17 +5770,19 @@ fn svg_font_families(prepared: &crate::svg_doc::Prepared) -> Vec<Vec<ffi::skiac_
     .collect()
 }
 
-/// `napi-font:K` is `families[K]`; the lists point into `families`.
+/// `napi-font:K` is `prepared.fonts[K]`; the lists point into `families`,
+/// so fonts with one font-family list share its pointer (the C side keeps
+/// one copy of it).
 fn svg_font_lists(
   prepared: &crate::svg_doc::Prepared,
   families: &[Vec<ffi::skiac_text_family>],
 ) -> Vec<ffi::skiac_svg_font_list> {
-  families
+  prepared
+    .fonts
     .iter()
-    .zip(&prepared.families)
-    .map(|(list, font)| ffi::skiac_svg_font_list {
-      families: list.as_ptr(),
-      count: list.len(),
+    .map(|font| ffi::skiac_svg_font_list {
+      families: families[font.families].as_ptr(),
+      count: families[font.families].len(),
       weight: f32::from_bits(font.weight),
       synthetic_bold: font.synthetic_bold,
       synthetic_italic: font.synthetic_italic,
