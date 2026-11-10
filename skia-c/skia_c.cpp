@@ -4969,7 +4969,6 @@ void WriteTextToPath(SkSVGDOM* dom,
   auto canvas = SkSVGCanvas::Make(SkRect::MakeSize(size), &w_stream,
                                   SkSVGCanvas::kConvertTextToPaths_Flag);
   dom->render(canvas.get());
-  napi_svg::EndSvgText();
   canvas.reset();
   auto d = w_stream.detachAsData().release();
   output_data->data = reinterpret_cast<skiac_data*>(d);

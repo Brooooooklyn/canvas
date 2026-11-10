@@ -25,16 +25,12 @@ sk_sp<SkSVGDOM> MakePreparedDocument(
 // else each is a family name (the first of the list, as SkSVG parses it),
 // matched as canvas text matches a named family (MatchNamedFamily). Text
 // falls back per grapheme cluster as in SVG images. The caller holds the
-// font collection's lock and calls EndSvgText after drawing.
+// font collection's lock while it makes and draws the document.
 sk_sp<SkSVGDOM> MakeTextToPathDocument(SkStream& stream,
                                        skiac_font_collection* c_collection,
                                        const skiac_svg_font_list* fonts,
                                        size_t font_count,
                                        bool prepared);
-
-// Forgets the font request this thread's SVG text shaping kept
-// (svg_image.cpp FontRequest), after a document is drawn.
-void EndSvgText();
 
 // Draws a prepared document on `canvas`, a raster in colour space `cs`.
 // The caller holds the font collection's lock.
