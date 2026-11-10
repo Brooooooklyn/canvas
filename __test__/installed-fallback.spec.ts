@@ -12,7 +12,7 @@
 // reads /System/Library/Fonts; a Linux desktop's /usr/share/fonts) is not
 // "bare": there only "a real glyph, not .notdef" is checked.
 import { spawnSync } from 'node:child_process'
-import { existsSync } from 'node:fs'
+import { copyFileSync, existsSync, mkdirSync, rmdirSync, rmSync } from 'node:fs'
 import { release } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -184,14 +184,18 @@ switch (process.env.CASE) {
     break
   }
   case 'G': {
-    // U+0A76 bold from a variable installed font with an opsz axis (macOS:
-    // .SF Gurmukhi in SFIndia.ttc, which the font manager also lists as
-    // named instances).
+    // G_CHAR bold from a variable installed font the font manager also lists
+    // as named instances: macOS 27's .SF Gurmukhi (SFIndia.ttc) for U+0A76,
+    // or G_FONT, loaded from a temp dir as well.
+    const ch = String.fromCodePoint(parseInt(process.env.G_CHAR, 16))
+    const dir = process.env.G_FONT && dirOf([process.env.G_FONT])
+    if (dir) GlobalFonts.loadFontsFromDir(dir)
     const ctx = createCanvas(10, 10).getContext('2d')
     ctx.font = '700 32px MyLatoOnly'
-    out.gFamily = JSON.parse(ctx.__debugTextLine('\u0A76')).runs[0].family
-    out.g700 = m('700 32px MyLatoOnly', '\u0A76')
-    out.gNamed700 = m('700 32px "' + out.gFamily + '"', '\u0A76')
+    out.gFamily = JSON.parse(ctx.__debugTextLine(ch)).runs[0].family
+    out.g700 = m('700 32px MyLatoOnly', ch)
+    out.gNamed700 = m('700 32px "' + out.gFamily + '"', ch)
+    if (dir) fs.rmSync(dir, { recursive: true, force: true })
     break
   }
   case 'mac': {
@@ -345,17 +349,59 @@ batakTest(`portable: a loaded face of an installed family keeps the family's oth
 const MEASURED_MACOS = process.platform === 'darwin' && Number.parseInt(release(), 10) === 27
 const macTest = MEASURED_MACOS ? test : test.skip
 
-// loadSystemFonts registers a variable face once; the font manager also
-// lists each of its named instances. An instance is the same face, so with
-// the installed fonts on the fallback face is the one the family name
-// gives, at the request's axes, not a named instance's other axes (opsz).
-// macOS 27's SFIndia.ttc has U+0A76; macOS 26 has no installed font with it
-// (the run stays on Lato), so there only a fallback face, if any, is checked.
+// loadSystemFonts and loadFontsFromDir register a variable face once; the
+// font manager also lists each of its named instances. An instance is the
+// same face, so the fallback face is the one the family name gives, at the
+// request's axes, not a named instance's other axes (CTRS, opsz).
+//
+// The manager only scans SK_FONT_FILE_PREFIX, so the test copies
+// NamedInstanceProbe.ttf (its Bold instance at CTRS 85) there: the CI's Linux
+// containers run as root and its Windows runners as an administrator; where
+// the copy fails, nothing is checked. macOS's /System/Library/Fonts is
+// read-only.
+const MANAGER_DIR = ({ linux: '/usr/share/fonts', win32: 'C:/Windows/Fonts' } as Record<string, string>)[
+  process.platform
+]
+const managerTest = MANAGER_DIR ? test : test.skip
+
+managerTest(`portable: a named instance of a loaded variable face is not another fallback face`, (t) => {
+  const createdDir = !existsSync(MANAGER_DIR)
+  const file = join(MANAGER_DIR, `napi-rs-canvas-named-instance-probe-${process.pid}.ttf`)
+  try {
+    mkdirSync(MANAGER_DIR, { recursive: true })
+    copyFileSync(join(__dirname, 'fonts', 'NamedInstanceProbe.ttf'), file)
+  } catch (e) {
+    t.pass(`${MANAGER_DIR} is not writable (${(e as NodeJS.ErrnoException).code})`)
+    return
+  }
+  let out: Record<string, Box> & { gFamily: string }
+  try {
+    out = run('portable', 'G', {
+      DISABLE_SYSTEM_FONTS_LOAD: '1',
+      G_CHAR: '1E290',
+      G_FONT: 'NamedInstanceProbe.ttf',
+    }) as unknown as typeof out
+  } finally {
+    rmSync(file, { force: true })
+    if (createdDir) rmdirSync(MANAGER_DIR)
+  }
+  t.not(out.gFamily, 'Lato')
+  if (out.gFamily !== 'Named Instance Probe') {
+    t.pass(`the host has another font with U+1E290 (${out.gFamily})`)
+    return
+  }
+  t.deepEqual(out.g700, out.gNamed700)
+})
+
+// The same with macOS 27's SFIndia.ttc, which has U+0A76 (its Bold instance
+// taken as it is draws at the wght 400 advance). macOS 26 has no installed
+// font with U+0A76 (the run stays on Lato), so there only a fallback face,
+// if any, is checked.
 const SF_INDIA = '/System/Library/Fonts/SFIndia.ttc'
 const sfIndiaTest = process.platform === 'darwin' && existsSync(SF_INDIA) ? test : test.skip
 
-sfIndiaTest(`portable: a named instance of a loaded variable face is not another fallback face`, (t) => {
-  const out = run('portable', 'G', {}) as unknown as Record<string, Box> & { gFamily: string }
+sfIndiaTest(`portable on macOS: a named instance of .SF Gurmukhi is not another fallback face`, (t) => {
+  const out = run('portable', 'G', { G_CHAR: '0A76' }) as unknown as Record<string, Box> & { gFamily: string }
   if (MEASURED_MACOS) {
     t.is(out.gFamily, '.SF Gurmukhi')
   } else if (out.gFamily === 'Lato') {

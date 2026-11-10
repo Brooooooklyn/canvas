@@ -6,8 +6,9 @@
 #
 # `build-probe-fonts.py nominal` builds only NominalProbe.ttf,
 # `build-probe-fonts.py lowx` only LowXProbe.ttf, `build-probe-fonts.py ic`
-# only IcWghtProbe.ttf and IcOpszProbe.ttf, and `build-probe-fonts.py batak`
-# only BatakBoldProbe.ttf.
+# only IcWghtProbe.ttf and IcOpszProbe.ttf, `build-probe-fonts.py batak`
+# only BatakBoldProbe.ttf, and `build-probe-fonts.py named` only
+# NamedInstanceProbe.ttf.
 #
 # Sources:
 # - Lato-Regular.ttf, Harmattan-Regular.ttf: in this folder.
@@ -30,7 +31,7 @@ from fontTools.feaLib.builder import addOpenTypeFeaturesFromString
 from fontTools.otlLib.builder import buildStatTable
 from fontTools.subset import Options, Subsetter
 from fontTools.ttLib import TTFont, newTable
-from fontTools.ttLib.tables._c_m_a_p import cmap_format_4
+from fontTools.ttLib.tables._c_m_a_p import CmapSubtable, cmap_format_4
 from fontTools.ttLib.tables._t_r_a_k import TrackData, TrackTableEntry
 from fontTools.varLib.instancer import instantiateVariableFont
 
@@ -273,6 +274,40 @@ def batak_bold_probe():
     save(f, 'BatakBoldProbe.ttf')
 
 
+def named_instance_probe():
+    # Science Gothic with only its "m" glyph, at U+1E290 (TOTO LETTER PA, a
+    # script no fallback list names, so the scan reaches this font), and its
+    # Bold named instance (wght 700, slnt 0) moved to CTRS 85: that instance
+    # taken as it is draws "m" 2.58px wider at 32px than the face at wght
+    # 700, CTRS 0 (installed-fallback.spec.ts).
+    f = TTFont(SCIENCE_GOTHIC)
+    opts = Options()
+    opts.layout_features = []
+    opts.name_IDs = ['*']
+    opts.name_languages = ['*']
+    opts.notdef_outline = True
+    s = Subsetter(opts)
+    s.populate(unicodes=[ord('m')])
+    s.subset(f)
+    m = f.getBestCmap()[ord('m')]
+    # A format 12 subtable for the astral character, and an empty format 4
+    # one beside it.
+    cmap = f['cmap']
+    cmap.tables = []
+    for platform, encoding, fmt in ((0, 4, 12), (3, 1, 4), (3, 10, 12)):
+        table = CmapSubtable.newSubtable(fmt)
+        table.platformID = platform
+        table.platEncID = encoding
+        table.language = 0
+        table.cmap = {0x1E290: m} if fmt == 12 else {}
+        cmap.tables.append(table)
+    for instance in f['fvar'].instances:
+        if instance.coordinates['wght'] == 700 and instance.coordinates['slnt'] == 0:
+            instance.coordinates['CTRS'] = 85.0
+    rename(f, 'Named Instance Probe')
+    save(f, 'NamedInstanceProbe.ttf')
+
+
 def deva_subset(src):
     f = TTFont(src)
     f.flavor = None
@@ -307,6 +342,10 @@ def main():
         # Only BatakBoldProbe.ttf, from NotoSansDevanagari-subset.ttf.
         batak_bold_probe()
         return
+    if sys.argv[1:] == ['named']:
+        # Only NamedInstanceProbe.ttf, from ScienceGothic-VariableFont.ttf.
+        named_instance_probe()
+        return
     deva_src, halt_src = sys.argv[1], sys.argv[2]
     locl_probe()
     script_probe()
@@ -319,6 +358,7 @@ def main():
     trak_probe()
     deva_subset(deva_src)
     batak_bold_probe()
+    named_instance_probe()
     shutil.copyfile(halt_src, os.path.join(HERE, 'NotoSansCJKjp-Regular-subset-halt.otf'))
 
 
