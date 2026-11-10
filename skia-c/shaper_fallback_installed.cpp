@@ -155,6 +155,10 @@ Coverage ReadCoverage(SkTypeface* face) {
 // directory (each table's tag, checksum, offset and length) and its index in
 // a collection, from the face's own data. A file both `assets` and the font
 // manager list is one face; a subset or another style of the family is not.
+// The manager also lists each named instance of a variable face (the index's
+// high 16 bits, SkFontMgr_custom_directory.cpp) where loadSystemFonts
+// registers the face once: an instance is the same face as its face, which
+// AtRequestAxes takes at the request's axes.
 // Empty when the data is not an sfnt in memory (never the same face).
 std::string ReadFaceIdentity(SkTypeface* face) {
   int ttc_index = 0;
@@ -162,6 +166,7 @@ std::string ReadFaceIdentity(SkTypeface* face) {
   if (!stream || !stream->getMemoryBase() || ttc_index < 0) {
     return {};
   }
+  ttc_index &= 0xFFFF;
   const auto* data = static_cast<const uint8_t*>(stream->getMemoryBase());
   const size_t length = stream->getLength();
   auto u32 = [&](size_t at) {

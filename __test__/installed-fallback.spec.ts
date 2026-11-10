@@ -183,6 +183,17 @@ switch (process.env.CASE) {
     fs.rmSync(dir, { recursive: true, force: true })
     break
   }
+  case 'G': {
+    // U+0A76 bold from a variable installed font with an opsz axis (macOS:
+    // .SF Gurmukhi in SFIndia.ttc, which the font manager also lists as
+    // named instances).
+    const ctx = createCanvas(10, 10).getContext('2d')
+    ctx.font = '700 32px MyLatoOnly'
+    out.gFamily = JSON.parse(ctx.__debugTextLine('\u0A76')).runs[0].family
+    out.g700 = m('700 32px MyLatoOnly', '\u0A76')
+    out.gNamed700 = m('700 32px "' + out.gFamily + '"', '\u0A76')
+    break
+  }
   case 'mac': {
     const ctx = createCanvas(10, 10).getContext('2d')
     ctx.font = '700 32px MyLatoOnly'
@@ -328,6 +339,19 @@ batakTest(`portable: a loaded face of an installed family keeps the family's oth
   t.is(out.bFamily, 'Noto Sans Batak')
   t.deepEqual(out.b, out.bBefore)
   t.deepEqual(out.bBold, out.bBoldBefore)
+})
+
+// loadSystemFonts registers a variable face once; the font manager also
+// lists each of its named instances. An instance is the same face, so with
+// the installed fonts on the fallback face is the one the family name
+// gives, at the request's axes, not a named instance's other axes (opsz).
+const SF_INDIA = '/System/Library/Fonts/SFIndia.ttc'
+const sfIndiaTest = process.platform === 'darwin' && existsSync(SF_INDIA) ? test : test.skip
+
+sfIndiaTest(`portable: a named instance of a loaded variable face is not another fallback face`, (t) => {
+  const out = run('portable', 'G', {}) as unknown as Record<string, Box> & { gFamily: string }
+  t.is(out.gFamily, '.SF Gurmukhi')
+  t.deepEqual(out.g700, out.gNamed700)
 })
 
 // macOS 27 (the Chrome 157 capture's host), the installed fonts on.
