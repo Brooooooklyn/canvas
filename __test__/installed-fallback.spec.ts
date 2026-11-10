@@ -120,6 +120,23 @@ switch (process.env.CASE) {
     fs.rmSync(dir, { recursive: true, force: true })
     break
   }
+  case 'V': {
+    // A variable font: the fallback is its instance at the request's
+    // weight and width, as the family named is.
+    GlobalFonts.registerFromPath(path.join(F, 'NotoSansDevanagari-subset.ttf'), 'MyDevaOnly')
+    out.vNotdef = m('32px MyDevaOnly', '\uE000')
+    out.vBefore = m('32px MyDevaOnly', 'H')
+    const dir = dirOf(['ScienceGothic-VariableFont.ttf'])
+    GlobalFonts.loadFontsFromDir(dir)
+    out.v900 = m('900 32px MyDevaOnly', 'HELLO')
+    out.named900 = m('900 32px "Science Gothic"', 'HELLO')
+    out.v400 = m('400 32px MyDevaOnly', 'HELLO')
+    out.named400 = m('400 32px "Science Gothic"', 'HELLO')
+    out.vCondensed = m('condensed 32px MyDevaOnly', 'HELLO')
+    out.namedCondensed = m('condensed 32px "Science Gothic"', 'HELLO')
+    fs.rmSync(dir, { recursive: true, force: true })
+    break
+  }
   case 'mac': {
     const ctx = createCanvas(10, 10).getContext('2d')
     ctx.font = '700 32px MyLatoOnly'
@@ -223,6 +240,20 @@ for (const renderer of ['portable', 'system']) {
     }
     t.notDeepEqual(out.sym, out.sNotdef)
     t.deepEqual(out.s, out.sym)
+  })
+
+  test(`${renderer}: a variable installed font is a fallback font at the request's weight and width`, (t) => {
+    const out = run(renderer, 'V')
+    t.notDeepEqual(out.v400, out.vNotdef)
+    if (JSON.stringify(out.vBefore) !== JSON.stringify(out.vNotdef)) {
+      t.pass('the host has a font with H')
+      return
+    }
+    t.deepEqual(out.v400, out.named400)
+    t.deepEqual(out.v900, out.named900)
+    t.deepEqual(out.vCondensed, out.namedCondensed)
+    t.notDeepEqual(out.v900, out.v400)
+    t.notDeepEqual(out.vCondensed, out.v400)
   })
 }
 

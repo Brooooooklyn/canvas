@@ -9,10 +9,12 @@
 // candidates here.
 
 #include <algorithm>
+#include <cstring>
 #include <map>
 #include <memory>
 #include <set>
 #include <string>
+#include <tuple>
 #include <unordered_map>
 #include <utility>
 #include <vector>
@@ -391,6 +393,16 @@ const std::vector<ScriptFamilies>& MacScriptFamilies() {
 }
 #endif
 
+constexpr SkFourByteTag kWght = SkSetFourByteTag('w', 'g', 'h', 't');
+constexpr SkFourByteTag kWdth = SkSetFourByteTag('w', 'd', 't', 'h');
+constexpr SkFourByteTag kSlnt = SkSetFourByteTag('s', 'l', 'n', 't');
+
+uint32_t Bits(float value) {
+  uint32_t bits;
+  memcpy(&bits, &value, sizeof(bits));
+  return bits;
+}
+
 }  // namespace
 
 struct InstalledFallbackIndex {
@@ -409,6 +421,12 @@ struct InstalledFallbackIndex {
   // reused); kept across listings for the faces that stay.
   std::unordered_map<SkTypefaceID, Coverage> coverage;
   std::unordered_map<SkTypefaceID, bool> color;
+  // The instances AtRequestAxes made, by face and axis values, so a face
+  // keeps one instance (one typeface ID) for a style; at most 64, dropped
+  // with each listing.
+  std::map<std::tuple<SkTypefaceID, uint32_t, uint32_t, uint32_t>,
+           sk_sp<SkTypeface>>
+      instances;
 
   const Coverage& CoverageOf(SkTypeface* face) {
     auto found = coverage.find(face->uniqueID());
@@ -434,6 +452,69 @@ struct InstalledFallbackIndex {
       return face && Has(face.get(), c) ? face : nullptr;
     }
     return nullptr;
+  }
+  // A variable face at the request's wght, wdth and slnt, as a named
+  // installed family is (FontVariations): the instance fontconfig's and
+  // DirectWrite's match of the style gives Chrome, not the default one.
+  sk_sp<SkTypeface> AtRequestAxes(sk_sp<SkTypeface> face,
+                                  const skiac_text_request& request) {
+    const int count = face->getVariationDesignPosition({});
+    if (count <= 0) {
+      return face;
+    }
+    std::vector<SkFontArguments::VariationPosition::Coordinate> coordinates(
+        count);
+    std::vector<SkFontParameters::Variation::Axis> axes(
+        std::max(face->getVariationDesignParameters({}), 0));
+    if (face->getVariationDesignPosition(coordinates) != count ||
+        face->getVariationDesignParameters(axes) !=
+            static_cast<int>(axes.size())) {
+      return face;
+    }
+    bool changed = false;
+    for (auto& coordinate : coordinates) {
+      float value = coordinate.value;
+      if (coordinate.axis == kWght) {
+        value = request.weight;
+      } else if (coordinate.axis == kWdth) {
+        value = request.stretch_pct;
+      } else if (coordinate.axis == kSlnt) {
+        // CSS slants clockwise, OpenType counter-clockwise.
+        value = -request.slope;
+      } else {
+        continue;
+      }
+      for (const auto& axis : axes) {
+        if (axis.tag == coordinate.axis) {
+          value = std::max(std::min(value, axis.max), axis.min);
+        }
+      }
+      if (value != coordinate.value) {
+        coordinate.value = value;
+        changed = true;
+      }
+    }
+    if (!changed) {
+      return face;
+    }
+    const auto key =
+        std::make_tuple(face->uniqueID(), Bits(request.weight),
+                        Bits(request.stretch_pct), Bits(request.slope));
+    if (auto found = instances.find(key); found != instances.end()) {
+      return found->second;
+    }
+    SkFontArguments args;
+    args.setVariationDesignPosition(
+        {coordinates.data(), static_cast<int>(coordinates.size())});
+    sk_sp<SkTypeface> instance = face->makeClone(args);
+    if (!instance) {
+      return face;
+    }
+    if (instances.size() >= 64) {
+      instances.clear();
+    }
+    instances.emplace(key, instance);
+    return instance;
   }
   bool Color(SkTypeface* face) {
     auto found = color.find(face->uniqueID());
@@ -465,6 +546,7 @@ bool ListInstalledFallbackFamilies(skiac_font_collection* c_collection,
   index->generation = c_collection->families_generation;
   index->system = system;
   index->families.clear();
+  index->instances.clear();
   // CoreText already asked: on Apple with the system renderer, the faces it
   // lists (loadSystemFonts') are not asked again.
   bool coretext = false;
@@ -558,6 +640,7 @@ SystemFallbackFont InstalledFallback(skiac_font_collection* c_collection,
   // CreateFontPlatformDataForTypeface: bold or italic the face lacks is
   // synthesized.
   auto found = [&](sk_sp<SkTypeface> face) {
+    face = index->AtRequestAxes(std::move(face), request);
     result.synthetic = {bold && !face->isBold(), italic && !face->isItalic()};
     result.face = std::move(face);
     return result;
