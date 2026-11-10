@@ -461,10 +461,11 @@ SyntheticStyle MacMatchedFontSynthetic(SkTypeface* face,
 // (skiac_font_collection::system_fallbacks, kept across the drops of
 // TextCaches), by source, code point, emoji presentation, primary font
 // (CoreText: family face and axes; installed: the first family's installed
-// face, 0 for none), weight, slope, ComputedPixelSize (CoreText), and
-// stretch, slant keyword, Han script and monospace (installed). At most 4096,
-// the least recently used dropped first. The installed source's results go when
-// the installed fonts' listing changes (InstalledFallbacks).
+// face, 0 for none), weight, slope, ComputedPixelSize and the first font's
+// synthetic styles (CoreText), and stretch, slant keyword, Han script and
+// monospace (installed). At most 4096, the least recently used dropped first.
+// The installed source's results go when the installed fonts' listing changes
+// (InstalledFallbacks).
 enum class SystemFallbackSource : uint8_t { kCoreText, kInstalled };
 struct SystemFallbackKey {
   uint32_t code_point;
@@ -481,6 +482,11 @@ struct SystemFallbackKey {
   int slant = 0;
   int han_script = 0;
   bool monospace = false;
+  // CoreText: the first font's synthetic styles the query asks with. They
+  // follow from the face, weight and slope, except where SVG text's
+  // font-synthesis masks them.
+  bool synthetic_bold = false;
+  bool synthetic_italic = false;
   bool operator==(const SystemFallbackKey&) const = default;
 };
 const SystemFallbackFont* FindSystemFallback(

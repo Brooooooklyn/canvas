@@ -572,22 +572,21 @@ class SvgRunShaper final : public SkShaper {
       request_.size = primary.getSize();
       // Each list face is its family's face, so its own base.
       allowed_ = slot.allowed;
-      std::vector<SyntheticStyle> wanted;
       for (const sk_sp<SkTypeface>& face : list_) {
-        wanted.push_back(
-            SynthesizeStyle(c_collection, face.get(), face.get(), request_));
-        list_synthetic_.push_back(Allowed(wanted.back(), allowed_));
+        list_synthetic_.push_back(Allowed(
+            SynthesizeStyle(c_collection, face.get(), face.get(), request_),
+            allowed_));
       }
       SkTypeface* first = list_.front().get();
       query_.request = &request_;
       query_.primary_face = first;
       query_.primary_base = first;
       // The system fallback is asked with the first font's synthetic styles
-      // before font-synthesis, and its answer is masked (FontFor). Blink
-      // asks with the masked ones, but SystemFallbackFor's cache (shared
-      // with canvas text) is keyed as if they follow from the face, weight
-      // and slope, so a masked query would change later draws.
-      query_.primary_synthetic = wanted.front();
+      // after font-synthesis (GetAlternateFontPlatformData reads the
+      // FontPlatformData's, which CreateFontPlatformData masked), and its
+      // answer is masked too (FontFor). They are in SystemFallbackFor's
+      // cache key, so a masked query does not change later draws.
+      query_.primary_synthetic = list_synthetic_.front();
       query_.coretext = HasCoreTextFallbackSource(c_collection);
       query_.han_script = FallbackHanScript("");
       query_.monospace = FallbackMonospace(request_);

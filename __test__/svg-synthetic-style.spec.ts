@@ -472,6 +472,64 @@ for (const renderer of ['portable', 'system'] as const) {
   })
 }
 
+// CoreText is asked for a fallback font with the first font's synthetic
+// styles after font-synthesis (Blink's GetAlternateFontPlatformData reads
+// the FontPlatformData's), so under font-synthesis: none italic Ѣ (Lato has
+// none) gets the upright face. The x of "H" after it, from
+// convertSVGTextToPath, at 64px; each STEPS order in one process.
+const FALLBACK = `
+const { convertSVGTextToPath, GlobalFonts, setTextRenderer } = require('./index.js')
+setTextRenderer('system')
+GlobalFonts.registerFromPath(require('path').join('__test__', 'fonts', 'Lato-Regular.ttf'), 'SynthLato')
+const hx = (step) => {
+  const [style, weight, synthesis] = step.split('/')
+  const svg = '<svg xmlns="http://www.w3.org/2000/svg" width="300" height="80"><text x="0" y="64" font-family="SynthLato" ' +
+    'font-size="64" font-style="' + style + '" font-weight="' + weight + '" style="font-synthesis: ' + synthesis + '">ѢH</text></svg>'
+  return Number([...convertSVGTextToPath(Buffer.from(svg)).toString().matchAll(/translate\\(([^ )]+) /g)][1][1])
+}
+console.log(JSON.stringify(process.env.STEPS.split(' ').map(hx)))
+`
+
+const darwinTest = process.platform === 'darwin' ? test : test.skip
+darwinTest('font-synthesis: none asks CoreText for the fallback font without synthetic styles (system)', (t) => {
+  const run = (steps: string): number[] => {
+    const { stdout, stderr, status } = spawnSync(process.execPath, ['-e', FALLBACK], {
+      cwd: join(__dirname, '..'),
+      env: { ...process.env, STEPS: steps },
+      encoding: 'utf8',
+      timeout: 60_000,
+    })
+    if (status !== 0) throw new Error(stderr)
+    return JSON.parse(stdout)
+  }
+  const steps = [
+    'normal/400/auto',
+    'normal/700/auto',
+    'italic/400/auto',
+    'italic/700/auto',
+    'italic/400/none',
+    'italic/700/none',
+    'italic/400/weight',
+    'italic/700/style',
+  ]
+  const forward = run(steps.join(' '))
+  const [normal, bold, italic, boldItalic, none, boldNone, weight, style] = forward
+  t.deepEqual(run([...steps].reverse().join(' ')), [...forward].reverse(), 'the draw order does not matter')
+  // No synthetic italic allowed: the fallback face of plain text.
+  t.is(none, normal)
+  t.is(boldNone, bold)
+  t.is(weight, normal)
+  // Synthetic italic allowed: the italic face.
+  t.is(style, boldItalic)
+  if (DARWIN === 27) {
+    // Chrome 157 (macOS 27, inline SVG, getStartPositionOfChar); the path
+    // export writes 4 decimals.
+    const chrome = [51.40625, 49.78125, 42.6875, 53.3125, 51.40625, 49.78125, 51.40625, 53.3125]
+    forward.forEach((x, k) => t.true(Math.abs(x - chrome[k]) < 1e-3, `${steps[k]}: ${x} vs ${chrome[k]}`))
+    t.not(italic, none, 'Ѣ has an italic fallback face here')
+  }
+})
+
 // Chrome 157's pixels, macOS 27, the system renderer. Lato and Roboto Mono
 // have no kerning pair in "Hamburg", so the rows match Chrome's pixels
 // (Chrome rasterizes a fake bold glyph from a slightly wider stroke).

@@ -33,7 +33,8 @@ struct SystemFallbackKeyHash {
           static_cast<uint64_t>(key.pixel_size),
           static_cast<uint64_t>(key.source), static_cast<uint64_t>(key.stretch),
           static_cast<uint64_t>(key.slant),
-          static_cast<uint64_t>(key.han_script), uint64_t{key.monospace}}) {
+          static_cast<uint64_t>(key.han_script), uint64_t{key.monospace},
+          uint64_t{key.synthetic_bold}, uint64_t{key.synthetic_italic}}) {
       hash = hash * 31 + std::hash<uint64_t>()(part);
     }
     return hash;
