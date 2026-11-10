@@ -56,7 +56,8 @@ interface Probe {
   // Tight bounds of the "H" outline: convertSVGTextToPath, and the SVG
   // canvas path export of canvas fillText.
   paths: Record<string, { svg: Box; canvas: Box }>
-  // convertSVGTextToPath of a stroked "H" (64px; b300: 300px bold): the
+  // convertSVGTextToPath of a stroked "H" (64px; b300: 300px bold; brot:
+  // 200px bold, rotated glyph under a non-uniform scale): the
   // path data and stroke widths it writes, and the raster of the output and
   // of the source.
   stroke: Record<string, { d: string[]; width: number[]; raster: string; source: string }>
@@ -152,8 +153,13 @@ const strokeOf = (s, size) =>
   '<svg xmlns="http://www.w3.org/2000/svg" width="' + (size + 20) + '" height="' + (size + 20) + '"><text x="4" y="' + size +
   '" font-family="SynthLato" font-size="' + size + '" font-weight="' + STYLES[s][1] +
   '" fill="none" stroke="black" stroke-width="0.25">H</text></svg>'
-for (const [id, s, size] of [['n', 'n', 64], ['b', 'b', 64], ['b300', 'b', 300]]) {
-  const svg = strokeOf(s, size)
+// A glyph rotated by 45deg under scale(1.5 .2): 200 * 1.5 is over 256 px
+// before the rotation, about 191 px after it.
+const rotated =
+  '<svg xmlns="http://www.w3.org/2000/svg" width="320" height="320"><g transform="translate(50 200) scale(1.5 .2)">' +
+  '<text rotate="45" font-family="SynthLato" font-size="200" font-weight="700" fill="none" stroke="black" stroke-width="0.25">H</text></g></svg>'
+for (const [id, s, size] of [['n', 'n', 64], ['b', 'b', 64], ['b300', 'b', 300], ['brot', 'b', 300]]) {
+  const svg = id === 'brot' ? rotated : strokeOf(s, size)
   const xml = convertSVGTextToPath(svg).toString()
   out.stroke[id] = {
     d: [...xml.matchAll(/ d="([^"]*)"/g)].map((m) => m[1]),
@@ -277,6 +283,9 @@ for (const renderer of ['portable', 'system'] as const) {
     t.deepEqual(stroke.b.d, stroke.n.d)
     t.deepEqual(stroke.b300.width, [0.25])
     t.is(stroke.b300.raster, stroke.b300.source)
+    // The raster decides per glyph with its rotation.
+    t.deepEqual(stroke.brot.width, [0.25 + 200 / 32])
+    t.is(stroke.brot.d.length, 1)
   })
 
   test(`a nested SVG image and an SVG canvas keep the synthetic styles (${renderer})`, (t) => {

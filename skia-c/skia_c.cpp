@@ -4989,59 +4989,81 @@ class TextToPathCanvas final : public SkNWayCanvas {
                       SkScalar x,
                       SkScalar y,
                       const SkPaint& paint) override {
-    const SkMatrix matrix = this->getTotalMatrix();
-    auto widen = [&](const SkFont& font) {
-      return font.isEmbolden() && paint.getStyle() != SkPaint::kFill_Style &&
-             !SkStrikeSpec::ShouldDrawAsPath(paint, font, matrix);
+    if (paint.getStyle() == SkPaint::kFill_Style) {
+      SkNWayCanvas::onDrawTextBlob(blob, x, y, paint);
+      return;
+    }
+    // The raster decides per glyph of an RSXform run, under the matrix with
+    // the glyph's RSXform (SkDevice::simplifyGlyphRunRSXFormAndRedraw).
+    const SkMatrix total = this->getTotalMatrix();
+    auto widen = [&](const SkTextBlobRunIterator& it, int glyph) {
+      SkMatrix matrix = total;
+      if (it.positioning() == SkTextBlobRunIterator::kRSXform_Positioning) {
+        matrix.preConcat(SkMatrix().setRSXform(it.xforms()[glyph]));
+      }
+      return it.font().isEmbolden() &&
+             !SkStrikeSpec::ShouldDrawAsPath(paint, it.font(), matrix);
+    };
+    auto per_glyph = [](const SkTextBlobRunIterator& it) {
+      return it.positioning() == SkTextBlobRunIterator::kRSXform_Positioning
+                 ? static_cast<int>(it.glyphCount())
+                 : 1;
     };
     bool any = false;
     for (SkTextBlobRunIterator it(blob); !it.done(); it.next()) {
-      any = any || widen(it.font());
+      for (int i = 0; i < per_glyph(it); ++i) {
+        any = any || widen(it, i);
+      }
     }
     if (!any) {
       SkNWayCanvas::onDrawTextBlob(blob, x, y, paint);
       return;
     }
     for (SkTextBlobRunIterator it(blob); !it.done(); it.next()) {
-      SkFont font = it.font();
-      SkPaint run_paint = paint;
-      if (widen(font)) {
-        font.setEmbolden(false);
-        const SkScalar size = font.getSize();
-        run_paint.setStrokeWidth(
-            paint.getStrokeWidth() +
-            size * SkFloatInterpFunc(size, kStdFakeBoldInterpKeys,
-                                     kStdFakeBoldInterpValues,
-                                     kStdFakeBoldInterpLength));
-      }
-      const int count = static_cast<int>(it.glyphCount());
-      SkTextBlobBuilder builder;
-      const SkTextBlobBuilder::RunBuffer* run = nullptr;
-      size_t scalars = 0;
-      switch (it.positioning()) {
-        case SkTextBlobRunIterator::kDefault_Positioning:
-          run =
-              &builder.allocRun(font, count, it.offset().x(), it.offset().y());
-          break;
-        case SkTextBlobRunIterator::kHorizontal_Positioning:
-          run = &builder.allocRunPosH(font, count, it.offset().y());
-          scalars = 1;
-          break;
-        case SkTextBlobRunIterator::kFull_Positioning:
-          run = &builder.allocRunPos(font, count);
-          scalars = 2;
-          break;
-        case SkTextBlobRunIterator::kRSXform_Positioning:
-          run = &builder.allocRunRSXform(font, count);
-          scalars = 4;
-          break;
-      }
-      memcpy(run->glyphs, it.glyphs(), count * sizeof(SkGlyphID));
-      if (scalars) {
-        memcpy(run->pos, it.pos(), count * scalars * sizeof(SkScalar));
-      }
-      if (sk_sp<SkTextBlob> rebuilt = builder.make()) {
-        SkNWayCanvas::onDrawTextBlob(rebuilt.get(), x, y, run_paint);
+      // An RSXform run is drawn a glyph at a time, as the raster draws it.
+      const int parts = per_glyph(it);
+      const int count = parts > 1 ? 1 : static_cast<int>(it.glyphCount());
+      for (int i = 0; i < parts; ++i) {
+        SkFont font = it.font();
+        SkPaint run_paint = paint;
+        if (widen(it, i)) {
+          font.setEmbolden(false);
+          const SkScalar size = font.getSize();
+          run_paint.setStrokeWidth(
+              paint.getStrokeWidth() +
+              size * SkFloatInterpFunc(size, kStdFakeBoldInterpKeys,
+                                       kStdFakeBoldInterpValues,
+                                       kStdFakeBoldInterpLength));
+        }
+        SkTextBlobBuilder builder;
+        const SkTextBlobBuilder::RunBuffer* run = nullptr;
+        size_t scalars = 0;
+        switch (it.positioning()) {
+          case SkTextBlobRunIterator::kDefault_Positioning:
+            run = &builder.allocRun(font, count, it.offset().x(),
+                                    it.offset().y());
+            break;
+          case SkTextBlobRunIterator::kHorizontal_Positioning:
+            run = &builder.allocRunPosH(font, count, it.offset().y());
+            scalars = 1;
+            break;
+          case SkTextBlobRunIterator::kFull_Positioning:
+            run = &builder.allocRunPos(font, count);
+            scalars = 2;
+            break;
+          case SkTextBlobRunIterator::kRSXform_Positioning:
+            run = &builder.allocRunRSXform(font, count);
+            scalars = 4;
+            break;
+        }
+        memcpy(run->glyphs, it.glyphs() + i, count * sizeof(SkGlyphID));
+        if (scalars) {
+          memcpy(run->pos, it.pos() + i * scalars,
+                 count * scalars * sizeof(SkScalar));
+        }
+        if (sk_sp<SkTextBlob> rebuilt = builder.make()) {
+          SkNWayCanvas::onDrawTextBlob(rebuilt.get(), x, y, run_paint);
+        }
       }
     }
   }
