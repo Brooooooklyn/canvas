@@ -515,10 +515,13 @@ struct InstalledFallbackIndex {
   std::map<std::tuple<SkTypefaceID, uint32_t, uint32_t, uint32_t>,
            sk_sp<SkTypeface>>
       instances;
+  // The collection's installed_fallback_reads.
+  uint64_t* reads = nullptr;
 
   const Coverage& CoverageOf(SkTypeface* face) {
     auto found = coverage.find(face->uniqueID());
     if (found == coverage.end()) {
+      ++*reads;
       found = coverage.emplace(face->uniqueID(), ReadCoverage(face)).first;
     }
     return found->second;
@@ -527,6 +530,7 @@ struct InstalledFallbackIndex {
   const std::string& IdentityOf(SkTypeface* face) {
     auto found = identities.find(face->uniqueID());
     if (found == identities.end()) {
+      ++*reads;
       found =
           identities.emplace(face->uniqueID(), ReadFaceIdentity(face)).first;
     }
@@ -631,8 +635,15 @@ InstalledFallbackIndex* MakeInstalledFallbackIndex() {
   return new InstalledFallbackIndex();
 }
 
+void ForgetInstalledFallbackFaces(InstalledFallbackIndex* index) {
+  index->listed = false;
+  index->families.clear();
+  index->instances.clear();
+}
+
 bool ListInstalledFallbackFamilies(skiac_font_collection* c_collection,
                                    InstalledFallbackIndex* index) {
+  index->reads = &c_collection->installed_fallback_reads;
   const bool system = SystemFontRenderer();
   if (index->listed && index->generation == c_collection->families_generation &&
       index->system == system) {

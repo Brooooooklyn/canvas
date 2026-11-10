@@ -128,6 +128,17 @@ void SystemFallbackCacheDeleter::operator()(SystemFallbackCache* cache) const {
   delete cache;
 }
 
+void ForgetSystemFallbackFaces(SystemFallbackCache* cache) {
+  cache->results.clear();
+  cache->fonts.clear();
+#if defined(__APPLE__)
+  cache->inputs.reset();
+#endif
+  if (cache->installed) {
+    ForgetInstalledFallbackFaces(cache->installed.get());
+  }
+}
+
 namespace {
 
 constexpr size_t kMaxParents = 100;

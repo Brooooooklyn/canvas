@@ -495,13 +495,18 @@ MacFallbackInputs* SystemFallbackInputs(skiac_font_collection* c_collection);
 // The installed-font fallback source (shaper_fallback_installed.cpp): the
 // installed families in scan order and the characters of each face it read
 // (the `cmap` table only, as code point ranges). Kept with the system
-// fallback results; dropped with them by rebuildAssets (removeFont,
-// removeAll, a renderer switch).
+// fallback results. rebuildAssets (removeFont, removeAll, a renderer switch)
+// drops its faces (ForgetInstalledFallbackFaces) and keeps what it read.
 struct InstalledFallbackIndex;
 struct InstalledFallbackIndexDeleter {
   void operator()(InstalledFallbackIndex* index) const;
 };
 InstalledFallbackIndex* MakeInstalledFallbackIndex();
+// Drops the faces the index holds (a removed font's among them); the
+// families are listed again at the next use. The coverage, color and
+// identity read of each face stay, by typeface ID (never reused), so the
+// faces listed again are not read again; the listing drops the others.
+void ForgetInstalledFallbackFaces(InstalledFallbackIndex* index);
 // Lists the installed families again when families_generation or the
 // renderer moved since the last listing. Returns whether it did (the
 // results found from the old listing are then stale).

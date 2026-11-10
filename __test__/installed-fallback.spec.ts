@@ -71,6 +71,24 @@ switch (process.env.CASE) {
     fs.rmSync(dir, { recursive: true, force: true })
     break
   }
+  case 'K': {
+    // The tables the installed fallback source read so far.
+    const reads = () => {
+      const ctx = createCanvas(10, 10).getContext('2d')
+      ctx.font = '32px MyLatoOnly'
+      return JSON.parse(ctx.__debugTextLine('a')).fallbackReads
+    }
+    const dir = dirOf([SHS])
+    GlobalFonts.loadFontsFromDir(dir)
+    out.k = m('700 32px MyLatoOnly', '中')
+    out.kReads = reads()
+    const key = GlobalFonts.register(fs.readFileSync(path.join(F, 'Lato-Regular.ttf')), 'KTmp')
+    GlobalFonts.remove(key)
+    out.kRemoved = m('700 32px MyLatoOnly', '中')
+    out.kRemovedReads = reads()
+    fs.rmSync(dir, { recursive: true, force: true })
+    break
+  }
   case 'C': {
     GlobalFonts.registerFromPath(path.join(F, SHS), 'SHSWeb')
     out.c = m('700 32px MyLatoOnly', '中')
@@ -246,6 +264,20 @@ for (const renderer of ['portable', 'system']) {
     t.deepEqual(out.l400, out.s400)
     t.deepEqual(out.twin, out.l700)
     t.deepEqual(out.removed, out.before)
+  })
+
+  // remove() rebuilds the font provider; the installed faces it keeps are
+  // not read again for the next fallback character.
+  test(`${renderer}: remove() keeps what the installed fallback source read`, (t) => {
+    const out = run(renderer, 'K')
+    t.notDeepEqual(out.k, out.notdef)
+    t.deepEqual(out.kRemoved, out.k)
+    if (renderer === 'system' && process.platform === 'darwin') {
+      t.pass('CoreText gives the font')
+      return
+    }
+    t.true(out.kReads > 0)
+    t.is(out.kRemovedReads, out.kReads)
   })
 
   test(`${renderer}: a FontFace is never a fallback font`, (t) => {

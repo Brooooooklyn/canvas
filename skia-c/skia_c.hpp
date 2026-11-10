@@ -939,6 +939,9 @@ struct SystemFallbackCache;
 struct SystemFallbackCacheDeleter {
   void operator()(SystemFallbackCache* cache) const;
 };
+// Drops the results and every face the cache holds (rebuildAssets); keeps
+// what the installed-font source read of each face, by typeface ID.
+void ForgetSystemFallbackFaces(SystemFallbackCache* cache);
 
 // text.cpp: the laid out lines of recent requests and other text work,
 // kept by the font collection.
@@ -1083,9 +1086,13 @@ struct skiac_font_collection {
   // text_caches is dropped. They depend on the system fonts only, and asking
   // CoreText again with a remade instance's CTFont after each drop grows
   // CoreText's own fallback tables. With them, the CGFonts CoreText is asked
-  // with for registered fonts: dropped by rebuildAssets, which removes fonts.
+  // with for registered fonts. rebuildAssets, which removes fonts, drops the
+  // results and the faces (ForgetSystemFallbackFaces).
   std::unique_ptr<SystemFallbackCache, SystemFallbackCacheDeleter>
       system_fallbacks;
+  // The tables (cmap, identity) the installed-font fallback source read from
+  // faces, for skiac_debug_text_line's fallbackReads.
+  uint64_t installed_fallback_reads = 0;
 #if defined(__APPLE__)
   // loadSystemFonts turned the installed fonts on (kept across renderer
   // switches); they are registered the first time a font is looked up or
@@ -1325,7 +1332,9 @@ struct skiac_font_collection {
     caps_features.clear();
     font_arguments.clear();
     text_caches.reset();
-    system_fallbacks.reset();
+    if (system_fallbacks) {
+      ForgetSystemFallbackFaces(system_fallbacks.get());
+    }
     caches_dirty = false;
     ++families_generation;
 
