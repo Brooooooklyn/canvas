@@ -12,6 +12,7 @@
 // reads /System/Library/Fonts; a Linux desktop's /usr/share/fonts) is not
 // "bare": there only "a real glyph, not .notdef" is checked.
 import { spawnSync } from 'node:child_process'
+import { existsSync } from 'node:fs'
 import { release } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -162,6 +163,26 @@ switch (process.env.CASE) {
     fs.rmSync(dir, { recursive: true, force: true })
     break
   }
+  case 'B': {
+    // U+1BC0 from the font manager's (/System/Library/Fonts) Noto Sans Batak,
+    // then with a bold face of that family loaded that lacks it: the
+    // manager's regular face stays a fallback face.
+    const family = (text) => {
+      const ctx = createCanvas(10, 10).getContext('2d')
+      ctx.font = '32px MyLatoOnly'
+      return JSON.parse(ctx.__debugTextLine(text)).runs[0].family
+    }
+    out.bFamilyBefore = family('\u1BC0')
+    out.bBefore = m('32px MyLatoOnly', '\u1BC0')
+    out.bBoldBefore = m('700 32px MyLatoOnly', '\u1BC0')
+    const dir = dirOf(['BatakBoldProbe.ttf'])
+    GlobalFonts.loadFontsFromDir(dir)
+    out.bFamily = family('\u1BC0')
+    out.b = m('32px MyLatoOnly', '\u1BC0')
+    out.bBold = m('700 32px MyLatoOnly', '\u1BC0')
+    fs.rmSync(dir, { recursive: true, force: true })
+    break
+  }
   case 'mac': {
     const ctx = createCanvas(10, 10).getContext('2d')
     ctx.font = '700 32px MyLatoOnly'
@@ -290,6 +311,24 @@ for (const renderer of ['portable', 'system']) {
     t.deepEqual(out.r, out.rNotdef)
   })
 }
+
+// The font manager's faces (macOS portable: FreeType over
+// /System/Library/Fonts) and loadFontsFromDir's are one family per name, as
+// fontconfig and DirectWrite list faces: a loaded face of a family the
+// manager has does not hide the manager's other faces. Only a real
+// installed font can be the manager's side (a bare Linux host has none), so
+// this needs macOS's Noto Sans Batak.
+const BATAK = '/System/Library/Fonts/Supplemental/NotoSansBatak-Regular.ttf'
+const batakTest = process.platform === 'darwin' && existsSync(BATAK) ? test : test.skip
+
+batakTest(`portable: a loaded face of an installed family keeps the family's other faces`, (t) => {
+  const out = run('portable', 'B') as unknown as Record<string, Box> & { bFamily: string; bFamilyBefore: string }
+  t.is(out.bFamilyBefore, 'Noto Sans Batak')
+  t.notDeepEqual(out.bBefore, out.notdef)
+  t.is(out.bFamily, 'Noto Sans Batak')
+  t.deepEqual(out.b, out.bBefore)
+  t.deepEqual(out.bBold, out.bBoldBefore)
+})
 
 // macOS 27 (the Chrome 157 capture's host), the installed fonts on.
 const MEASURED_MACOS = process.platform === 'darwin' && Number.parseInt(release(), 10) === 27

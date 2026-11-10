@@ -151,6 +151,50 @@ Coverage ReadCoverage(SkTypeface* face) {
   return coverage;
 }
 
+// What makes a face the same face as another: its offset table and table
+// directory (each table's tag, checksum, offset and length) and its index in
+// a collection, from the face's own data. A file both `assets` and the font
+// manager list is one face; a subset or another style of the family is not.
+// Empty when the data is not an sfnt in memory (never the same face).
+std::string ReadFaceIdentity(SkTypeface* face) {
+  int ttc_index = 0;
+  std::unique_ptr<SkStreamAsset> stream = face->openExistingStream(&ttc_index);
+  if (!stream || !stream->getMemoryBase() || ttc_index < 0) {
+    return {};
+  }
+  const auto* data = static_cast<const uint8_t*>(stream->getMemoryBase());
+  const size_t length = stream->getLength();
+  auto u32 = [&](size_t at) {
+    return (uint32_t{data[at]} << 24) | (uint32_t{data[at + 1]} << 16) |
+           (uint32_t{data[at + 2]} << 8) | uint32_t{data[at + 3]};
+  };
+  size_t offset = 0;
+  if (length >= 12 && !memcmp(data, "ttcf", 4)) {
+    const size_t index = static_cast<size_t>(ttc_index);
+    if (index >= u32(8) || 12 + 4 * (index + 1) > length) {
+      return {};
+    }
+    offset = u32(12 + 4 * index);
+  }
+  if (offset > length || length - offset < 12) {
+    return {};
+  }
+  const uint32_t version = u32(offset);
+  if (version != 0x00010000 &&
+      version != SkSetFourByteTag('O', 'T', 'T', 'O') &&
+      version != SkSetFourByteTag('t', 'r', 'u', 'e')) {
+    return {};
+  }
+  const size_t tables = (size_t{data[offset + 4]} << 8) | data[offset + 5];
+  if (!tables || (length - offset - 12) / 16 < tables) {
+    return {};
+  }
+  std::string identity = std::to_string(ttc_index) + ':';
+  identity.append(reinterpret_cast<const char*>(data + offset),
+                  12 + 16 * tables);
+  return identity;
+}
+
 // The faces of one installed family that have a character, matched to the
 // request's style by the CSS3 rule (SkFontStyleSet::matchStyleCSS3).
 class FaceSet final : public SkFontStyleSet {
@@ -449,7 +493,13 @@ struct InstalledFallbackIndex {
   bool listed = false;
   // The installed families in scan order: `assets`' by case-folded name,
   // then the asset font manager's that `assets` has no installed face for.
+  // A family both have lists `assets`' faces, then the manager's faces
+  // `assets` does not list (fontconfig and DirectWrite list faces, not
+  // families: a loaded face of an installed family does not hide the
+  // family's other faces).
   std::vector<Family> families;
+  // ReadFaceIdentity of the faces a family both list, by typeface ID.
+  std::unordered_map<SkTypefaceID, std::string> identities;
   // The characters of each face the scan reached, by typeface ID (never
   // reused); kept across listings for the faces that stay.
   std::unordered_map<SkTypefaceID, Coverage> coverage;
@@ -469,6 +519,14 @@ struct InstalledFallbackIndex {
     return found->second;
   }
   bool Has(SkTypeface* face, uint32_t c) { return Covers(CoverageOf(face), c); }
+  const std::string& IdentityOf(SkTypeface* face) {
+    auto found = identities.find(face->uniqueID());
+    if (found == identities.end()) {
+      found =
+          identities.emplace(face->uniqueID(), ReadFaceIdentity(face)).first;
+    }
+    return found->second;
+  }
   // FontCache::GetFontPlatformData by family name, then
   // FontContainsCharacter: the installed family's face for the style, when
   // it has the character.
@@ -601,13 +659,17 @@ bool ListInstalledFallbackFamilies(skiac_font_collection* c_collection,
     }
     listed[std::move(folded)].push_back(font.typeface);
   }
-  std::set<std::string> in_assets;
+  // Each family `assets` lists, by its place in `families`.
+  std::map<std::string, size_t> in_assets;
   for (auto& [folded, faces] : listed) {
-    in_assets.insert(folded);
+    in_assets.emplace(folded, index->families.size());
     index->families.push_back({folded, std::move(faces)});
   }
   // The asset font manager's own families (Linux, Windows and Android with
   // DISABLE_SYSTEM_FONTS_LOAD find them by name too). Not CoreText's.
+  // The manager's faces `assets` lists already: their identities are kept,
+  // so the next listing does not read them again.
+  std::set<SkTypefaceID> duplicates;
   const sk_sp<SkFontMgr>& manager = c_collection->font_mgr;
   if (manager && !coretext) {
     std::map<std::string, std::vector<sk_sp<SkTypeface>>> others;
@@ -616,13 +678,36 @@ bool ListInstalledFallbackFamilies(skiac_font_collection* c_collection,
       SkString family;
       manager->getFamilyName(i, &family);
       std::string folded = FoldFamilyName({family.c_str(), family.size()});
-      if (folded.empty() || folded == "lastresort" || in_assets.count(folded)) {
+      if (folded.empty() || folded == "lastresort") {
         continue;
+      }
+      // A family `assets` lists too takes the manager's faces it does not
+      // list (the same file loadSystemFonts or loadFontsFromDir loaded).
+      const auto merged = in_assets.find(folded);
+      std::set<std::string> loaded;
+      if (merged != in_assets.end()) {
+        for (const auto& face : index->families[merged->second].faces) {
+          if (const std::string& identity = index->IdentityOf(face.get());
+              !identity.empty()) {
+            loaded.insert(identity);
+          }
+        }
       }
       sk_sp<SkFontStyleSet> set = manager->createStyleSet(i);
       for (int j = 0; set && j < set->count(); ++j) {
-        if (sk_sp<SkTypeface> face = set->createTypeface(j)) {
+        sk_sp<SkTypeface> face = set->createTypeface(j);
+        if (!face) {
+          continue;
+        }
+        if (merged == in_assets.end()) {
           others[folded].push_back(std::move(face));
+          continue;
+        }
+        const std::string& identity = index->IdentityOf(face.get());
+        if (identity.empty() || !loaded.count(identity)) {
+          index->families[merged->second].faces.push_back(std::move(face));
+        } else {
+          duplicates.insert(face->uniqueID());
         }
       }
     }
@@ -642,6 +727,11 @@ bool ListInstalledFallbackFamilies(skiac_font_collection* c_collection,
   }
   for (auto it = index->color.begin(); it != index->color.end();) {
     it = kept.count(it->first) ? std::next(it) : index->color.erase(it);
+  }
+  for (auto it = index->identities.begin(); it != index->identities.end();) {
+    it = kept.count(it->first) || duplicates.count(it->first)
+             ? std::next(it)
+             : index->identities.erase(it);
   }
   return true;
 }

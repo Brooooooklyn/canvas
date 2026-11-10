@@ -5,8 +5,9 @@
 #     <NotoSansDevanagari-Regular source (.ttf/.woff2)> <Noto CJK subset-halt .otf>
 #
 # `build-probe-fonts.py nominal` builds only NominalProbe.ttf,
-# `build-probe-fonts.py lowx` only LowXProbe.ttf, and `build-probe-fonts.py ic`
-# only IcWghtProbe.ttf and IcOpszProbe.ttf.
+# `build-probe-fonts.py lowx` only LowXProbe.ttf, `build-probe-fonts.py ic`
+# only IcWghtProbe.ttf and IcOpszProbe.ttf, and `build-probe-fonts.py batak`
+# only BatakBoldProbe.ttf.
 #
 # Sources:
 # - Lato-Regular.ttf, Harmattan-Regular.ttf: in this folder.
@@ -240,6 +241,38 @@ def trak_probe():
     save(f, 'TrakProbe.ttf')
 
 
+def batak_bold_probe():
+    # NotoSansDevanagari-subset.ttf (this folder) as a bold face of the family
+    # "Noto Sans Batak", without the Batak characters: a loaded face of a
+    # family the host (macOS) also installs (installed-fallback.spec.ts).
+    f = TTFont(os.path.join(HERE, 'NotoSansDevanagari-subset.ttf'))
+    opts = Options()
+    opts.name_IDs = ['*']
+    opts.notdef_outline = True
+    s = Subsetter(opts)
+    s.populate(unicodes=[0x20, 0x915])
+    s.subset(f)
+    family = 'Noto Sans Batak'
+    names = f['name']
+    names.names = [rec for rec in names.names if rec.nameID not in (16, 17, 21, 22)]
+    for rec in names.names:
+        if rec.nameID == 1:
+            rec.string = family
+        elif rec.nameID == 2:
+            rec.string = 'Bold'
+        elif rec.nameID == 3:
+            rec.string = family + ' Bold;probe'
+        elif rec.nameID == 4:
+            rec.string = family + ' Bold'
+        elif rec.nameID == 6:
+            rec.string = family.replace(' ', '') + '-Bold'
+    os2 = f['OS/2']
+    os2.usWeightClass = 700
+    os2.fsSelection = (os2.fsSelection & ~(1 << 6)) | (1 << 5)
+    f['head'].macStyle |= 1
+    save(f, 'BatakBoldProbe.ttf')
+
+
 def deva_subset(src):
     f = TTFont(src)
     f.flavor = None
@@ -270,6 +303,10 @@ def main():
         # source.
         ic_probes()
         return
+    if sys.argv[1:] == ['batak']:
+        # Only BatakBoldProbe.ttf, from NotoSansDevanagari-subset.ttf.
+        batak_bold_probe()
+        return
     deva_src, halt_src = sys.argv[1], sys.argv[2]
     locl_probe()
     script_probe()
@@ -281,6 +318,7 @@ def main():
     sym_cmap_probe()
     trak_probe()
     deva_subset(deva_src)
+    batak_bold_probe()
     shutil.copyfile(halt_src, os.path.join(HERE, 'NotoSansCJKjp-Regular-subset-halt.otf'))
 
 
