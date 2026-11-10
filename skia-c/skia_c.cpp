@@ -4999,6 +4999,11 @@ void skiac_svg_text_to_path(const uint8_t* data,
   c_collection->prepareLookup();
   auto svg_dom = napi_svg::MakeTextToPathDocument(svg_stream, c_collection,
                                                   nullptr, 0, false);
+  // Bytes SkSVG cannot read (not XML, or no <svg> root): no output, so
+  // convertSVGTextToPath throws, as for the prepared path.
+  if (!svg_dom) {
+    return;
+  }
   auto svg_root = svg_dom->getRoot();
   auto svg_container_size =
       svg_root->intrinsicSize(SkSVGLengthContext(SkSize::Make(0, 0)));
