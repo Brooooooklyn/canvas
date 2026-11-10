@@ -60,6 +60,18 @@ test('convertSVGTextToPath throws on bytes that are not an SVG document', (t) =>
   ])
 })
 
+// convertSVGTextToPath converts the whole document, past the element budget
+// an SVG image stops at (2^18): here 8^6 empty <g> instances through <use>,
+// then a <rect>.
+test('convertSVGTextToPath keeps the elements past the SVG image element budget', (t) => {
+  let defs = '<g id="l0"/>'
+  for (let i = 1; i <= 6; i++) {
+    defs += `<g id="l${i}">${`<use href="#l${i - 1}"/>`.repeat(8)}</g>`
+  }
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10"><defs>${defs}</defs><use href="#l6"/><rect width="5" height="5"/></svg>`
+  t.true(convertSVGTextToPath(svg).toString().includes('<rect width="5" height="5"/>'))
+})
+
 // convertSVGTextToPath keeps the root's size, coordinates and transform:
 // a root sized by its style="" declarations, a root sized in physical units
 // with no viewBox (1in is 96px, for the root as for its content, as the SVG

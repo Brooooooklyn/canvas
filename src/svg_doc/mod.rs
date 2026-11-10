@@ -38,6 +38,8 @@ pub(crate) const BROKEN_IMAGE: &[u8] = include_bytes!("broken_image.png");
 /// The most elements one SVG image (with every nested SVG image in it) may
 /// write. Chrome has no limit and hangs on `<use>` fan-outs past about 10^6
 /// elements; past this one the rest of the document is not drawn.
+/// convertSVGTextToPath has no such limit: a document past it is left to
+/// SkSVG, which converts all of it.
 pub(crate) const ELEMENT_BUDGET: usize = 1 << 18;
 
 /// The most pixels of one `<image>` raster; a larger one is not drawn
@@ -81,7 +83,8 @@ pub(crate) enum PrepareError {
   /// Deeper than Chrome's XML parser takes: the image fails to load.
   TooDeep,
   /// Not something this module reads (not UTF-8, not well-formed, not an
-  /// SVG root): left to SkSVGDOM as before.
+  /// SVG root; for convertSVGTextToPath, more elements than
+  /// `ELEMENT_BUDGET`): left to SkSVGDOM as before.
   Unsupported,
 }
 
@@ -146,6 +149,8 @@ pub(crate) struct Shared<'u> {
   prepared: Prepared,
   units: &'u FontUnits,
   elements_left: usize,
+  /// Whether an element was not written for want of budget.
+  budget_hit: bool,
   /// Bytes of substituted var() text left (cascade::VAR_TEXT_BUDGET).
   var_budget: Rc<Cell<usize>>,
   raster_pixels: u64,
@@ -162,6 +167,7 @@ impl<'u> Shared<'u> {
       prepared: Prepared::default(),
       units,
       elements_left: ELEMENT_BUDGET,
+      budget_hit: false,
       var_budget: Rc::new(Cell::new(cascade::VAR_TEXT_BUDGET)),
       raster_pixels: 0,
       loaded: HashMap::new(),
@@ -175,6 +181,7 @@ impl<'u> Shared<'u> {
   /// One more element written; false once the budget is spent.
   fn take_element(&mut self) -> bool {
     if self.elements_left == 0 {
+      self.budget_hit = true;
       return false;
     }
     self.elements_left -= 1;
@@ -316,6 +323,7 @@ fn prepare_root(
   let root_attributes = RootAttributes::of(&doc);
   let mut shared = Shared::new(units);
   let sizing = root_attributes.sizing(units);
+  let for_paths = paths.is_some();
   let root = match paths {
     Some(root_size) => build::Root::Paths(match root_size(&root_attributes) {
       Some((width, height)) => SvgSizing::fixed(width, height),
@@ -324,6 +332,9 @@ fn prepare_root(
     None => build::Root::Top(sizing),
   };
   let svg = build::emit_document(&doc, root, &mut shared).ok_or(PrepareError::Unsupported)?;
+  if for_paths && shared.budget_hit {
+    return Err(PrepareError::Unsupported);
+  }
   let mut prepared = shared.prepared;
   prepared.svg = svg;
   Ok((prepared, root_attributes))
@@ -374,6 +385,9 @@ mod tests {
     let (prepared, _) = prepare(svg(&body).as_bytes(), &FontUnits::fallback()).unwrap();
     let written = start_tags(&prepared.svg);
     assert!(written <= ELEMENT_BUDGET, "{written} elements written");
+    // convertSVGTextToPath leaves it to SkSVG, which converts all of it.
+    let paths = prepare_for_paths(svg(&body).as_bytes(), &FontUnits::fallback(), |_| None);
+    assert_eq!(paths.err(), Some(PrepareError::Unsupported));
   }
 
   #[test]
