@@ -47,7 +47,7 @@ pub(crate) enum Root {
   Top(SvgSizing),
   /// A document for convertSVGTextToPath: as `Top`, but its root gets no
   /// viewBox from its width and height (the output is the size SkSVG gives
-  /// the root as written).
+  /// the root as written) and keeps its transform, which SkSVG draws.
   Paths(SvgSizing),
   /// An SVG image in an `<image>`: its root laid out at this size.
   Nested((f32, f32)),
@@ -553,12 +553,13 @@ pub(crate) fn emit_document(doc: &Doc, root: Root, shared: &mut Shared) -> Optio
     style_cache: HashMap::new(),
     resource_stack: Vec::new(),
   };
+  let paths = matches!(root, Root::Paths(_));
   let (root_size, size) = match root {
     Root::Top(_) => (None, width.zip(height)),
     Root::Paths(_) => (None, None),
     Root::Nested(size) => (Some(size), width.zip(height)),
   };
-  b.emit_root(root_size, view_box.is_some(), size);
+  b.emit_root(root_size, view_box.is_some(), size, paths);
   Some(b.finish())
 }
 
@@ -987,6 +988,7 @@ impl<'d> Builder<'d, '_, '_> {
     nested: Option<(f32, f32)>,
     has_view_box: bool,
     size: Option<(f32, f32)>,
+    transform: bool,
   ) {
     let doc = self.doc;
     let root = doc.root;
@@ -1008,6 +1010,9 @@ impl<'d> Builder<'d, '_, '_> {
         pieces.push(attr("preserveAspectRatio", "none"));
       }
       _ => self.raw_pieces(root, &["viewBox", "preserveAspectRatio"], &mut pieces),
+    }
+    if transform && let Some(t) = self.transform_value(root, &style) {
+      pieces.push(attr("transform", t));
     }
     let out = self.presentation(&style, None, &mut pieces);
     self.open("svg", &pieces);

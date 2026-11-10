@@ -5042,8 +5042,10 @@ void skiac_svg_text_to_path_prepared(const uint8_t* data,
   }
   // SkSVGSVG::intrinsicSize of the root as written: the prepared root has
   // no width, height or style (an SVG image is laid out at the size it is
-  // drawn at) and only its own viewBox, so the content keeps SkSVG's
-  // coordinates in a container of SkSVG's size.
+  // drawn at) and only its own viewBox, so the content keeps its
+  // coordinates in a container of the root's size. At 96 dpi, the
+  // resolution svg_doc gives the content's physical lengths (SkSVG's
+  // default is 90).
   const SkSVGLength root_width =
       RootLength(style_width, style_width_len, width, width_len);
   const SkSVGLength root_height =
@@ -5051,7 +5053,7 @@ void skiac_svg_text_to_path_prepared(const uint8_t* data,
   SkSize size = SkSize::Make(0, 0);
   if (root_width.unit() != SkSVGLength::Unit::kPercentage &&
       root_height.unit() != SkSVGLength::Unit::kPercentage) {
-    const SkSVGLengthContext context(SkSize::Make(0, 0));
+    const SkSVGLengthContext context(SkSize::Make(0, 0), 96);
     size = SkSize::Make(
         context.resolve(root_width,
                         SkSVGLengthContext::LengthType::kHorizontal),
