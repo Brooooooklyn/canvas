@@ -14,6 +14,9 @@
 #include "skia_c.hpp"
 
 #include <modules/svg/include/SkSVGAttributeParser.h>
+#include <src/core/SkTextBlobPriv.h>
+#include <src/core/SkTextFormatParams.h>
+#include <src/utils/SkFloatUtils.h>
 
 #include "svg_image.hpp"
 
@@ -4961,6 +4964,87 @@ void skiac_sk_w_stream_destroy(skiac_w_memory_stream* c_w_memory_stream) {
 
 namespace {
 
+// The canvas in front of convertSVGTextToPath's SkSVGCanvas. SkSVGDevice
+// writes a text draw as the glyph paths filled or stroked with the draw's
+// paint (onDrawGlyphRunList). A synthetic bold glyph's path is its outline
+// stroked and filled by the fake bold width, three contours
+// (SkScalerContextRec::useStrokeForFakeBold), so a stroke paint would stroke
+// each contour. A raster stroke widens the stroke of the plain outline by
+// that width instead (useStrokeForFakeBold with a frame width), so a stroked
+// synthetic bold run is written that way. Fill draws are left as they are.
+class TextToPathCanvas final : public SkNWayCanvas {
+ public:
+  explicit TextToPathCanvas(SkCanvas* target)
+      : SkNWayCanvas(target->getBaseLayerSize().width(),
+                     target->getBaseLayerSize().height()) {
+    this->addCanvas(target);
+  }
+
+ protected:
+  void onDrawTextBlob(const SkTextBlob* blob,
+                      SkScalar x,
+                      SkScalar y,
+                      const SkPaint& paint) override {
+    bool bold = false;
+    for (SkTextBlobRunIterator it(blob); !it.done(); it.next()) {
+      bold = bold || it.font().isEmbolden();
+    }
+    if (!bold || paint.getStyle() == SkPaint::kFill_Style) {
+      SkNWayCanvas::onDrawTextBlob(blob, x, y, paint);
+      return;
+    }
+    for (SkTextBlobRunIterator it(blob); !it.done(); it.next()) {
+      SkFont font = it.font();
+      SkPaint run_paint = paint;
+      if (font.isEmbolden()) {
+        font.setEmbolden(false);
+        const SkScalar size = font.getSize();
+        run_paint.setStrokeWidth(
+            paint.getStrokeWidth() +
+            size * SkFloatInterpFunc(size, kStdFakeBoldInterpKeys,
+                                     kStdFakeBoldInterpValues,
+                                     kStdFakeBoldInterpLength));
+      }
+      const int count = static_cast<int>(it.glyphCount());
+      SkTextBlobBuilder builder;
+      const SkTextBlobBuilder::RunBuffer* run = nullptr;
+      size_t scalars = 0;
+      switch (it.positioning()) {
+        case SkTextBlobRunIterator::kDefault_Positioning:
+          run =
+              &builder.allocRun(font, count, it.offset().x(), it.offset().y());
+          break;
+        case SkTextBlobRunIterator::kHorizontal_Positioning:
+          run = &builder.allocRunPosH(font, count, it.offset().y());
+          scalars = 1;
+          break;
+        case SkTextBlobRunIterator::kFull_Positioning:
+          run = &builder.allocRunPos(font, count);
+          scalars = 2;
+          break;
+        case SkTextBlobRunIterator::kRSXform_Positioning:
+          run = &builder.allocRunRSXform(font, count);
+          scalars = 4;
+          break;
+      }
+      memcpy(run->glyphs, it.glyphs(), count * sizeof(SkGlyphID));
+      if (scalars) {
+        memcpy(run->pos, it.pos(), count * scalars * sizeof(SkScalar));
+      }
+      if (sk_sp<SkTextBlob> rebuilt = builder.make()) {
+        SkNWayCanvas::onDrawTextBlob(rebuilt.get(), x, y, run_paint);
+      }
+    }
+  }
+
+  // Played back through this canvas, as SkSVGCanvas itself plays it.
+  void onDrawPicture(const SkPicture* picture,
+                     const SkMatrix* matrix,
+                     const SkPaint* paint) override {
+    SkCanvas::onDrawPicture(picture, matrix, paint);
+  }
+};
+
 // The document's paths, text as paths, in an SVG of `size`.
 void WriteTextToPath(SkSVGDOM* dom,
                      const SkSize& size,
@@ -4968,7 +5052,10 @@ void WriteTextToPath(SkSVGDOM* dom,
   SkDynamicMemoryWStream w_stream;
   auto canvas = SkSVGCanvas::Make(SkRect::MakeSize(size), &w_stream,
                                   SkSVGCanvas::kConvertTextToPaths_Flag);
-  dom->render(canvas.get());
+  {
+    TextToPathCanvas front(canvas.get());
+    dom->render(&front);
+  }
   canvas.reset();
   auto d = w_stream.detachAsData().release();
   output_data->data = reinterpret_cast<skiac_data*>(d);
