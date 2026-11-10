@@ -45,6 +45,10 @@ const STYLE_CACHE_LIMIT: usize = 4096;
 pub(crate) enum Root {
   /// A top-level SVG image: laid out at whatever size it is drawn at.
   Top(SvgSizing),
+  /// A document for convertSVGTextToPath: as `Top`, but its root gets no
+  /// viewBox from its width and height (the output is the size SkSVG gives
+  /// the root as written).
+  Paths(SvgSizing),
   /// An SVG image in an `<image>`: its root laid out at this size.
   Nested((f32, f32)),
 }
@@ -522,7 +526,7 @@ pub(crate) fn emit_document(doc: &Doc, root: Root, shared: &mut Shared) -> Optio
   // guess (the size against the default 300x150) that only media queries
   // and lengths mixing px and % see.
   let (layout, sized) = match &root {
-    Root::Top(sizing) => {
+    Root::Top(sizing) | Root::Paths(sizing) => {
       let (w, h) = sizing.concrete((300.0, 150.0));
       (
         (layout_floor(w), layout_floor(h)),
@@ -549,11 +553,12 @@ pub(crate) fn emit_document(doc: &Doc, root: Root, shared: &mut Shared) -> Optio
     style_cache: HashMap::new(),
     resource_stack: Vec::new(),
   };
-  let root_size = match root {
-    Root::Top(_) => None,
-    Root::Nested(size) => Some(size),
+  let (root_size, size) = match root {
+    Root::Top(_) => (None, width.zip(height)),
+    Root::Paths(_) => (None, None),
+    Root::Nested(size) => (Some(size), width.zip(height)),
   };
-  b.emit_root(root_size, view_box.is_some(), width.zip(height));
+  b.emit_root(root_size, view_box.is_some(), size);
   Some(b.finish())
 }
 

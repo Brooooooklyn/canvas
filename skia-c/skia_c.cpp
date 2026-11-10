@@ -4976,12 +4976,21 @@ void WriteTextToPath(SkSVGDOM* dom,
   output_data->ptr = d->bytes();
 }
 
-// SkSVGSVG's width or height attribute: 100% when absent or invalid.
-SkSVGLength RootLength(const char* value, size_t length) {
-  if (value) {
-    const SkString text(value, length);
-    if (auto parsed = SkSVGAttributeParser::parse<SkSVGLength>(text.c_str())) {
-      return *parsed;
+// SkSVGSVG's width or height: its style="" declaration, else its
+// attribute (SkSVG keeps the attribute when the declaration is invalid);
+// 100% when both are absent or invalid.
+SkSVGLength RootLength(const char* style,
+                       size_t style_length,
+                       const char* value,
+                       size_t length) {
+  for (const auto& [text, size] :
+       {std::pair{style, style_length}, std::pair{value, length}}) {
+    if (text) {
+      const SkString string(text, size);
+      if (auto parsed =
+              SkSVGAttributeParser::parse<SkSVGLength>(string.c_str())) {
+        return *parsed;
+      }
     }
   }
   return SkSVGLength(100, SkSVGLength::Unit::kPercentage);
@@ -5018,6 +5027,10 @@ void skiac_svg_text_to_path_prepared(const uint8_t* data,
                                      size_t width_len,
                                      const char* height,
                                      size_t height_len,
+                                     const char* style_width,
+                                     size_t style_width_len,
+                                     const char* style_height,
+                                     size_t style_height_len,
                                      skiac_font_collection* c_collection,
                                      skiac_sk_data* output_data) {
   SkMemoryStream svg_stream(data, length, false);
@@ -5028,10 +5041,13 @@ void skiac_svg_text_to_path_prepared(const uint8_t* data,
     return;
   }
   // SkSVGSVG::intrinsicSize of the root as written: the prepared root has
-  // no width or height (an SVG image is laid out at the size it is drawn
-  // at), and its viewBox maps the written size onto the container.
-  const SkSVGLength root_width = RootLength(width, width_len);
-  const SkSVGLength root_height = RootLength(height, height_len);
+  // no width, height or style (an SVG image is laid out at the size it is
+  // drawn at) and only its own viewBox, so the content keeps SkSVG's
+  // coordinates in a container of SkSVG's size.
+  const SkSVGLength root_width =
+      RootLength(style_width, style_width_len, width, width_len);
+  const SkSVGLength root_height =
+      RootLength(style_height, style_height_len, height, height_len);
   SkSize size = SkSize::Make(0, 0);
   if (root_width.unit() != SkSVGLength::Unit::kPercentage &&
       root_height.unit() != SkSVGLength::Unit::kPercentage) {

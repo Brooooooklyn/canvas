@@ -59,3 +59,25 @@ test('convertSVGTextToPath throws on bytes that are not an SVG document', (t) =>
     { error: 'Convert svg text to path failed' },
   ])
 })
+
+// convertSVGTextToPath keeps the size and the coordinates SkSVG gives the
+// root as written: a root sized by its style="" declarations, and a root
+// sized in physical units (SkSVG's 90 dpi) with no viewBox.
+test('convertSVGTextToPath keeps the root size and coordinates', (t) => {
+  const rect = '<rect width="50" height="20"/>'
+  const out = (root: string) =>
+    convertSVGTextToPath(`<svg xmlns="http://www.w3.org/2000/svg" ${root}>${rect}</svg>`).toString()
+  for (const [root, size] of [
+    ['style="width:200px;height:60px"', 'width="200" height="60"'],
+    ['width="100" height="30" style="width:200px;height:60px"', 'width="200" height="60"'],
+    ['width="100" height="30" style="width:auto"', 'width="100" height="30"'],
+    ['width="1in" height="1in"', 'width="90" height="90"'],
+    ['width="20mm" height="10mm"', 'width="71" height="36"'],
+    ['width="1in" height="1in" viewBox="0 0 96 96"', 'width="90" height="90"'],
+  ]) {
+    const svg = out(root)
+    t.true(svg.includes(size), `${root}: ${svg}`)
+    const scaled = root.includes('viewBox')
+    t.is(svg.includes(`<rect width="50" height="20"/>`), !scaled, `${root}: ${svg}`)
+  }
+})

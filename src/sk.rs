@@ -1647,6 +1647,10 @@ pub mod ffi {
       width_len: usize,
       height: *const c_char,
       height_len: usize,
+      style_width: *const c_char,
+      style_width_len: usize,
+      style_height: *const c_char,
+      style_height_len: usize,
       font_collection: *mut skiac_font_collection,
       output_data: *mut skiac_sk_data,
     );
@@ -7233,9 +7237,10 @@ pub fn sk_svg_text_to_path(svg: &[u8], fc: &FontCollection) -> Option<SkiaDataRe
   Some(SkiaDataRef(output_data))
 }
 
-/// convertSVGTextToPath of a document `crate::svg_doc::prepare` wrote: its
-/// text resolves its font lists as an SVG image's does. `root` gives the
-/// output's size as SkSVG reads the root's width and height.
+/// convertSVGTextToPath of a document `crate::svg_doc::prepare_for_paths`
+/// wrote: its text resolves its font lists as an SVG image's does. `root`
+/// gives the output's size as SkSVG reads the root's width and height (its
+/// `style=""` declarations first).
 pub fn sk_svg_text_to_path_prepared(
   prepared: &crate::svg_doc::Prepared,
   root: &crate::svg_doc::RootAttributes,
@@ -7249,6 +7254,8 @@ pub fn sk_svg_text_to_path_prepared(
   };
   let (width, width_len) = attribute(&root.width);
   let (height, height_len) = attribute(&root.height);
+  let (style_width, style_width_len) = attribute(&root.style_width);
+  let (style_height, style_height_len) = attribute(&root.style_height);
   let mut output_data = ffi::skiac_sk_data {
     ptr: ptr::null_mut(),
     data: ptr::null_mut(),
@@ -7264,6 +7271,10 @@ pub fn sk_svg_text_to_path_prepared(
       width_len,
       height,
       height_len,
+      style_width,
+      style_width_len,
+      style_height,
+      style_height_len,
       fc.0,
       &mut output_data,
     );

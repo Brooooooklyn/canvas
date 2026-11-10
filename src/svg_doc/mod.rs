@@ -92,16 +92,33 @@ pub(crate) struct RootAttributes {
   pub height: Option<String>,
   pub view_box: Option<String>,
   pub preserve_aspect_ratio: Option<String>,
+  /// The root's `style=""` width and height. An SVG image's size does not
+  /// read them (SVGSVGElement::IntrinsicWidth reads the attribute); SkSVG,
+  /// which sizes convertSVGTextToPath's output, does.
+  pub style_width: Option<String>,
+  pub style_height: Option<String>,
 }
 
 impl RootAttributes {
   fn of(doc: &dom::Doc) -> Self {
     let attr = |name| doc.attr(doc.root, name).map(str::to_owned);
+    let declared = |name: &str| {
+      let decls = sheet::parse_style_attr(doc.attr(doc.root, "style")?);
+      // The last one, an !important one first (max_by_key keeps the last
+      // of equal keys).
+      let decl = decls
+        .iter()
+        .filter(|d| d.name == name)
+        .max_by_key(|d| d.important)?;
+      Some(decl.value.clone())
+    };
     RootAttributes {
       width: attr("width"),
       height: attr("height"),
       view_box: attr("viewBox"),
       preserve_aspect_ratio: attr("preserveAspectRatio"),
+      style_width: declared("width"),
+      style_height: declared("height"),
     }
   }
 
@@ -269,6 +286,24 @@ pub(crate) fn prepare(
   bytes: &[u8],
   units: &FontUnits,
 ) -> Result<(Prepared, RootAttributes), PrepareError> {
+  prepare_root(bytes, units, false)
+}
+
+/// `prepare` for convertSVGTextToPath: the root keeps its own viewBox (none
+/// is made from its width and height), so the output keeps the size and
+/// the coordinates SkSVG gives the document as written.
+pub(crate) fn prepare_for_paths(
+  bytes: &[u8],
+  units: &FontUnits,
+) -> Result<(Prepared, RootAttributes), PrepareError> {
+  prepare_root(bytes, units, true)
+}
+
+fn prepare_root(
+  bytes: &[u8],
+  units: &FontUnits,
+  paths: bool,
+) -> Result<(Prepared, RootAttributes), PrepareError> {
   let text = std::str::from_utf8(bytes).map_err(|_| PrepareError::Unsupported)?;
   let doc = dom::Doc::parse(text).map_err(|e| match e {
     dom::DomError::TooDeep => PrepareError::TooDeep,
@@ -276,12 +311,13 @@ pub(crate) fn prepare(
   })?;
   let root_attributes = RootAttributes::of(&doc);
   let mut shared = Shared::new(units);
-  let svg = build::emit_document(
-    &doc,
-    build::Root::Top(root_attributes.sizing(units)),
-    &mut shared,
-  )
-  .ok_or(PrepareError::Unsupported)?;
+  let sizing = root_attributes.sizing(units);
+  let root = if paths {
+    build::Root::Paths(sizing)
+  } else {
+    build::Root::Top(sizing)
+  };
+  let svg = build::emit_document(&doc, root, &mut shared).ok_or(PrepareError::Unsupported)?;
   let mut prepared = shared.prepared;
   prepared.svg = svg;
   Ok((prepared, root_attributes))

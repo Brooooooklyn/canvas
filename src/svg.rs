@@ -11,7 +11,7 @@ use crate::{
 };
 
 /// The SVG with its text as paths. The document is read as an SVG image
-/// reads it (`svg_doc::prepare`), so its text takes the whole font-family
+/// reads it (`svg_doc::prepare_for_paths`), so its text takes the whole font-family
 /// list, as an SVG image's text does. A document `svg_doc` cannot read is
 /// left to SkSVG as it is: its font-family is the list's first name.
 #[napi(js_name = "convertSVGTextToPath")]
@@ -24,7 +24,7 @@ pub fn convert_svg_text_to_path<'env>(
     let font = get_font().map_err(SkError::from)?;
     FontUnits::from_metrics(font.default_font_metrics())
   };
-  let prepared = svg_doc::prepare(bytes, &units).ok();
+  let prepared = svg_doc::prepare_for_paths(bytes, &units).ok();
   let font = get_font().map_err(SkError::from)?;
   match &prepared {
     Some((prepared, root)) => sk_svg_text_to_path_prepared(prepared, root, &font),
