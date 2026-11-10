@@ -53,6 +53,43 @@ pub(crate) enum Root {
   Nested((f32, f32)),
 }
 
+/// A list of lengths with each in, cm, mm, Q, pt or pc length written in px
+/// (96 dpi); the value as written when it has none.
+fn physical_lengths_in_px(value: &str) -> String {
+  let mut changed = false;
+  let items: Vec<String> = value
+    .split(|c: char| c.is_ascii_whitespace() || c == ',')
+    .filter(|item| !item.is_empty())
+    .map(|item| {
+      let unit_at = item
+        .trim_end_matches(|c: char| c.is_ascii_alphabetic())
+        .len();
+      let (number, unit) = item.split_at(unit_at);
+      let per_unit = match unit.to_ascii_lowercase().as_str() {
+        "in" => 96.0,
+        "cm" => 96.0 / 2.54,
+        "mm" => 96.0 / 25.4,
+        "q" => 96.0 / 101.6,
+        "pt" => 96.0 / 72.0,
+        "pc" => 16.0,
+        _ => return item.to_owned(),
+      };
+      match number.parse::<f64>() {
+        Ok(v) if v.is_finite() => {
+          changed = true;
+          num((v * per_unit) as f32)
+        }
+        _ => item.to_owned(),
+      }
+    })
+    .collect();
+  if changed {
+    items.join(" ")
+  } else {
+    value.to_owned()
+  }
+}
+
 pub(crate) fn esc(s: &str) -> String {
   let mut o = String::with_capacity(s.len());
   for c in s.chars() {
@@ -920,6 +957,21 @@ impl<'d> Builder<'d, '_, '_> {
     }
   }
 
+  /// A text element's attributes as written, with the physical lengths of
+  /// its position lists, textLength and startOffset in px: SkSVG resolves
+  /// in, cm, mm, Q, pt and pc at 90 dpi, Blink (and the shapes here) at 96.
+  fn text_pieces(&self, n: NodeId, names: &[&'static str], pieces: &mut Vec<Piece>) {
+    for name in names {
+      if let Some(v) = self.doc.attr(n, name) {
+        let value = match *name {
+          "x" | "y" | "dx" | "dy" | "textLength" | "startOffset" => physical_lengths_in_px(v),
+          _ => v.to_owned(),
+        };
+        pieces.push(attr(*name, value));
+      }
+    }
+  }
+
   /// transform-box: the reference box (x, y, width, height).
   fn reference_box(&self, n: NodeId, style: &Style) -> (f32, f32, f32, f32) {
     let (vw, vh) = self.viewport;
@@ -1123,7 +1175,7 @@ impl<'d> Builder<'d, '_, '_> {
           return None;
         }
         let mut pieces = Vec::new();
-        self.raw_pieces(
+        self.text_pieces(
           n,
           &["x", "y", "dx", "dy", "rotate", "startOffset"],
           &mut pieces,
@@ -1133,7 +1185,27 @@ impl<'d> Builder<'d, '_, '_> {
         {
           pieces.push(attr("xlink:href", format!("#{}", self.out_id(t))));
         }
-        let out = self.presentation(&style, Some(&parent.out), &mut pieces);
+        let mut out = self.presentation(&style, Some(&parent.out), &mut pieces);
+        // visibility: hidden paints nothing and keeps the advance
+        // (SVGInlineTextBoxPainter). SkSVG drops a hidden fragment with its
+        // advance, so the fragment gets no paint instead; a visible
+        // fragment in it writes its own paint again.
+        if style.keyword(Prop::Visibility) != "visible" {
+          let unpainted = |p: &Piece| matches!(p.name(), "fill" | "stroke");
+          pieces.retain(|p| !unpainted(p));
+          pieces.push(attr("fill", "none"));
+          pieces.push(attr("stroke", "none"));
+          out = Rc::new(
+            out
+              .iter()
+              .map(|p| match p.name() {
+                "fill" => attr("fill", "none"),
+                "stroke" => attr("stroke", "none"),
+                _ => p.clone(),
+              })
+              .collect(),
+          );
+        }
         self.open(name, &pieces);
         return Some(self.frame(n, style, out, parent, Ctx::Text, &format!("</{name}>")));
       }
@@ -1193,7 +1265,7 @@ impl<'d> Builder<'d, '_, '_> {
       "text" => {
         let mut pieces = Vec::new();
         self.id_piece(n, parent, &mut pieces);
-        self.raw_pieces(
+        self.text_pieces(
           n,
           &["x", "y", "dx", "dy", "rotate", "textLength", "lengthAdjust"],
           &mut pieces,

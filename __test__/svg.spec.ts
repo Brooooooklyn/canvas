@@ -5,7 +5,7 @@ import { readFileSync, promises as fs } from 'node:fs'
 
 import test from 'ava'
 
-import { convertSVGTextToPath, GlobalFonts } from '../index'
+import { convertSVGTextToPath, createCanvas, GlobalFonts, Image } from '../index'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 
@@ -89,4 +89,37 @@ test('convertSVGTextToPath keeps the root size, coordinates and transform', (t) 
   )
   const moved = out('width="200" height="60" transform="translate(50 0)"')
   t.true(moved.includes('<rect transform="translate(50 0)" width="50" height="20"/>'), moved)
+})
+
+// Text as Blink lays it out in an SVG image and in convertSVGTextToPath: a
+// visibility: hidden fragment draws nothing and keeps its advance, and a
+// text position in physical units is at 96 dpi, as the shapes are.
+test('hidden text fragments keep their advance, and text positions in inches are at 96 dpi', (t) => {
+  GlobalFonts.registerFromPath(join(__dirname, 'fonts', 'Lato-Regular.ttf'), 'SvgSpecLato')
+  const svgOf = (root: string, body: string) =>
+    `<svg xmlns="http://www.w3.org/2000/svg" ${root}><text font-family="SvgSpecLato" font-size="20" ${body}</text></svg>`
+  const xs = (svg: string) =>
+    [
+      ...convertSVGTextToPath(svg)
+        .toString()
+        .matchAll(/<path transform="translate\(([^ )]+) ([^)]+)\)"/g),
+    ].map((m) => [Number(m[1]), Number(m[2])])
+  const pixels = (svg: string, w: number, h: number) => {
+    const image = new Image()
+    image.src = Buffer.from(svg)
+    const ctx = createCanvas(w, h).getContext('2d')
+    ctx.drawImage(image, 0, 0)
+    return Buffer.from(ctx.getImageData(0, 0, w, h).data)
+  }
+  const size = 'width="200" height="60"'
+  const hidden = svgOf(size, 'x="2" y="40">A<tspan visibility="hidden">SECRET</tspan>B')
+  const shown = xs(svgOf(size, 'x="2" y="40">ASECRETB'))
+  t.deepEqual(xs(hidden), [shown[0], shown[7]])
+  // The image is A and B where the whole text has them.
+  const b = shown[7][0]
+  t.deepEqual(pixels(hidden, 200, 60), pixels(svgOf(size, `x="2 ${b}" y="40">AB`), 200, 60))
+  const inches = 'width="1in" height="1in"'
+  const inch = svgOf(inches, 'x=".5in" y=".5in">A')
+  t.deepEqual(xs(inch), [[48, 48]])
+  t.deepEqual(pixels(inch, 96, 96), pixels(svgOf(inches, 'x="48" y="48">A'), 96, 96))
 })
