@@ -14,6 +14,7 @@
 #include "skia_c.hpp"
 
 #include <modules/svg/include/SkSVGAttributeParser.h>
+#include <src/core/SkStrikeSpec.h>
 #include <src/core/SkTextBlobPriv.h>
 #include <src/core/SkTextFormatParams.h>
 #include <src/utils/SkFloatUtils.h>
@@ -4969,9 +4970,12 @@ namespace {
 // paint (onDrawGlyphRunList). A synthetic bold glyph's path is its outline
 // stroked and filled by the fake bold width, three contours
 // (SkScalerContextRec::useStrokeForFakeBold), so a stroke paint would stroke
-// each contour. A raster stroke widens the stroke of the plain outline by
-// that width instead (useStrokeForFakeBold with a frame width), so a stroked
-// synthetic bold run is written that way. Fill draws are left as they are.
+// each contour. A raster stroke drawn from glyph masks widens the stroke of
+// the plain outline by that width instead (useStrokeForFakeBold with a frame
+// width), so such a run is written that way. A run the raster draws as paths
+// (SkStrikeSpec::ShouldDrawAsPath: over 256 device pixels, a hairline,
+// perspective) strokes the fake bold contours (SkStrikeSpec::MakePath), as
+// written. Fill draws are left as they are.
 class TextToPathCanvas final : public SkNWayCanvas {
  public:
   explicit TextToPathCanvas(SkCanvas* target)
@@ -4985,18 +4989,23 @@ class TextToPathCanvas final : public SkNWayCanvas {
                       SkScalar x,
                       SkScalar y,
                       const SkPaint& paint) override {
-    bool bold = false;
+    const SkMatrix matrix = this->getTotalMatrix();
+    auto widen = [&](const SkFont& font) {
+      return font.isEmbolden() && paint.getStyle() != SkPaint::kFill_Style &&
+             !SkStrikeSpec::ShouldDrawAsPath(paint, font, matrix);
+    };
+    bool any = false;
     for (SkTextBlobRunIterator it(blob); !it.done(); it.next()) {
-      bold = bold || it.font().isEmbolden();
+      any = any || widen(it.font());
     }
-    if (!bold || paint.getStyle() == SkPaint::kFill_Style) {
+    if (!any) {
       SkNWayCanvas::onDrawTextBlob(blob, x, y, paint);
       return;
     }
     for (SkTextBlobRunIterator it(blob); !it.done(); it.next()) {
       SkFont font = it.font();
       SkPaint run_paint = paint;
-      if (font.isEmbolden()) {
+      if (widen(font)) {
         font.setEmbolden(false);
         const SkScalar size = font.getSize();
         run_paint.setStrokeWidth(

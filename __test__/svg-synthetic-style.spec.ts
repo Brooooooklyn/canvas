@@ -56,9 +56,10 @@ interface Probe {
   // Tight bounds of the "H" outline: convertSVGTextToPath, and the SVG
   // canvas path export of canvas fillText.
   paths: Record<string, { svg: Box; canvas: Box }>
-  // convertSVGTextToPath of a stroked 64px "H": the path data and stroke
-  // widths it writes.
-  stroke: Record<string, { d: string[]; width: number[] }>
+  // convertSVGTextToPath of a stroked "H" (64px; b300: 300px bold): the
+  // path data and stroke widths it writes, and the raster of the output and
+  // of the source.
+  stroke: Record<string, { d: string[]; width: number[]; raster: string; source: string }>
   // The bold row: nested in an <image>, and the PNG an SVG canvas embeds.
   nested: { top: string; nested: string }
   svgCanvas: { bold: string; regular: string; raster: string }
@@ -147,12 +148,19 @@ for (const s of ['n', 'b', 'i', 'bi']) {
   ctx.fillText('H', 2, 40)
   out.paths[s] = { svg: bounds(convertSVGTextToPath(svgOf('SynthLato', s, 'H')).toString()), canvas: bounds(canvas.getContent().toString()) }
 }
-const strokeOf = (s) =>
-  '<svg xmlns="http://www.w3.org/2000/svg" width="80" height="80"><text x="4" y="64" font-family="SynthLato" font-size="64" font-weight="' +
-  STYLES[s][1] + '" fill="none" stroke="black" stroke-width="0.25">H</text></svg>'
-for (const s of ['n', 'b']) {
-  const xml = convertSVGTextToPath(strokeOf(s)).toString()
-  out.stroke[s] = { d: [...xml.matchAll(/ d="([^"]*)"/g)].map((m) => m[1]), width: [...xml.matchAll(/stroke-width="([^"]*)"/g)].map((m) => Number(m[1])) }
+const strokeOf = (s, size) =>
+  '<svg xmlns="http://www.w3.org/2000/svg" width="' + (size + 20) + '" height="' + (size + 20) + '"><text x="4" y="' + size +
+  '" font-family="SynthLato" font-size="' + size + '" font-weight="' + STYLES[s][1] +
+  '" fill="none" stroke="black" stroke-width="0.25">H</text></svg>'
+for (const [id, s, size] of [['n', 'n', 64], ['b', 'b', 64], ['b300', 'b', 300]]) {
+  const svg = strokeOf(s, size)
+  const xml = convertSVGTextToPath(svg).toString()
+  out.stroke[id] = {
+    d: [...xml.matchAll(/ d="([^"]*)"/g)].map((m) => m[1]),
+    width: [...xml.matchAll(/stroke-width="([^"]*)"/g)].map((m) => Number(m[1])),
+    raster: sha1(raster(xml, size + 20, size + 20)),
+    source: sha1(raster(svg, size + 20, size + 20)),
+  }
 }
 const bold = svgOf('SynthLato', 'b')
 const outer =
@@ -257,14 +265,18 @@ for (const renderer of ['portable', 'system'] as const) {
     t.true(Math.abs(paths.i.svg[0] - paths.n.svg[0]) < 1e-3, 'the skew keeps the baseline')
   })
 
-  // A raster stroke of a synthetic bold glyph widens the stroke of the plain
-  // outline by the fake bold width (64 / 32 at 64px), so the export writes
-  // that, not the fill outline's three contours stroked one by one.
+  // A stroke of a synthetic bold glyph drawn from glyph masks widens the
+  // stroke of the plain outline by the fake bold width (64 / 32 at 64px), so
+  // the export writes that, not the fill outline's three contours stroked
+  // one by one. Over 256 px the raster draws glyphs as paths and strokes the
+  // fake bold contours, so the export keeps them and draws the same pixels.
   test(`convertSVGTextToPath strokes a synthetic bold outline as the raster does (${renderer})`, (t) => {
     const { stroke } = probeOf(renderer)
     t.deepEqual(stroke.n.width, [0.25])
     t.deepEqual(stroke.b.width, [0.25 + 64 / 32])
     t.deepEqual(stroke.b.d, stroke.n.d)
+    t.deepEqual(stroke.b300.width, [0.25])
+    t.is(stroke.b300.raster, stroke.b300.source)
   })
 
   test(`a nested SVG image and an SVG canvas keep the synthetic styles (${renderer})`, (t) => {
