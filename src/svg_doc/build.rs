@@ -17,7 +17,7 @@ use super::dom::{Doc, MAX_TREE_DEPTH, NodeData, NodeId, Ns};
 use super::props::{Mode, Prop, parse_value};
 use super::sheet::{Env, Sheet, eval_media_list};
 use super::values::*;
-use super::{Loaded, Shared};
+use super::{FontList, Loaded, Shared};
 use crate::svg_size::{SvgSizing, layout_floor, root_length};
 
 const SHAPES: &[&str] = &[
@@ -931,7 +931,11 @@ impl<'d> Builder<'d, '_, '_> {
       Value::Families(f) => f.clone(),
       _ => Rc::from(Vec::new()),
     };
-    let key = self.shared.family_key(&families);
+    let key = self.shared.family_key(FontList {
+      families,
+      synthetic_bold: keyword(Prop::FontSynthesisWeight) != "none",
+      synthetic_italic: keyword(Prop::FontSynthesisStyle) != "none",
+    });
     out.push(attr("font-family", format!("napi-font:{key}")));
     out.push(attr("font-size", num(style.font_size())));
     out.push(attr("font-style", keyword(Prop::FontStyle)));

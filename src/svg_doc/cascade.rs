@@ -186,6 +186,38 @@ fn expand_font(value: &str) -> Option<Vec<(&'static str, String)>> {
   ])
 }
 
+/// `font-synthesis: none | [weight || style || small-caps]`
+/// (FontSynthesis::ParseShorthand); a longhand it leaves out is `none`.
+fn expand_font_synthesis(value: &str) -> Option<Vec<(&'static str, String)>> {
+  let longhands = |weight: &str, style: &str| {
+    Some(vec![
+      ("font-synthesis-weight", weight.to_string()),
+      ("font-synthesis-style", style.to_string()),
+    ])
+  };
+  let value = value.trim();
+  if let Some(keyword) = css_wide(value) {
+    return longhands(keyword, keyword);
+  }
+  if value.eq_ignore_ascii_case("none") {
+    return longhands("none", "none");
+  }
+  let mut seen = [false; 3];
+  for word in value.split_ascii_whitespace() {
+    let k = ["weight", "style", "small-caps"]
+      .iter()
+      .position(|k| word.eq_ignore_ascii_case(k))?;
+    if std::mem::replace(&mut seen[k], true) {
+      return None;
+    }
+  }
+  if !seen.contains(&true) {
+    return None;
+  }
+  let allowed = |on: bool| if on { "auto" } else { "none" };
+  longhands(allowed(seen[0]), allowed(seen[1]))
+}
+
 const CSS_WIDE: &[&str] = &["inherit", "initial", "unset", "revert", "revert-layer"];
 
 fn css_wide(text: &str) -> Option<&'static str> {
@@ -423,8 +455,13 @@ impl<'a> Cascade<'a> {
         });
       }
     };
-    if name == "font" {
-      for (name, value) in expand_font(&value).unwrap_or_default() {
+    if name == "font" || name == "font-synthesis" {
+      let longhands = if name == "font" {
+        expand_font(&value)
+      } else {
+        expand_font_synthesis(&value)
+      };
+      for (name, value) in longhands.unwrap_or_default() {
         push(Cow::Borrowed(name), Cow::Owned(value));
       }
     } else {
@@ -1114,6 +1151,61 @@ mod tests {
     let kept = memo_families_bytes(&cascade);
     drop(cascade);
     (out, budget - left.get(), kept)
+  }
+
+  #[test]
+  fn font_synthesis_cascades_as_blink_parses_it() {
+    // (weight, style) of the <text>: the shorthand sets both longhands, a
+    // keyword it does not name is none, an invalid value is dropped, the
+    // property inherits and is not a presentation attribute.
+    let synthesis = |decl: &str, parent: &str, attr: &str| {
+      let svg = format!(
+        r#"<svg xmlns="{SVG_NS}"><g style="{parent}"><text style="{decl}"{attr}/></g></svg>"#
+      );
+      let style = &styles(&svg)[2];
+      (
+        style.keyword(Prop::FontSynthesisWeight),
+        style.keyword(Prop::FontSynthesisStyle),
+      )
+    };
+    let none = ("none", "none");
+    let auto = ("auto", "auto");
+    assert_eq!(synthesis("", "", ""), auto);
+    assert_eq!(synthesis("font-synthesis: none", "", ""), none);
+    assert_eq!(synthesis("font-synthesis: NONE", "", ""), none);
+    assert_eq!(
+      synthesis("font-synthesis: weight", "", ""),
+      ("auto", "none")
+    );
+    assert_eq!(
+      synthesis("font-synthesis: style small-caps", "", ""),
+      ("none", "auto")
+    );
+    assert_eq!(synthesis("font-synthesis: small-caps", "", ""), none);
+    assert_eq!(synthesis("font-synthesis: style weight", "", ""), auto);
+    assert_eq!(
+      synthesis("font-synthesis-weight: none", "", ""),
+      ("none", "auto")
+    );
+    assert_eq!(
+      synthesis("font-synthesis-style: none", "", ""),
+      ("auto", "none")
+    );
+    assert_eq!(synthesis("", "font-synthesis: none", ""), none);
+    assert_eq!(
+      synthesis("font-synthesis: inherit", "font-synthesis: none", ""),
+      none
+    );
+    for invalid in ["weight weight", "none weight", "bold", ""] {
+      let decl = format!("font-synthesis: {invalid}");
+      assert_eq!(synthesis(&decl, "", ""), auto, "{decl}");
+    }
+    assert_eq!(synthesis("", "", r#" font-synthesis="none""#), auto);
+    // The font shorthand does not reset it.
+    assert_eq!(
+      synthesis("font-synthesis: none; font: italic 700 40px serif", "", ""),
+      none
+    );
   }
 
   fn sub(text: &str, custom: &Option<Rc<CustomScope>>) -> Option<String> {

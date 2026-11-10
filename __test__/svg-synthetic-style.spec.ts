@@ -64,6 +64,10 @@ interface Probe {
   // The bold row: nested in an <image>, and the PNG an SVG canvas embeds.
   nested: { top: string; nested: string }
   svgCanvas: { bold: string; regular: string; raster: string }
+  // font-synthesis on a bold italic "Hamburg" (and "H中" in SynthLato,
+  // SynthShsBold): the raster's sha, and the "H" outline's bounds.
+  synthesis: Record<string, string>
+  synthesisPath: Box
   // Chrome rows: gray (255 - min(r, g, b)) differences against Chrome's PNG.
   chrome: Record<string, { pixels: number; max: number; ink: Box | null; mass: number }>
 }
@@ -183,6 +187,24 @@ const pngOf = (svg) => {
   return sha1(ctx.getImageData(0, 0, 260, 60).data)
 }
 out.svgCanvas = { bold: pngOf(bold), regular: pngOf(svgOf('SynthLato', 'n')), raster: sha1(raster(bold)) }
+const withSynthesis = (svg, decl, text = '') => svg.replace('<text ', text + '<text ' + decl + ' ')
+const BI = svgOf('SynthLato', 'bi')
+const MIXED = (s) => svgOf('SynthLato, SynthShsBold', s, 'H\u4e2d')
+const sha = (svg) => stats(raster(svg), 260, false).sha
+out.synthesis = {
+  none: sha(withSynthesis(BI, 'style="font-synthesis: none"')),
+  weight: sha(withSynthesis(BI, 'style="font-synthesis: weight"')),
+  style: sha(withSynthesis(BI, 'style="font-synthesis: style"')),
+  weightNone: sha(withSynthesis(BI, 'style="font-synthesis-weight: none"')),
+  styleNone: sha(withSynthesis(BI, 'style="font-synthesis-style: none"')),
+  inherited: sha(withSynthesis(BI, '', '<g style="font-synthesis: none">').replace('</svg>', '</g></svg>')),
+  sheet: sha(withSynthesis(BI, '', '<style>text { font-synthesis: none }</style>')),
+  attribute: sha(withSynthesis(BI, 'font-synthesis="none"')),
+  mixedNone: sha(withSynthesis(MIXED('bi'), 'style="font-synthesis: none"')),
+  mixedN: sha(MIXED('n')),
+  mixedBi: sha(MIXED('bi')),
+}
+out.synthesisPath = bounds(convertSVGTextToPath(withSynthesis(svgOf('SynthLato', 'bi', 'H'), 'style="font-synthesis: none"')).toString())
 if (process.env.CHROME_PIXELS) {
   for (const row of CHROME) {
     const [f, s] = row.id.split('.')
@@ -286,6 +308,25 @@ for (const renderer of ['portable', 'system'] as const) {
     // The raster decides per glyph with its rotation.
     t.deepEqual(stroke.brot.width, [0.25 + 200 / 32])
     t.is(stroke.brot.d.length, 1)
+  })
+
+  // font-synthesis (Chrome 157: the shorthand, its longhands, inherited,
+  // from a style sheet; not a presentation attribute) turns the synthetic
+  // styles off for every font of the list.
+  test(`font-synthesis turns off synthetic bold and italic (${renderer})`, (t) => {
+    const { synthesis, synthesisPath, hamburg, paths } = probeOf(renderer)
+    t.is(synthesis.none, hamburg.n.sha)
+    t.is(synthesis.weight, hamburg.b.sha)
+    t.is(synthesis.style, hamburg.i.sha)
+    t.is(synthesis.weightNone, hamburg.i.sha)
+    t.is(synthesis.styleNone, hamburg.b.sha)
+    t.is(synthesis.inherited, hamburg.n.sha)
+    t.is(synthesis.sheet, hamburg.n.sha)
+    t.is(synthesis.attribute, hamburg.bi.sha)
+    // 中 is Source Han Serif Bold's, a list font after Lato.
+    t.is(synthesis.mixedNone, synthesis.mixedN)
+    t.not(synthesis.mixedBi, synthesis.mixedN)
+    synthesisPath.forEach((v, k) => t.true(Math.abs(v - paths.n.svg[k]) < 1e-3, JSON.stringify(synthesisPath)))
   })
 
   test(`a nested SVG image and an SVG canvas keep the synthetic styles (${renderer})`, (t) => {

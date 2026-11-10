@@ -76,7 +76,17 @@ pub(crate) enum Resource {
 pub(crate) struct Prepared {
   pub svg: String,
   pub resources: Vec<Resource>,
-  pub families: Vec<Rc<[Family]>>,
+  pub families: Vec<FontList>,
+}
+
+/// The font of a `napi-font:K` attribute: its font-family list and what
+/// font-synthesis lets it synthesize (FontDescription::SyntheticBoldAllowed,
+/// SyntheticItalicAllowed).
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub(crate) struct FontList {
+  pub families: Rc<[Family]>,
+  pub synthetic_bold: bool,
+  pub synthetic_italic: bool,
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -165,7 +175,7 @@ pub(crate) struct Shared<'u> {
   loaded: HashMap<Rc<str>, Rc<Loaded>>,
   rasters: HashMap<(Rc<str>, u8), Option<usize>>,
   nested: HashMap<NestedKey, Option<usize>>,
-  families: HashMap<Rc<[Family]>, usize>,
+  families: HashMap<FontList, usize>,
   nesting: u32,
 }
 
@@ -196,13 +206,13 @@ impl<'u> Shared<'u> {
     true
   }
 
-  fn family_key(&mut self, families: &Rc<[Family]>) -> usize {
-    if let Some(k) = self.families.get(families) {
+  fn family_key(&mut self, font: FontList) -> usize {
+    if let Some(k) = self.families.get(&font) {
       return *k;
     }
     let k = self.prepared.families.len();
-    self.prepared.families.push(families.clone());
-    self.families.insert(families.clone(), k);
+    self.prepared.families.push(font.clone());
+    self.families.insert(font, k);
     k
   }
 
