@@ -68,6 +68,10 @@ interface Probe {
   // SynthShsBold), and weights 550 and 599: the raster's sha, and the "H"
   // outline's bounds.
   synthesis: Record<string, string>
+  // A filled "Hm" in SynthLato at 9, 12, 24 and 36px, regular and bold:
+  // the bounds of convertSVGTextToPath's paths as written, and the ink of
+  // the source and of the export under scale(25, 18, 9, 6).
+  smallFill: Record<string, Record<string, { bounds: Box; source: number; path: number }>>
   synthesisPath: Box
   w550Path: Box
   // Chrome rows: gray (255 - min(r, g, b)) differences against Chrome's PNG.
@@ -173,6 +177,25 @@ for (const [id, s, size] of [['n', 'n', 64], ['b', 'b', 64], ['b300', 'b', 300],
     raster: sha1(raster(xml, size + 20, size + 20)),
     source: sha1(raster(svg, size + 20, size + 20)),
   }
+}
+// Filled "Hm" at a small size, as written (bounds), and under a scale the
+// raster still draws from glyph masks (ink; 216-225 device px).
+const fillOf = (w, size, scale) =>
+  '<svg xmlns="http://www.w3.org/2000/svg" width="400" height="300"><g transform="scale(' + scale + ')"><text x="1" y="' +
+  size + '" font-family="SynthLato" font-size="' + size + '" font-weight="' + w + '">Hm</text></g></svg>'
+out.smallFill = {}
+for (const [size, scale] of [[9, 25], [12, 18], [24, 9], [36, 6]]) {
+  const row = {}
+  for (const w of [400, 700]) {
+    const scaled = fillOf(w, size, scale)
+    const xml = convertSVGTextToPath(scaled).toString()
+    row[w] = {
+      bounds: bounds(convertSVGTextToPath(fillOf(w, size, 1)).toString()),
+      source: stats(raster(scaled, 400, 300), 400, false).mass,
+      path: stats(raster(xml, 400, 300), 400, false).mass,
+    }
+  }
+  out.smallFill[size] = row
 }
 const bold = svgOf('SynthLato', 'b')
 const outer =
@@ -289,12 +312,24 @@ for (const renderer of ['portable', 'system'] as const) {
     t.not(bi.sha, b.sha)
   })
 
+  // The SVG canvas export writes a 32px synthetic bold with SkFont::getPaths'
+  // 64px fake bold width (32 / 32); convertSVGTextToPath writes the raster's
+  // (32 * interp(32), 1.049), so its bold outline is 0.0247 wider per
+  // straight side, and a bit more at bold italic's skewed corners.
   test(`convertSVGTextToPath outlines are the SVG canvas export's (${renderer})`, (t) => {
     const { paths } = probeOf(renderer)
+    const grow = (32 * (1 / 24 + (23 / 27) * (1 / 32 - 1 / 24)) - 1) / 2
     for (const [s, { svg, canvas }] of Object.entries(paths)) {
-      svg.forEach((v, k) =>
-        t.true(Math.abs(v - canvas[k]) < 1e-3, `${s}: ${JSON.stringify(svg)} vs ${JSON.stringify(canvas)}`),
-      )
+      const out = s === 'b' ? [-grow, -grow, grow, grow] : [0, 0, 0, 0]
+      svg.forEach((v, k) => {
+        const msg = `${s}: ${JSON.stringify(svg)} vs ${JSON.stringify(canvas)}`
+        if (s === 'bi') {
+          const d = k < 2 ? canvas[k] - v : v - canvas[k]
+          t.true(d >= grow - 1e-3 && d < 0.1, msg)
+        } else {
+          t.true(Math.abs(v - canvas[k] - out[k]) < 1e-3, msg)
+        }
+      })
     }
     // Fake bold grows the outline by half a pixel per side; the skew moves
     // the top right.
@@ -319,6 +354,28 @@ for (const renderer of ['portable', 'system'] as const) {
     // The raster decides per glyph with its rotation.
     t.deepEqual(stroke.brot.width, [0.25 + 200 / 32])
     t.is(stroke.brot.d.length, 1)
+  })
+
+  // A filled synthetic bold glyph drawn from glyph masks is its outline
+  // stroked and filled by size * interp(size) (1/24 at 9px .. 1/32 from
+  // 36px); SkFont::getPaths makes the outline at 64px, so size / 32. The
+  // export writes the raster's width: half of it per side on the straight
+  // edges of "Hm". Under a scale, the export's ink over the source's is the
+  // same as at 36px, where both widths are size / 32 (before the fix: 9px
+  // 0.92 vs 1.01).
+  test(`convertSVGTextToPath fills a small synthetic bold outline as the raster does (${renderer})`, (t) => {
+    const { smallFill } = probeOf(renderer)
+    const ratio = (size: string) => smallFill[size][700].path / smallFill[size][700].source
+    for (const [size, row] of Object.entries(smallFill)) {
+      const s = Number(size)
+      const scale = 1 / 24 + ((Math.min(Math.max(s, 9), 36) - 9) / 27) * (1 / 32 - 1 / 24)
+      const half = (s * scale) / 2
+      const [n, b] = [row[400].bounds, row[700].bounds]
+      t.true(Math.abs(n[0] - b[0] - half) < 1e-3, `${size}px left: ${n[0] - b[0]} vs ${half}`)
+      t.true(Math.abs(b[2] - n[2] - half) < 1e-3, `${size}px right: ${b[2] - n[2]} vs ${half}`)
+      t.true(Math.abs(b[3] - n[3] - half) < 1e-3, `${size}px bottom: ${b[3] - n[3]} vs ${half}`)
+      t.true(Math.abs(ratio(size) - ratio('36')) < 0.01, `${size}px ink: ${ratio(size)} vs ${ratio('36')}`)
+    }
   })
 
   // font-synthesis (Chrome 157: the shorthand, its longhands, inherited,

@@ -14,6 +14,7 @@
 #include "skia_c.hpp"
 
 #include <modules/svg/include/SkSVGAttributeParser.h>
+#include <src/core/SkPathEffectBase.h>
 #include <src/core/SkStrikeSpec.h>
 #include <src/core/SkTextBlobPriv.h>
 #include <src/core/SkTextFormatParams.h>
@@ -4965,6 +4966,36 @@ void skiac_sk_w_stream_destroy(skiac_w_memory_stream* c_w_memory_stream) {
 
 namespace {
 
+// A synthetic bold glyph as SkScalerContext::internalGetPath makes it for a
+// mask: the plain outline (in the font's own space, the space SkSVGDevice
+// gives a text path to the paint's path effect) stroked and filled by
+// `width`, with the default paint's join and miter (useStrokeForFakeBold).
+class FakeBoldFill final : public SkPathEffectBase {
+ public:
+  explicit FakeBoldFill(SkScalar width) : width_(width) {}
+
+  bool computeFastBounds(SkRect*) const override { return false; }
+  Factory getFactory() const override { return nullptr; }
+  const char* getTypeName() const override { return "FakeBoldFill"; }
+
+ protected:
+  bool onFilterPath(SkPathBuilder* dst,
+                    const SkPath& src,
+                    SkStrokeRec*,
+                    const SkRect*,
+                    const SkMatrix&) const override {
+    const SkPaint defaults;
+    SkStrokeRec stroke(SkStrokeRec::kFill_InitStyle);
+    stroke.setStrokeStyle(width_, true);
+    stroke.setStrokeParams(defaults.getStrokeCap(), defaults.getStrokeJoin(),
+                           defaults.getStrokeMiter());
+    return stroke.applyToPath(dst, src);
+  }
+
+ private:
+  SkScalar width_;
+};
+
 // The canvas in front of convertSVGTextToPath's SkSVGCanvas. SkSVGDevice
 // writes a text draw as the glyph paths filled or stroked with the draw's
 // paint (onDrawGlyphRunList). A synthetic bold glyph's path is its outline
@@ -4975,7 +5006,12 @@ namespace {
 // width), so such a run is written that way. A run the raster draws as paths
 // (SkStrikeSpec::ShouldDrawAsPath: over 256 device pixels, a hairline,
 // perspective) strokes the fake bold contours (SkStrikeSpec::MakePath), as
-// written. Fill draws are left as they are.
+// written. The fake bold width is size * interp(size) (1/24 at 9px to 1/32
+// from 36px) of the font's own size, but SkSVGDevice takes the paths from
+// SkFont::getPaths, made at 64px (width size / 32). So a filled run drawn
+// from glyph masks is written as the raster's glyphs: the plain outline at
+// the font's size stroked and filled by that width
+// (SkScalerContext::internalGetPath).
 class TextToPathCanvas final : public SkNWayCanvas {
  public:
   explicit TextToPathCanvas(SkCanvas* target)
@@ -4989,10 +5025,6 @@ class TextToPathCanvas final : public SkNWayCanvas {
                       SkScalar x,
                       SkScalar y,
                       const SkPaint& paint) override {
-    if (paint.getStyle() == SkPaint::kFill_Style) {
-      SkNWayCanvas::onDrawTextBlob(blob, x, y, paint);
-      return;
-    }
     // The raster decides per glyph of an RSXform run, under the matrix with
     // the glyph's RSXform (SkDevice::simplifyGlyphRunRSXFormAndRedraw).
     const SkMatrix total = this->getTotalMatrix();
@@ -5029,11 +5061,15 @@ class TextToPathCanvas final : public SkNWayCanvas {
         if (widen(it, i)) {
           font.setEmbolden(false);
           const SkScalar size = font.getSize();
-          run_paint.setStrokeWidth(
-              paint.getStrokeWidth() +
+          const SkScalar extra =
               size * SkFloatInterpFunc(size, kStdFakeBoldInterpKeys,
                                        kStdFakeBoldInterpValues,
-                                       kStdFakeBoldInterpLength));
+                                       kStdFakeBoldInterpLength);
+          if (paint.getStyle() == SkPaint::kFill_Style) {
+            run_paint.setPathEffect(sk_make_sp<FakeBoldFill>(extra));
+          } else {
+            run_paint.setStrokeWidth(paint.getStrokeWidth() + extra);
+          }
         }
         SkTextBlobBuilder builder;
         const SkTextBlobBuilder::RunBuffer* run = nullptr;
