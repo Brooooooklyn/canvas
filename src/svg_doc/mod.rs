@@ -286,23 +286,30 @@ pub(crate) fn prepare(
   bytes: &[u8],
   units: &FontUnits,
 ) -> Result<(Prepared, RootAttributes), PrepareError> {
-  prepare_root(bytes, units, false)
+  prepare_root(
+    bytes,
+    units,
+    None::<fn(&RootAttributes) -> Option<(f32, f32)>>,
+  )
 }
 
 /// `prepare` for convertSVGTextToPath: the root keeps its own viewBox (none
 /// is made from its width and height), so the output keeps the size and
-/// the coordinates SkSVG gives the document as written.
+/// the coordinates SkSVG gives the document as written. `root_size` is
+/// the size the output's root gets (its `style=""` width and height
+/// first); the content is laid out at it.
 pub(crate) fn prepare_for_paths(
   bytes: &[u8],
   units: &FontUnits,
+  root_size: impl FnOnce(&RootAttributes) -> Option<(f32, f32)>,
 ) -> Result<(Prepared, RootAttributes), PrepareError> {
-  prepare_root(bytes, units, true)
+  prepare_root(bytes, units, Some(root_size))
 }
 
 fn prepare_root(
   bytes: &[u8],
   units: &FontUnits,
-  paths: bool,
+  paths: Option<impl FnOnce(&RootAttributes) -> Option<(f32, f32)>>,
 ) -> Result<(Prepared, RootAttributes), PrepareError> {
   let text = std::str::from_utf8(bytes).map_err(|_| PrepareError::Unsupported)?;
   let doc = dom::Doc::parse(text).map_err(|e| match e {
@@ -312,10 +319,12 @@ fn prepare_root(
   let root_attributes = RootAttributes::of(&doc);
   let mut shared = Shared::new(units);
   let sizing = root_attributes.sizing(units);
-  let root = if paths {
-    build::Root::Paths(sizing)
-  } else {
-    build::Root::Top(sizing)
+  let root = match paths {
+    Some(root_size) => build::Root::Paths(match root_size(&root_attributes) {
+      Some((width, height)) => SvgSizing::fixed(width, height),
+      None => sizing,
+    }),
+    None => build::Root::Top(sizing),
   };
   let svg = build::emit_document(&doc, root, &mut shared).ok_or(PrepareError::Unsupported)?;
   let mut prepared = shared.prepared;

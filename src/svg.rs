@@ -5,7 +5,7 @@ use napi::bindgen_prelude::*;
 use crate::{
   error::SkError,
   global_fonts::get_font,
-  sk::{sk_svg_text_to_path, sk_svg_text_to_path_prepared},
+  sk::{sk_svg_root_size, sk_svg_text_to_path, sk_svg_text_to_path_prepared},
   svg_doc,
   svg_size::FontUnits,
 };
@@ -24,7 +24,7 @@ pub fn convert_svg_text_to_path<'env>(
     let font = get_font().map_err(SkError::from)?;
     FontUnits::from_metrics(font.default_font_metrics())
   };
-  let prepared = svg_doc::prepare_for_paths(bytes, &units).ok();
+  let prepared = svg_doc::prepare_for_paths(bytes, &units, sk_svg_root_size).ok();
   let font = get_font().map_err(SkError::from)?;
   match &prepared {
     Some((prepared, root)) => sk_svg_text_to_path_prepared(prepared, root, &font),

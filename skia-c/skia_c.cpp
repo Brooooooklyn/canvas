@@ -4996,6 +4996,34 @@ SkSVGLength RootLength(const char* style,
   return SkSVGLength(100, SkSVGLength::Unit::kPercentage);
 }
 
+// SkSVGSVG::intrinsicSize of the root as written, at 96 dpi (the resolution
+// svg_doc gives the content's physical lengths; SkSVG's default is 90).
+// False, with a 0x0 size, when a side is a percentage.
+bool RootSize(const char* width,
+              size_t width_len,
+              const char* height,
+              size_t height_len,
+              const char* style_width,
+              size_t style_width_len,
+              const char* style_height,
+              size_t style_height_len,
+              SkSize* size) {
+  const SkSVGLength root_width =
+      RootLength(style_width, style_width_len, width, width_len);
+  const SkSVGLength root_height =
+      RootLength(style_height, style_height_len, height, height_len);
+  *size = SkSize::Make(0, 0);
+  if (root_width.unit() == SkSVGLength::Unit::kPercentage ||
+      root_height.unit() == SkSVGLength::Unit::kPercentage) {
+    return false;
+  }
+  const SkSVGLengthContext context(SkSize::Make(0, 0), 96);
+  *size = SkSize::Make(
+      context.resolve(root_width, SkSVGLengthContext::LengthType::kHorizontal),
+      context.resolve(root_height, SkSVGLengthContext::LengthType::kVertical));
+  return true;
+}
+
 }  // namespace
 
 extern "C" {
@@ -5040,28 +5068,34 @@ void skiac_svg_text_to_path_prepared(const uint8_t* data,
   if (!svg_dom) {
     return;
   }
-  // SkSVGSVG::intrinsicSize of the root as written: the prepared root has
-  // no width, height or style (an SVG image is laid out at the size it is
-  // drawn at) and only its own viewBox, so the content keeps its
-  // coordinates in a container of the root's size. At 96 dpi, the
-  // resolution svg_doc gives the content's physical lengths (SkSVG's
-  // default is 90).
-  const SkSVGLength root_width =
-      RootLength(style_width, style_width_len, width, width_len);
-  const SkSVGLength root_height =
-      RootLength(style_height, style_height_len, height, height_len);
-  SkSize size = SkSize::Make(0, 0);
-  if (root_width.unit() != SkSVGLength::Unit::kPercentage &&
-      root_height.unit() != SkSVGLength::Unit::kPercentage) {
-    const SkSVGLengthContext context(SkSize::Make(0, 0), 96);
-    size = SkSize::Make(
-        context.resolve(root_width,
-                        SkSVGLengthContext::LengthType::kHorizontal),
-        context.resolve(root_height,
-                        SkSVGLengthContext::LengthType::kVertical));
-  }
+  // The prepared root has no width, height or style (an SVG image is laid
+  // out at the size it is drawn at) and only its own viewBox, so the
+  // content keeps its coordinates in a container of the root's size, the
+  // size svg_doc laid the content out at (skiac_svg_root_size).
+  SkSize size;
+  RootSize(width, width_len, height, height_len, style_width, style_width_len,
+           style_height, style_height_len, &size);
   svg_dom->setContainerSize(size);
   WriteTextToPath(svg_dom.get(), size, output_data);
+}
+
+bool skiac_svg_root_size(const char* width,
+                         size_t width_len,
+                         const char* height,
+                         size_t height_len,
+                         const char* style_width,
+                         size_t style_width_len,
+                         const char* style_height,
+                         size_t style_height_len,
+                         float* out_width,
+                         float* out_height) {
+  SkSize size;
+  const bool known =
+      RootSize(width, width_len, height, height_len, style_width,
+               style_width_len, style_height, style_height_len, &size);
+  *out_width = size.width();
+  *out_height = size.height();
+  return known;
 }
 
 // SkDocument

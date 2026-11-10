@@ -97,6 +97,16 @@ impl SvgSizing {
     }
   }
 
+  /// A known width and height (negative ones are 0).
+  pub(crate) fn fixed(width: f32, height: f32) -> Self {
+    let (width, height) = (width.max(0.0), height.max(0.0));
+    SvgSizing {
+      width: Some(width),
+      height: Some(height),
+      ratio: (width > 0.0 && height > 0.0).then_some((width, height)),
+    }
+  }
+
   /// CSS default sizing (natural_sizing_info.cc ConcreteObjectSizeImpl), in
   /// floats like Blink.
   pub(crate) fn concrete(&self, (default_width, default_height): (f32, f32)) -> (f32, f32) {

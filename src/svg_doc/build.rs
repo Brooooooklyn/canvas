@@ -563,11 +563,20 @@ pub(crate) fn emit_document(doc: &Doc, root: Root, shared: &mut Shared) -> Optio
   // guess (the size against the default 300x150) that only media queries
   // and lengths mixing px and % see.
   let (layout, sized) = match &root {
-    Root::Top(sizing) | Root::Paths(sizing) => {
+    Root::Top(sizing) => {
       let (w, h) = sizing.concrete((300.0, 150.0));
       (
         (layout_floor(w), layout_floor(h)),
         width.is_some() && height.is_some(),
+      )
+    }
+    // The size the output's root gets, which may come from its style.
+    Root::Paths(sizing) => {
+      let (w, h) = sizing.concrete((300.0, 150.0));
+      let (sw, sh, _) = sizing.parts();
+      (
+        (layout_floor(w), layout_floor(h)),
+        sw.is_some() && sh.is_some(),
       )
     }
     Root::Nested(size) => (*size, true),
@@ -972,6 +981,20 @@ impl<'d> Builder<'d, '_, '_> {
     }
   }
 
+  /// xml:space as written. Blink reads it on text, tspan and textPath
+  /// (SVGTextContentElement::CollectStyleForPresentationAttribute), SkSVG
+  /// on each text container.
+  fn xml_space_piece(&self, n: NodeId, pieces: &mut Vec<Piece>) {
+    if let Some(space) = self
+      .doc
+      .attrs(n)
+      .iter()
+      .find(|a| a.ns == Ns::Xml && a.name == "space")
+    {
+      pieces.push(attr("xml:space", space.value.clone()));
+    }
+  }
+
   /// transform-box: the reference box (x, y, width, height).
   fn reference_box(&self, n: NodeId, style: &Style) -> (f32, f32, f32, f32) {
     let (vw, vh) = self.viewport;
@@ -1180,6 +1203,7 @@ impl<'d> Builder<'d, '_, '_> {
           &["x", "y", "dx", "dy", "rotate", "startOffset"],
           &mut pieces,
         );
+        self.xml_space_piece(n, &mut pieces);
         if name == "textPath"
           && let Some(t) = doc.href(n).and_then(|h| self.target(h))
         {
@@ -1270,13 +1294,7 @@ impl<'d> Builder<'d, '_, '_> {
           &["x", "y", "dx", "dy", "rotate", "textLength", "lengthAdjust"],
           &mut pieces,
         );
-        if let Some(space) = doc
-          .attrs(n)
-          .iter()
-          .find(|a| a.ns == Ns::Xml && a.name == "space")
-        {
-          pieces.push(attr("xml:space", space.value.clone()));
-        }
+        self.xml_space_piece(n, &mut pieces);
         if let Some(t) = self.transform_value(n, &style) {
           pieces.push(attr("transform", t));
         }
@@ -1370,11 +1388,12 @@ impl<'d> Builder<'d, '_, '_> {
     }
     if name == "text" {
       let mut pieces = Vec::new();
-      self.raw_pieces(
+      self.text_pieces(
         n,
         &["x", "y", "dx", "dy", "rotate", "textLength", "lengthAdjust"],
         &mut pieces,
       );
+      self.xml_space_piece(n, &mut pieces);
       if let Some(t) = self.transform_value(n, &style) {
         pieces.push(attr("transform", t));
       }

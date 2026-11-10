@@ -2648,6 +2648,18 @@ void skiac_svg_text_to_path_prepared(const uint8_t* data,
                                      size_t style_height_len,
                                      skiac_font_collection* c_collection,
                                      skiac_sk_data* output_data);
+// The size skiac_svg_text_to_path_prepared gives the root; false when a
+// side is a percentage.
+bool skiac_svg_root_size(const char* width,
+                         size_t width_len,
+                         const char* height,
+                         size_t height_len,
+                         const char* style_width,
+                         size_t style_width_len,
+                         const char* style_height,
+                         size_t style_height_len,
+                         float* out_width,
+                         float* out_height);
 
 // SkPictureRecorder
 void skiac_picture_ref(skiac_picture* c_picture);

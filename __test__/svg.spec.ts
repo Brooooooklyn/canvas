@@ -123,3 +123,50 @@ test('hidden text fragments keep their advance, and text positions in inches are
   t.deepEqual(xs(inch), [[48, 48]])
   t.deepEqual(pixels(inch, 96, 96), pixels(svgOf(inches, 'x="48" y="48">A'), 96, 96))
 })
+
+// convertSVGTextToPath lays the content out at the size its output's root
+// gets (the root's style="" first), and the SVG image and the conversion
+// read clipping text and whitespace as Chrome 157 does: a clip text
+// position in inches is at 96 dpi as the text it clips, and xml:space on a
+// tspan keeps its spaces (SVGTextContentElement presentation attribute).
+test('convertSVGTextToPath lays out at the root size it writes; clip text and tspan xml:space', (t) => {
+  GlobalFonts.registerFromPath(join(__dirname, 'fonts', 'Lato-Regular.ttf'), 'SvgSpecLato')
+  const pixels = (svg: string, w: number, h: number) => {
+    const image = new Image()
+    image.src = Buffer.from(svg)
+    const ctx = createCanvas(w, h).getContext('2d')
+    ctx.drawImage(image, 0, 0)
+    return Buffer.from(ctx.getImageData(0, 0, w, h).data)
+  }
+  const converted = (svg: string, w: number, h: number) => pixels(convertSVGTextToPath(svg).toString(), w, h)
+  const xs = (svg: string) =>
+    [
+      ...convertSVGTextToPath(svg)
+        .toString()
+        .matchAll(/<path transform="translate\(([^ )]+) ([^)]+)\)"/g),
+    ].map((m) => [Number(m[1]), Number(m[2])])
+  const doc = (root: string, body: string) => `<svg xmlns="http://www.w3.org/2000/svg" ${root}>${body}</svg>`
+  // Percentages of a root sized by its style.
+  const shapes =
+    '<line x1="0" y1="10" x2="50%" y2="10" stroke="black" stroke-width="4"/><ellipse cx="50%" cy="50%" rx="25%" ry="25%"/>'
+  t.deepEqual(
+    converted(doc('width="100" height="30" style="width:200px;height:60px"', shapes), 200, 60),
+    converted(doc('width="200" height="60"', shapes), 200, 60),
+  )
+  // A text clipped by the same text, in inches and in px.
+  const clipped = (at: string) =>
+    doc(
+      'width="200" height="100"',
+      `<clipPath id="c"><text x="${at}" y="${at}" font-family="SvgSpecLato" font-size="40">A</text></clipPath>` +
+        `<text x="${at}" y="${at}" font-family="SvgSpecLato" font-size="40" clip-path="url(#c)">A</text>`,
+    )
+  t.deepEqual(pixels(clipped('.5in'), 200, 100), pixels(clipped('48'), 200, 100))
+  t.deepEqual(converted(clipped('.5in'), 200, 100), converted(clipped('48'), 200, 100))
+  // Two spaces kept by a tspan, as by the text.
+  const text = (attrs: string, body: string) =>
+    doc('width="200" height="60"', `<text x="2" y="40" font-family="SvgSpecLato" font-size="20"${attrs}>${body}</text>`)
+  const tspan = text('', 'A<tspan xml:space="preserve">  B</tspan>C')
+  const whole = text(' xml:space="preserve"', 'A  BC')
+  t.deepEqual(xs(tspan), xs(whole))
+  t.deepEqual(pixels(tspan, 200, 60), pixels(whole, 200, 60))
+})

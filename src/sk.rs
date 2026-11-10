@@ -1655,6 +1655,20 @@ pub mod ffi {
       output_data: *mut skiac_sk_data,
     );
 
+    #[allow(clippy::too_many_arguments)]
+    pub fn skiac_svg_root_size(
+      width: *const c_char,
+      width_len: usize,
+      height: *const c_char,
+      height_len: usize,
+      style_width: *const c_char,
+      style_width_len: usize,
+      style_height: *const c_char,
+      style_height_len: usize,
+      out_width: *mut f32,
+      out_height: *mut f32,
+    ) -> bool;
+
     // SkPictureRecorder
     pub fn skiac_picture_recorder_create() -> *mut skiac_picture_recorder;
     pub fn skiac_picture_recorder_destroy(picture_recorder: *mut skiac_picture_recorder);
@@ -7283,6 +7297,35 @@ pub fn sk_svg_text_to_path_prepared(
     return None;
   }
   Some(SkiaDataRef(output_data))
+}
+
+/// The size `sk_svg_text_to_path_prepared` gives the root (SkSVG reads its
+/// `style=""` width and height first), None when a side is a percentage.
+pub fn sk_svg_root_size(root: &crate::svg_doc::RootAttributes) -> Option<(f32, f32)> {
+  let attribute = |value: &Option<String>| match value {
+    Some(value) => (value.as_ptr().cast::<c_char>(), value.len()),
+    None => (ptr::null(), 0),
+  };
+  let (width, width_len) = attribute(&root.width);
+  let (height, height_len) = attribute(&root.height);
+  let (style_width, style_width_len) = attribute(&root.style_width);
+  let (style_height, style_height_len) = attribute(&root.style_height);
+  let (mut out_width, mut out_height) = (0.0f32, 0.0f32);
+  let known = unsafe {
+    ffi::skiac_svg_root_size(
+      width,
+      width_len,
+      height,
+      height_len,
+      style_width,
+      style_width_len,
+      style_height,
+      style_height_len,
+      &mut out_width,
+      &mut out_height,
+    )
+  };
+  known.then_some((out_width, out_height))
 }
 
 unsafe extern "C" fn skiac_on_get_style(width: i32, weight: i32, slant: i32, raw_cb: *mut c_void) {
