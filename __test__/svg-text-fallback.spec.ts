@@ -5,9 +5,9 @@
 // convertSVGTextToPath. fixtures/svg-text-fallback.json holds Chrome's rows.
 //
 // Every probe runs in a child process with only __test__/fonts registered:
-// Lato-Regular as MyLatoOnly (no CJK) and Source Han Serif CN Bold as SHSReg.
-// Rows that need system fonts are pinned on macOS 27 (the capture's
-// Darwin major).
+// Lato-Regular as MyLatoOnly (no CJK), Source Han Serif CN Bold as SHSReg
+// and HYXiXingKaiW as HYXi. Rows that need system fonts are pinned on
+// macOS 27 (the capture's Darwin major).
 import { spawnSync } from 'node:child_process'
 import { readFileSync } from 'node:fs'
 import { release } from 'node:os'
@@ -53,6 +53,7 @@ interface Probe {
   right: { list: string; shs: string }
   nested: { top: string; nested: string; right: string }
   svgCanvas: { png: string; pngRight: string; raster: string; fillText: string }
+  brand: { image: string[]; svgCanvas: string[] }
   canvas: Record<string, number>
   color: Record<string, number>
 }
@@ -67,6 +68,10 @@ setTextRenderer(process.env.RENDERER)
 const F = path.join('__test__', 'fonts')
 GlobalFonts.registerFromPath(path.join(F, 'Lato-Regular.ttf'), 'MyLatoOnly')
 GlobalFonts.registerFromPath(path.join(F, 'SourceHanSerifCN-Bold.ttf'), 'SHSReg')
+GlobalFonts.registerFromPath(path.join(F, 'HYXiXingKaiW.ttf'), 'HYXi')
+// Brand: Lato, then a Devanagari face that lacks "Ag".
+GlobalFonts.registerFromPath(path.join(F, 'Lato-Regular.ttf'), 'Brand')
+GlobalFonts.registerFromPath(path.join(F, 'NotoSansDevanagari-subset.ttf'), 'Brand')
 const sha1 = (data) => createHash('sha1').update(data).digest('hex')
 const textOf = (family, text, x = 2) =>
   '<text x="' + x + '" y="40" font-family="' + family + '" font-size="32" font-weight="700">' + text + '</text>'
@@ -122,8 +127,11 @@ const rows = {
   'shs.中': ['SHSReg', '中'],
   'lato.A': ['MyLatoOnly', 'A'],
   'pingfang.中\\u0301': ['PingFang SC', '中\\u0301'],
+  'hyxi.中': ['HYXi', '中'],
+  'brand.Ag': ['Brand', 'Ag'],
+  'lato.Ag': ['MyLatoOnly', 'Ag'],
   // One fragment's font request does not leak into the next fragment.
-  tspan: ['SHSReg', '中<tspan font-family="MyLatoOnly">中A</tspan>'],
+  tspan: ['SHSReg', '中<tspan font-family="MyLatoOnly, HYXi">中A</tspan>'],
 }
 const out = { paths: {}, ink: {}, canvas: {}, color: {} }
 for (const [id, [family, text]] of Object.entries(rows)) {
@@ -158,9 +166,24 @@ out.svgCanvas = {
   raster: columns(list, 0),
   fillText: fillCanvas.getContent().toString(),
 }
+// The SVG image of a Brand row, drawn, and drawn on an SVG canvas.
+const pngOf = (svg) => {
+  const c = createCanvas(200, 60, SvgExportFlag.NoPrettyXML)
+  c.getContext('2d').drawImage(image(svg), 0, 0)
+  const data = /xlink:href="data:image\\/png;base64,([^"]+)"/.exec(c.getContent().toString())
+  const ctx = createCanvas(200, 60).getContext('2d')
+  ctx.drawImage(image(Buffer.from(data[1], 'base64')), 0, 0)
+  return columns(ctx.getImageData(0, 0, 200, 60).data, 0)
+}
+out.brand = { image: [], svgCanvas: [] }
+for (const family of ['Brand', 'MyLatoOnly']) {
+  const svg = svgOf(textOf(family, 'Ag'))
+  out.brand.image.push(columns(raster(svg), 0))
+  out.brand.svgCanvas.push(pngOf(svg))
+}
 const ctx = createCanvas(10, 10).getContext('2d')
-ctx.font = 'bold 32px MyLatoOnly'
-out.canvas.lato中 = ctx.measureText('中').width
+ctx.font = 'bold 32px MyLatoOnly, HYXi'
+out.canvas.list中 = ctx.measureText('中').width
 console.log(JSON.stringify(out))
 `
 
@@ -227,20 +250,36 @@ for (const renderer of ['portable', 'system'] as const) {
     const { right, ink } = probeOf(renderer)
     // Right of A, the list row is Source Han Serif's 中 at 23.76.
     t.is(right.list, right.shs)
-    const chrome = CHROME['list.A中'].ink
-    const box = ink['list.A中']!
     // Chrome bolds Lato's A (synthetic bold): its left edge is not compared.
-    t.deepEqual(box.slice(1), chrome.slice(1), `ink ${JSON.stringify(box)}`)
+    // The ink is a macOS capture (FreeType hints the rows elsewhere).
+    if (process.platform === 'darwin') {
+      const chrome = CHROME['list.A中'].ink
+      const box = ink['list.A中']!
+      t.deepEqual(box.slice(1), chrome.slice(1), `ink ${JSON.stringify(box)}`)
+    }
   })
 
   test(`each text fragment falls back from its own font list (${renderer})`, (t) => {
     const { paths, canvas } = probeOf(renderer)
     const [first, han, a] = paths.tspan
     t.is(first.d, paths['shs.中'][0].d)
-    // The tspan's 中 is MyLatoOnly's fallback, as on its own and as canvas
-    // text advances it, not the fragment before's Source Han Serif.
-    t.is(han.d, paths['lato.中A'][0].d)
-    t.true(Math.abs(a.x - han.x - canvas.lato中) < 1e-3, `${a.x - han.x} vs canvas ${canvas.lato中}`)
+    // The tspan's 中 is its own list's HYXi, as canvas text advances it, not
+    // the fragment before's Source Han Serif.
+    t.is(han.d, paths['hyxi.中'][0].d)
+    t.is(a.d, paths['lato.A'][0].d)
+    t.true(Math.abs(a.x - han.x - canvas.list中) < 1e-3, `${a.x - han.x} vs canvas ${canvas.list中}`)
+  })
+
+  // Brand is Lato, then a Devanagari face that lacks "Ag": the faces of one
+  // family are its fallback, so "Ag" is Lato's, as in canvas text.
+  test(`a family's older face draws what its newest face lacks (${renderer})`, (t) => {
+    const { paths, brand } = probeOf(renderer)
+    t.deepEqual(
+      paths['brand.Ag'].map((g) => g.d),
+      paths['lato.Ag'].map((g) => g.d),
+    )
+    t.is(brand.image[0], brand.image[1])
+    t.is(brand.svgCanvas[0], brand.svgCanvas[1])
   })
 
   test(`a nested SVG image and an SVG canvas draw the same fallback (${renderer})`, (t) => {
