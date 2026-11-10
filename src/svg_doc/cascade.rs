@@ -154,6 +154,10 @@ struct Candidate<'a> {
   name: Cow<'a, str>,
   value: Cow<'a, str>,
   mode: Mode,
+  /// A font-synthesis longhand whose value is the shorthand's text with a
+  /// var(): the shorthand is expanded after substitution (a pending
+  /// substitution value, CSSPendingSubstitutionValue).
+  shorthand: bool,
 }
 
 /// `font: [style || weight]? size[/line-height]? family`.
@@ -442,7 +446,7 @@ impl<'a> Cascade<'a> {
     priority: Priority,
     layer: LayerKey,
   ) {
-    let mut push = |name: Cow<'c, str>, value: Cow<'c, str>| {
+    let mut push = |name: Cow<'c, str>, value: Cow<'c, str>, shorthand: bool| {
       let prop = Prop::from_name(&name);
       if prop.is_some() || name.starts_with("--") {
         out.push(Candidate {
@@ -452,20 +456,25 @@ impl<'a> Cascade<'a> {
           name,
           value,
           mode: Mode::Css,
+          shorthand,
         });
       }
     };
-    if name == "font" || name == "font-synthesis" {
+    if name == "font-synthesis" && has_var(&value) {
+      for longhand in ["font-synthesis-weight", "font-synthesis-style"] {
+        push(Cow::Borrowed(longhand), value.clone(), true);
+      }
+    } else if name == "font" || name == "font-synthesis" {
       let longhands = if name == "font" {
         expand_font(&value)
       } else {
         expand_font_synthesis(&value)
       };
       for (name, value) in longhands.unwrap_or_default() {
-        push(Cow::Borrowed(name), Cow::Owned(value));
+        push(Cow::Borrowed(name), Cow::Owned(value), false);
       }
     } else {
-      push(name, value);
+      push(name, value, false);
     }
   }
 
@@ -509,6 +518,7 @@ impl<'a> Cascade<'a> {
         name: Cow::Borrowed(&attr.name),
         value: Cow::Borrowed(&attr.value),
         mode: Mode::Attr,
+        shorthand: false,
       });
     }
     let el = El { doc, id, scope };
@@ -806,8 +816,15 @@ impl<'a> Cascade<'a> {
     if !has_var(text) {
       return None;
     }
-    let value =
-      substitute(text, custom, &self.var_budget).and_then(|s| parse_value(prop, &s, c.mode, ctx));
+    let value = substitute(text, custom, &self.var_budget).and_then(|s| {
+      if c.shorthand {
+        let longhands = expand_font_synthesis(&s)?;
+        let (_, value) = longhands.iter().find(|(name, _)| *name == prop.name())?;
+        parse_value(prop, value, c.mode, ctx)
+      } else {
+        parse_value(prop, &s, c.mode, ctx)
+      }
+    });
     if let Some(key) = key {
       let bytes = value.as_ref().map_or(0, Value::heap_bytes);
       self.values.insert(key, 1, bytes, value.clone());
@@ -1201,6 +1218,28 @@ mod tests {
       assert_eq!(synthesis(&decl, "", ""), auto, "{decl}");
     }
     assert_eq!(synthesis("", "", r#" font-synthesis="none""#), auto);
+    // A var() in the shorthand is expanded after substitution; an invalid
+    // result is unset (inherited).
+    assert_eq!(
+      synthesis("--s: none; font-synthesis: var(--s)", "", ""),
+      none
+    );
+    assert_eq!(
+      synthesis("--s: style; font-synthesis: var(--s)", "", ""),
+      ("none", "auto")
+    );
+    assert_eq!(
+      synthesis(
+        "--s: bogus; font-synthesis: var(--s)",
+        "font-synthesis: none",
+        ""
+      ),
+      none
+    );
+    assert_eq!(
+      synthesis("font-synthesis: var(--s)", "--s: weight", ""),
+      ("auto", "none")
+    );
     // The font shorthand does not reset it.
     assert_eq!(
       synthesis("font-synthesis: none; font: italic 700 40px serif", "", ""),

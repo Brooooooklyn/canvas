@@ -931,8 +931,13 @@ impl<'d> Builder<'d, '_, '_> {
       Value::Families(f) => f.clone(),
       _ => Rc::from(Vec::new()),
     };
+    let weight = match style.get(Prop::FontWeight) {
+      Value::Number(w) => *w,
+      _ => 400.0,
+    };
     let key = self.shared.family_key(FontList {
       families,
+      weight: weight.to_bits(),
       synthetic_bold: keyword(Prop::FontSynthesisWeight) != "none",
       synthetic_italic: keyword(Prop::FontSynthesisStyle) != "none",
     });
@@ -940,10 +945,7 @@ impl<'d> Builder<'d, '_, '_> {
     out.push(attr("font-size", num(style.font_size())));
     out.push(attr("font-style", keyword(Prop::FontStyle)));
     // SkSVG takes 100 to 900 in steps of 100.
-    let weight = match style.get(Prop::FontWeight) {
-      Value::Number(w) => ((w / 100.0).round() * 100.0).clamp(100.0, 900.0),
-      _ => 400.0,
-    };
+    let weight = ((weight / 100.0).round() * 100.0).clamp(100.0, 900.0);
     out.push(attr("font-weight", num(weight)));
     out.push(attr("text-anchor", keyword(Prop::TextAnchor)));
     out.push(attr(

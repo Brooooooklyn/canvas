@@ -100,6 +100,8 @@ struct SvgFontRequest {
   // the one ResolveFont draws with).
   std::vector<sk_sp<SkTypeface>> faces;
   SkFontStyle style;
+  // The computed font-weight (style's is SkSVG's, rounded to 100s).
+  float weight = 400;
   // The request's families, for the system stage (the last resort family,
   // the monospace generic).
   std::vector<std::string> names;
@@ -129,6 +131,7 @@ class SvgFontMgr final : public SkFontMgr {
             {std::string(family.name ? family.name : "", family.name_len),
              family.generic});
       }
+      lists_[i].weight = lists[i].weight;
       lists_[i].allowed = {lists[i].synthetic_bold, lists[i].synthetic_italic};
     }
   }
@@ -195,6 +198,7 @@ class SvgFontMgr final : public SkFontMgr {
     request.faces.clear();
     request.names.clear();
     request.generics.clear();
+    request.weight = static_cast<float>(style.weight());
     request.allowed = {true, true};
     if (names_) {
       sk_sp<SkTypeface> face =
@@ -217,6 +221,7 @@ class SvgFontMgr final : public SkFontMgr {
                            ? lists_[index]
                            : kNone;
     const std::vector<Family>& list = font.families;
+    request.weight = font.weight;
     request.allowed = font.allowed;
     std::vector<skiac_text_family> families;
     families.reserve(list.size());
@@ -244,6 +249,7 @@ class SvgFontMgr final : public SkFontMgr {
   };
   struct List {
     std::vector<Family> families;
+    float weight = 400;
     SyntheticStyle allowed = {true, true};
   };
 
@@ -265,12 +271,13 @@ bool IsDefaultIgnorable(SkUnichar c) {
   return u_hasBinaryProperty(c, UCHAR_DEFAULT_IGNORABLE_CODE_POINT);
 }
 
-// The font request canvas text gives SynthesizeStyle, for SkSVG's style of
-// a fragment: its weight, slope 14 for italic and oblique (Blink's
+// The font request canvas text gives SynthesizeStyle, for a fragment's font
+// request: its computed weight, slope 14 for italic and oblique (Blink's
 // FontSelectionRequest), its stretch.
-skiac_text_request SvgStyleRequest(const SkFontStyle& style) {
+skiac_text_request SvgStyleRequest(const SvgFontRequest& slot) {
+  const SkFontStyle& style = slot.style;
   skiac_text_request request{};
-  request.weight = static_cast<float>(style.weight());
+  request.weight = slot.weight;
   request.slope = style.slant() == SkFontStyle::kUpright_Slant ? 0 : 14;
   request.style = style.slant();
   request.stretch = style.width();
@@ -372,7 +379,7 @@ class SvgRunShaper final : public SkShaper {
     if (ours && primary.getTypeface()) {
       // The list's first font is the family's face (findTypefaces with no
       // font arguments, or MatchNamedFamily), so it is its own base.
-      const skiac_text_request request = SvgStyleRequest(mgr_->request().style);
+      const skiac_text_request request = SvgStyleRequest(mgr_->request());
       SetSynthetic(&primary,
                    Allowed(SynthesizeStyle(c_collection_, primary.getTypeface(),
                                            primary.getTypeface(), request),
@@ -542,7 +549,7 @@ class SvgRunShaper final : public SkShaper {
         families_.push_back(
             {slot.names[i].data(), slot.names[i].size(), slot.generics[i]});
       }
-      request_ = SvgStyleRequest(slot.style);
+      request_ = SvgStyleRequest(slot);
       request_.families = families_.data();
       request_.family_count = families_.size();
       request_.size = primary.getSize();

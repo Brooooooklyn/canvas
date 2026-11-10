@@ -65,9 +65,11 @@ interface Probe {
   nested: { top: string; nested: string }
   svgCanvas: { bold: string; regular: string; raster: string }
   // font-synthesis on a bold italic "Hamburg" (and "H中" in SynthLato,
-  // SynthShsBold): the raster's sha, and the "H" outline's bounds.
+  // SynthShsBold), and weights 550 and 599: the raster's sha, and the "H"
+  // outline's bounds.
   synthesis: Record<string, string>
   synthesisPath: Box
+  w550Path: Box
   // Chrome rows: gray (255 - min(r, g, b)) differences against Chrome's PNG.
   chrome: Record<string, { pixels: number; max: number; ink: Box | null; mass: number }>
 }
@@ -200,10 +202,15 @@ out.synthesis = {
   inherited: sha(withSynthesis(BI, '', '<g style="font-synthesis: none">').replace('</svg>', '</g></svg>')),
   sheet: sha(withSynthesis(BI, '', '<style>text { font-synthesis: none }</style>')),
   attribute: sha(withSynthesis(BI, 'font-synthesis="none"')),
+  variable: sha(withSynthesis(BI, 'style="--syn: none; font-synthesis: var(--syn)"')),
+  variableWeight: sha(withSynthesis(BI, 'style="--syn: weight; font-synthesis: var(--syn)"')),
+  w550: sha(svgOf('SynthLato', 'n').replace('font-weight="400"', 'font-weight="550"')),
+  w599: sha(svgOf('SynthLato', 'n').replace('font-weight="400"', 'font-weight="599"')),
   mixedNone: sha(withSynthesis(MIXED('bi'), 'style="font-synthesis: none"')),
   mixedN: sha(MIXED('n')),
   mixedBi: sha(MIXED('bi')),
 }
+out.w550Path = bounds(convertSVGTextToPath(svgOf('SynthLato', 'n', 'H').replace('font-weight="400"', 'font-weight="550"')).toString())
 out.synthesisPath = bounds(convertSVGTextToPath(withSynthesis(svgOf('SynthLato', 'bi', 'H'), 'style="font-synthesis: none"')).toString())
 if (process.env.CHROME_PIXELS) {
   for (const row of CHROME) {
@@ -323,10 +330,21 @@ for (const renderer of ['portable', 'system'] as const) {
     t.is(synthesis.inherited, hamburg.n.sha)
     t.is(synthesis.sheet, hamburg.n.sha)
     t.is(synthesis.attribute, hamburg.bi.sha)
+    t.is(synthesis.variable, hamburg.n.sha)
+    t.is(synthesis.variableWeight, hamburg.b.sha)
     // 中 is Source Han Serif Bold's, a list font after Lato.
     t.is(synthesis.mixedNone, synthesis.mixedN)
     t.not(synthesis.mixedBi, synthesis.mixedN)
     synthesisPath.forEach((v, k) => t.true(Math.abs(v - paths.n.svg[k]) < 1e-3, JSON.stringify(synthesisPath)))
+  })
+
+  // SkSVG reads font-weight rounded to 100s; the synthetic bold is decided
+  // at the computed weight, so 550 and 599 are not bold (Chrome 157).
+  test(`SVG text below weight 600 is not a synthetic bold (${renderer})`, (t) => {
+    const { synthesis, w550Path, hamburg, paths } = probeOf(renderer)
+    t.is(synthesis.w550, hamburg.n.sha)
+    t.is(synthesis.w599, hamburg.n.sha)
+    w550Path.forEach((v, k) => t.true(Math.abs(v - paths.n.svg[k]) < 1e-3, JSON.stringify(w550Path)))
   })
 
   test(`a nested SVG image and an SVG canvas keep the synthetic styles (${renderer})`, (t) => {

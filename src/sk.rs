@@ -325,6 +325,7 @@ pub mod ffi {
   pub struct skiac_svg_font_list {
     pub families: *const skiac_text_family,
     pub count: usize,
+    pub weight: f32,
     pub synthetic_bold: bool,
     pub synthetic_italic: bool,
   }
@@ -5781,6 +5782,7 @@ fn svg_font_lists(
     .map(|(list, font)| ffi::skiac_svg_font_list {
       families: list.as_ptr(),
       count: list.len(),
+      weight: f32::from_bits(font.weight),
       synthetic_bold: font.synthetic_bold,
       synthetic_italic: font.synthetic_italic,
     })

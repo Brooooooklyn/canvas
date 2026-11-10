@@ -79,12 +79,15 @@ pub(crate) struct Prepared {
   pub families: Vec<FontList>,
 }
 
-/// The font of a `napi-font:K` attribute: its font-family list and what
-/// font-synthesis lets it synthesize (FontDescription::SyntheticBoldAllowed,
+/// The font of a `napi-font:K` attribute: its font-family list, its
+/// computed font-weight (the font-weight attribute SkSVG reads is rounded to
+/// a multiple of 100) as f32 bits, and what font-synthesis lets it
+/// synthesize (FontDescription::SyntheticBoldAllowed,
 /// SyntheticItalicAllowed).
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub(crate) struct FontList {
   pub families: Rc<[Family]>,
+  pub weight: u32,
   pub synthetic_bold: bool,
   pub synthetic_italic: bool,
 }
