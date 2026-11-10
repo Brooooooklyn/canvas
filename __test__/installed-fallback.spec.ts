@@ -137,6 +137,31 @@ switch (process.env.CASE) {
     fs.rmSync(dir, { recursive: true, force: true })
     break
   }
+  case 'R': {
+    // Lato with its Unicode cmap records relabelled Mac Roman (1,0): no
+    // Unicode or symbol cmap, so fontconfig's charset (Chrome Linux's
+    // fallback) has no characters for it.
+    GlobalFonts.registerFromPath(path.join(F, 'NotoSansDevanagari-subset.ttf'), 'MyDevaOnly')
+    out.rNotdef = m('32px MyDevaOnly', '\uE000')
+    out.rBefore = m('32px MyDevaOnly', 'A')
+    const font = fs.readFileSync(path.join(F, 'Lato-Regular.ttf'))
+    const tables = font.readUInt16BE(4)
+    for (let i = 0; i < tables; i++) {
+      const record = 12 + 16 * i
+      if (font.toString('latin1', record, record + 4) !== 'cmap') continue
+      const cmap = font.readUInt32BE(record + 8)
+      for (let j = 0; j < font.readUInt16BE(cmap + 2); j++) {
+        font.writeUInt16BE(1, cmap + 4 + 8 * j)
+        font.writeUInt16BE(0, cmap + 6 + 8 * j)
+      }
+    }
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'installed-fallback-'))
+    fs.writeFileSync(path.join(dir, 'LatoMacRoman.ttf'), font)
+    GlobalFonts.loadFontsFromDir(dir)
+    out.r = m('32px MyDevaOnly', 'A')
+    fs.rmSync(dir, { recursive: true, force: true })
+    break
+  }
   case 'mac': {
     const ctx = createCanvas(10, 10).getContext('2d')
     ctx.font = '700 32px MyLatoOnly'
@@ -254,6 +279,15 @@ for (const renderer of ['portable', 'system']) {
     t.deepEqual(out.vCondensed, out.namedCondensed)
     t.notDeepEqual(out.v900, out.v400)
     t.notDeepEqual(out.vCondensed, out.v400)
+  })
+
+  test(`${renderer}: a font with only a Mac Roman cmap is not a fallback font`, (t) => {
+    const out = run(renderer, 'R')
+    if (JSON.stringify(out.rBefore) !== JSON.stringify(out.rNotdef)) {
+      t.pass('the host has a font with A')
+      return
+    }
+    t.deepEqual(out.r, out.rNotdef)
   })
 }
 

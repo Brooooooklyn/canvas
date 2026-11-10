@@ -59,6 +59,37 @@ hb_blob_t* ReferenceCmapTable(hb_face_t*, hb_tag_t tag, void* user_data) {
                         [](void* ptr) { static_cast<SkData*>(ptr)->unref(); });
 }
 
+// Whether the face has a Unicode or a symbol cmap: the subtables
+// fontconfig's charset reads (FcFreeTypeCharSet: FreeType's
+// FT_ENCODING_UNICODE, from (0,0..4), (0,6), (3,1) and (3,10), and
+// FT_ENCODING_MS_SYMBOL, (3,0)). A face with only legacy subtables (Mac
+// Roman (1,0), say) has no characters for Chrome Linux's fallback, and
+// collect_unicodes would list a legacy subtable's own codes as code points.
+bool HasUnicodeCmap(hb_face_t* face) {
+  hb_blob_t* blob =
+      hb_face_reference_table(face, SkSetFourByteTag('c', 'm', 'a', 'p'));
+  unsigned int length = 0;
+  const auto* data =
+      reinterpret_cast<const uint8_t*>(hb_blob_get_data(blob, &length));
+  bool unicode = false;
+  if (data && length >= 4) {
+    const unsigned int count = (data[2] << 8) | data[3];
+    for (unsigned int i = 0; i < count && 4 + 8 * (i + 1) <= length; ++i) {
+      const uint8_t* record = data + 4 + 8 * i;
+      const unsigned int platform = (record[0] << 8) | record[1];
+      const unsigned int encoding = (record[2] << 8) | record[3];
+      if ((platform == 0 && encoding != 5) ||
+          (platform == 3 &&
+           (encoding == 0 || encoding == 1 || encoding == 10))) {
+        unicode = true;
+        break;
+      }
+    }
+  }
+  hb_blob_destroy(blob);
+  return unicode;
+}
+
 // The characters a face maps, as HarfBuzz's nominal glyph lookup (the one
 // the shaper draws with) maps them. Only the range list is kept: the face's
 // own tables are freed here. A face whose data is a file or a buffer is read
@@ -91,7 +122,9 @@ Coverage ReadCoverage(SkTypeface* face) {
                                         /*destroy=*/nullptr);
   }
   hb_set_t* set = hb_set_create();
-  hb_face_collect_unicodes(hb_face, set);
+  if (HasUnicodeCmap(hb_face)) {
+    hb_face_collect_unicodes(hb_face, set);
+  }
   // A symbol font (a (3,0) cmap): HarfBuzz's nominal glyph also maps
   // U+0000..U+00FF to U+F000..U+F0FF (_hb_symbol_pua_map), as fontconfig's
   // charset (FcFreeTypeCharSet) and Windows do, but collect_unicodes lists

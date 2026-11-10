@@ -387,6 +387,8 @@ const char* hb_version_string(void);
 
 // hb-blob.h
 void hb_blob_destroy(hb_blob_t* blob);
+const char* hb_blob_get_data(hb_blob_t* blob, unsigned int* length);
+hb_blob_t* hb_face_reference_table(const hb_face_t* face, hb_tag_t tag);
 hb_blob_t* hb_blob_get_empty(void);
 
 // hb-face.h
