@@ -7240,8 +7240,8 @@ pub fn sk_svg_text_to_path(svg: &[u8], fc: &FontCollection) -> Option<SkiaDataRe
 
 /// convertSVGTextToPath of a document `crate::svg_doc::prepare_for_paths`
 /// wrote: its text resolves its font lists as an SVG image's does. `root`
-/// gives the output's size as SkSVG reads the root's width and height (its
-/// `style=""` declarations first).
+/// gives the output's size as SkSVG reads the root's width, height and
+/// `style=""` (`RootAttributes::sizing_svg`).
 pub fn sk_svg_text_to_path_prepared(
   prepared: &crate::svg_doc::Prepared,
   root: &crate::svg_doc::RootAttributes,

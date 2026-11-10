@@ -2631,9 +2631,9 @@ void skiac_svg_text_to_path(const uint8_t* data,
                             skiac_sk_data* output_data);
 // convertSVGTextToPath of a document src/svg_doc prepared (`data`), with the
 // font lists its font-family attributes name, as an SVG image draws its
-// text. `width` and `height` are the root's attributes and `style_width`
-// and `style_height` its style="" declarations, as written (null for none):
-// they size the output as SkSVG sizes the document itself.
+// text. `root` is an <svg> with only the root's width, height and style=""
+// as written, in document order: SkSVG sizes the output from it as it sizes
+// the document itself.
 void skiac_svg_text_to_path_prepared(const uint8_t* data,
                                      size_t length,
                                      const skiac_svg_font_list* fonts,
