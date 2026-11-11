@@ -203,6 +203,31 @@ pub mod ffi {
     _unused: [u8; 0],
   }
 
+  /// skia-c/shaper.hpp skiac_shaper_stats.
+  #[cfg(test)]
+  #[repr(C)]
+  #[derive(Copy, Clone, Default, Debug)]
+  pub struct skiac_shaper_stats {
+    pub accepted: u64,
+    pub rejected: [u64; 16],
+  }
+
+  /// skia-c/shaper.hpp skiac_ucd_icu_diffs.
+  #[cfg(test)]
+  #[repr(C)]
+  #[derive(Copy, Clone, Default, Debug)]
+  pub struct skiac_ucd_icu_diffs {
+    pub assigned: u32,
+    pub general_category: u32,
+    pub combining_class: u32,
+    pub mirroring: u32,
+    pub script: u32,
+    pub decompose: u32,
+    pub compose: u32,
+    pub compose_pairs: u32,
+    pub first: u32,
+  }
+
   #[repr(C)]
   #[derive(Copy, Clone, Default, Debug)]
   pub struct skiac_line_metrics {
@@ -795,6 +820,12 @@ pub mod ffi {
       font_collection: *mut skiac_font_collection,
       request: *const skiac_text_request,
     ) -> bool;
+
+    #[cfg(test)]
+    pub fn skiac_debug_shaper_stats(stats: *mut skiac_shaper_stats, reset: bool);
+
+    #[cfg(test)]
+    pub fn skiac_debug_ucd_icu_diffs(diffs: *mut skiac_ucd_icu_diffs);
 
     pub fn skiac_canvas_reset_transform(canvas: *mut skiac_canvas);
 
@@ -7235,5 +7266,133 @@ mod text_line_tests {
     }
     assert!(short.iter().all(|line| kept(&collection, &settings, line)));
     assert!(kept(&collection, &settings, &lines[129]));
+  }
+
+  fn shaper_stats(reset: bool) -> ffi::skiac_shaper_stats {
+    let mut stats = ffi::skiac_shaper_stats::default();
+    unsafe { ffi::skiac_debug_shaper_stats(&mut stats, reset) };
+    stats
+  }
+
+  /// A collection with a variable font and, after it, a font for the
+  /// character the variable font lacks.
+  fn variable_and_fallback_fonts() -> FontCollection {
+    let collection = FontCollection::new();
+    for (file, name) in [
+      ("RobotoMono-VariableFont_wght.ttf", "DropMono"),
+      ("NotoSansDevanagari-subset.ttf", "DropDeva"),
+    ] {
+      let path = format!("{}/__test__/fonts/{file}", env!("CARGO_MANIFEST_DIR"));
+      assert!(collection.register_from_path(&path, Some(name)).is_some());
+    }
+    collection
+  }
+
+  /// The body of `a_cache_drop_waits_for_the_end_of_the_layout`, run in a
+  /// child process for each value of NAPI_RS_CANVAS_SHAPER (read once per
+  /// process). Each line has its own wght, so its own font argument list;
+  /// the 257th list passes the budget inside the layout of line 256.
+  fn deferred_drop_lines(mode: &str) {
+    let text = "a\u{915}";
+    let mut settings = settings();
+    settings.font.size = 16.0;
+    settings.font.families = vec![
+      FamilyName::Named("DropMono".to_owned()),
+      FamilyName::Named("DropDeva".to_owned()),
+    ];
+    let weight = |i: usize| 100.0 + i as f32;
+    let collection = variable_and_fallback_fonts();
+    shaper_stats(true);
+    let widths: Vec<f32> = (0..300)
+      .map(|i| {
+        settings.font.weight = weight(i);
+        measure(&collection, &settings, text)
+      })
+      .collect();
+    let stats = shaper_stats(true);
+    assert_eq!(stats.accepted, 0, "{mode}");
+    if mode == "blink" {
+      // Every layout asked the shaper, which takes none yet.
+      assert_eq!(stats.rejected[0], 300, "{mode}");
+      assert!(stats.rejected[1..].iter().all(|&n| n == 0), "{mode}");
+    } else {
+      assert!(stats.rejected.iter().all(|&n| n == 0), "{mode}");
+    }
+    // The drop ran after line 256's layout and before its store: the lines
+    // before it went with the caches, it and the later ones are kept.
+    for i in 0..300 {
+      settings.font.weight = weight(i);
+      assert_eq!(
+        kept(&collection, &settings, text),
+        i >= 256,
+        "{mode} line {i}"
+      );
+    }
+    // The same widths as collections that never drop their caches (fewer
+    // than 257 lists each).
+    for (range, reference) in [
+      (0..200, variable_and_fallback_fonts()),
+      (200..300, variable_and_fallback_fonts()),
+    ] {
+      for i in range {
+        settings.font.weight = weight(i);
+        let width = measure(&reference, &settings, text);
+        assert!(width > 0.0, "{mode} line {i}");
+        assert_eq!(width.to_bits(), widths[i].to_bits(), "{mode} line {i}");
+      }
+    }
+  }
+
+  /// noteFontArguments past its budget drops the caches only after the
+  /// layout that passed it (skia_c.hpp dropCachesIfOverBudget), with the
+  /// shaper switch unset, off and on.
+  #[test]
+  fn a_cache_drop_waits_for_the_end_of_the_layout() {
+    if let Ok(mode) = std::env::var("SKIAC_DEFERRED_DROP_CHILD") {
+      deferred_drop_lines(&mode);
+      return;
+    }
+    let name = concat!(
+      module_path!(),
+      "::a_cache_drop_waits_for_the_end_of_the_layout"
+    );
+    let name = name.split_once("::").map_or(name, |(_, test)| test);
+    for mode in ["unset", "skparagraph", "blink"] {
+      let mut child = std::process::Command::new(std::env::current_exe().unwrap());
+      child
+        .args([name, "--exact", "--test-threads=1", "--nocapture"])
+        .env("SKIAC_DEFERRED_DROP_CHILD", mode);
+      if mode == "unset" {
+        child.env_remove("NAPI_RS_CANVAS_SHAPER");
+      } else {
+        child.env("NAPI_RS_CANVAS_SHAPER", mode);
+      }
+      let status = child.status().unwrap();
+      assert!(status.success(), "NAPI_RS_CANVAS_SHAPER={mode}: {status}");
+    }
+  }
+
+  /// HarfBuzz's own Unicode data (what the shaper's HarfBuzz uses) gives
+  /// what ICU gives (what Chromium's HarfBuzz uses) for every code point. A
+  /// Skia bump that breaks this needs ICU-backed unicode funcs in the shaper.
+  #[test]
+  fn harfbuzz_unicode_data_matches_icu() {
+    let mut diffs = ffi::skiac_ucd_icu_diffs::default();
+    unsafe { ffi::skiac_debug_ucd_icu_diffs(&mut diffs) };
+    // ICU 78.2 (Unicode 17) assigns 299,382 code points.
+    assert!(diffs.assigned > 290_000, "{diffs:?}");
+    assert!(diffs.compose_pairs > 100_000, "{diffs:?}");
+    assert_eq!(
+      [
+        diffs.general_category,
+        diffs.combining_class,
+        diffs.mirroring,
+        diffs.script,
+        diffs.decompose,
+        diffs.compose,
+      ],
+      [0; 6],
+      "{diffs:?}"
+    );
   }
 }

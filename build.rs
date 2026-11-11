@@ -11,6 +11,10 @@ fn main() {
   println!("cargo:rerun-if-changed=skia-c/skia_c.hpp");
   println!("cargo:rerun-if-changed=skia-c/text.cpp");
   println!("cargo:rerun-if-changed=skia-c/text.hpp");
+  println!("cargo:rerun-if-changed=skia-c/text_caches.hpp");
+  println!("cargo:rerun-if-changed=skia-c/shaper.hpp");
+  println!("cargo:rerun-if-changed=skia-c/shaper.cpp");
+  println!("cargo:rerun-if-changed=skia-c/shaper_ucd.cpp");
   println!("cargo:rerun-if-changed=skia-c/font_families.cpp");
   println!("cargo:rerun-if-changed=skia-c/text_metrics.cpp");
   println!("cargo:rerun-if-changed=skia-c/hb_api.h");
@@ -294,6 +298,8 @@ fn main() {
     .file("skia-c/text_raster.cpp")
     .file("skia-c/font_scalers.cpp")
     .file("skia-c/svg_image.cpp")
+    .file("skia-c/shaper.cpp")
+    .file("skia-c/shaper_ucd.cpp")
     .include("./skia-c")
     .include(skia_path)
     // https://github.com/rust-lang/rust/pull/93901#issuecomment-1119360260

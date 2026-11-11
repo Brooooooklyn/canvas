@@ -16,88 +16,14 @@
 #include <vector>
 
 #include "icu_api.h"
+#include "shaper.hpp"
 #include "text.hpp"
+#include "text_caches.hpp"
 #include "text_raster.hpp"
 
 #if defined(SK_DEBUG) || !defined(SK_RELEASE)
 #error "skia-c must be built with SK_RELEASE like libskia (see build.rs)"
 #endif
-
-// What one laid out text gives measureText, fillText and strokeText, and
-// the work text.cpp repeats for the same request; kept by the font
-// collection until it drops its match caches
-// (skiac_font_collection::text_caches).
-struct TextCaches {
-  // A text blob of a laid out line with its draw font, drawn at `origin`
-  // from the paint origin.
-  struct Run {
-    sk_sp<SkTextBlob> blob;
-    SkPoint origin;
-    SkFont font;
-  };
-
-  // A laid out line, by the text and every request field the layout reads:
-  // not the paint, the anchor, the max width, textAlign, textBaseline or
-  // lcd_text, which only place or draw it.
-  struct Line {
-    PrimaryFontMetrics primary;
-    // No text: only the font metrics.
-    bool empty = false;
-    // The width of Blink's advances.
-    float line_width = 0;
-    // skparagraph's width, from which it places RTL text.
-    float paragraph_width = 0;
-    float layout_width = 0;
-    float line_baseline = 0;
-    float letter_spacing_offset = 0;
-    // The advance of the visually last word, for text without ink.
-    float last_word_advance = 0;
-    // The glyphs where Blink puts them (text_raster.cpp CollectBlinkLine).
-    BlinkLine blink;
-    // The words, byte ranges of the shaped text (MeasureBlinkInk).
-    std::vector<std::pair<size_t, size_t>> words;
-    // MeasureBlinkInk's result by the left edge's float bits; the edge
-    // depends on textAlign only through float rounding, so a line has one
-    // or two.
-    std::vector<std::pair<uint32_t, BlinkRectF>> inks;
-    // `blink`'s runs as text blobs with the draw font (DrawFont without a
-    // device), and as one text blob for the draws that put every glyph
-    // where drawing `runs` puts it (DrawsLikeRuns). The first draw makes
-    // both, so a draw takes the same blobs however often the line was drawn
-    // before (an SVG or PDF canvas writes a text element for each blob run).
-    // `single` leaves out the runs without ink (MakeSingleBlob); its origin
-    // and draw font are the first run's it has, and a glyph's x is its run's
-    // offset from that run plus its x in its run. `frac_bits` is the most
-    // binary fraction digits of an offset or x, `span` twice the largest
-    // offset plus the largest x.
-    bool drawn = false;
-    std::vector<Run> runs;
-    sk_sp<SkTextBlob> single;
-    SkPoint single_origin = {0, 0};
-    SkFont single_font;
-    int frac_bits = 0;
-    double span = 0;
-    // The bytes the line counts in TextCaches::line_bytes, and its place in
-    // TextCaches::lru.
-    size_t bytes = 0;
-    std::list<const std::string*>::iterator lru;
-  };
-
-  // ResolveFontFamilies by the request's family list.
-  std::unordered_map<std::string, std::vector<SkString>> families;
-  // MeasurePrimaryFont by typeface, base typeface and the size's bits.
-  std::map<std::tuple<SkTypefaceID, SkTypefaceID, uint32_t>, PrimaryFontMetrics>
-      metrics;
-  // The SkUnicode every paragraph shares; skparagraph keeps no state in it.
-  sk_sp<SkUnicode> unicode;
-  // Kept within a budget of lines and about `line_bytes` bytes, in place of
-  // skparagraph's ParagraphCache (turned off in skiac_font_collection).
-  std::unordered_map<std::string, Line> lines;
-  size_t line_bytes = 0;
-  // The keys of `lines` (their map nodes do not move), least recently used
-  // first.
-  std::list<const std::string*> lru;
-};
 
 void TextCachesDeleter::operator()(TextCaches* caches) const {
   delete caches;
@@ -525,10 +451,14 @@ std::vector<SizeRun> PieceSizeRuns(const std::vector<SizeRun>& runs,
   return parts;
 }
 
-// Lays out `request` with skparagraph into `line`.
+// Lays out `request` into `line`: with the Blink shaper when it is on and
+// takes the request (shaper.cpp), else with skparagraph.
 void LayOutLine(skiac_font_collection* c_collection,
                 const skiac_text_request& request,
                 Line* line) {
+  if (BlinkShaperOn() && LayOutLineBlink(c_collection, request, line)) {
+    return;
+  }
   auto font_collection = c_collection->collection;
   auto font_style =
       SkFontStyle(static_cast<int>(roundf(request.weight)), request.stretch,
@@ -987,9 +917,11 @@ Line* FindOrLayOutLine(skiac_font_collection* c_collection,
     }
   }
   Line fresh;
+  c_collection->layout_font_arguments.clear();
   LayOutLine(c_collection, request, &fresh);
-  // The layout can drop the caches (noteFontArguments), so look them up
-  // again.
+  // The layout can ask for a drop of the caches (noteFontArguments): it runs
+  // now, so look them up again. The line goes into the new ones.
+  c_collection->dropCachesIfOverBudget();
   TextCaches& caches = GetTextCaches(c_collection);
   size_t glyphs = 0;
   for (const BlinkRun& run : fresh.blink.runs) {
