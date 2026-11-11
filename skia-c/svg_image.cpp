@@ -69,13 +69,18 @@ class StaticAsset final : public skresources::ImageAsset {
 };
 
 // The font-family lists of a document. SkSVGText asks for a typeface by
-// the family attribute (napi-font:K); Blink's font list gives it.
+// the family attribute (napi-font:K); Blink's font list gives it. With
+// `names`, the attribute is a family name (convertSVGTextToPath: the first
+// name of the list, as SkSVG parses it), matched as canvas text matches a
+// named family (MatchNamedFamily), so a font registered over an installed
+// family is the one the paths use.
 class SvgFontMgr final : public SkFontMgr {
  public:
   SvgFontMgr(skiac_font_collection* c_collection,
              const skiac_svg_font_list* lists,
-             size_t count)
-      : c_collection_(c_collection) {
+             size_t count,
+             bool names = false)
+      : c_collection_(c_collection), names_(names) {
     lists_.resize(count);
     for (size_t i = 0; i < count; ++i) {
       for (size_t j = 0; j < lists[i].count; ++j) {
@@ -134,6 +139,11 @@ class SvgFontMgr final : public SkFontMgr {
   // `style` (FontFallbackList::GetFontData), or the standard font.
   sk_sp<SkTypeface> onLegacyMakeTypeface(const char name[],
                                          SkFontStyle style) const override {
+    if (names_) {
+      sk_sp<SkTypeface> face =
+          name ? MatchNamedFamily(c_collection_, name, style) : nullptr;
+      return face ? face : assets()->legacyMakeTypeface(name, style);
+    }
     const long index = IndexAfter(name, kFontPrefix);
     static const std::vector<Family> kNone;
     const std::vector<Family>& list =
@@ -170,6 +180,7 @@ class SvgFontMgr final : public SkFontMgr {
   }
 
   skiac_font_collection* c_collection_;
+  bool names_;
   std::vector<std::vector<Family>> lists_;
 };
 
@@ -536,6 +547,10 @@ sk_sp<SkSVGDOM> MakePreparedDocument(
                             .make(stream);
   *resources = std::move(provider);
   return dom;
+}
+
+sk_sp<SkFontMgr> MakeNamedFontMgr(skiac_font_collection* c_collection) {
+  return sk_make_sp<SvgFontMgr>(c_collection, nullptr, 0, true);
 }
 
 void RenderPrepared(SkSVGDOM* dom,

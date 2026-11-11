@@ -136,6 +136,12 @@ GlobalFonts.registerFromPath('./fonts/Lato-Regular.ttf', 'MyLato')
 ctx.font = '20px MyLato'
 ```
 
+A name registered over an installed family (for example `Helvetica`) works like a CSS `@font-face` in Chrome: only font lists that name it use it, for every style (bold and italic are made from the faces you registered when you registered no bold or italic face). The generic families, such as `sans-serif`, keep the installed family. To change a generic family, register the font under the keyword itself:
+
+```js
+GlobalFonts.registerFromPath('./fonts/Lato-Regular.ttf', 'sans-serif')
+```
+
 These still depend on the OS and the machine:
 
 - Installed fonts. Names like `Arial` or `Helvetica`, and the generic families (`sans-serif`, `serif`, `monospace`, `system-ui`, the canvas default `10px sans-serif`) resolve to whatever is installed.

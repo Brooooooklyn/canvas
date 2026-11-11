@@ -633,9 +633,334 @@ macTest('installed fonts stay before registered fonts across a switch on macOS',
   const helvetica = (steps: string[]) => macProbe(HELVETICA_PROBE, { PROBE_STEPS: steps.join(',') })
   const [portable] = helvetica(['register', 'state'])
   const [system] = helvetica(['switch:system', 'register', 'state'])
-  // The installed Helvetica wins over Lato.
-  t.not(portable.width, portable.lato)
+  // A name registered over an installed family works like a FontFace: the
+  // family list that names it draws Lato (Chrome 157: 47.64 for "Ag" at 40px).
+  t.is(portable.width, portable.lato)
+  t.is(system.width, system.lato)
   t.deepEqual(helvetica(['register', 'switch:system', 'state', 'switch:portable', 'state']), [system, portable])
+})
+
+// The same with another spelling of the name (Chrome 157: FontFace
+// "helvetica" draws for "40px Helvetica", 47.64) and with setAlias:
+// setAlias(a, b) aliases the face text naming a uses now (Lato), and
+// setAlias(a, a) changes nothing. Helvetica is CoreText's, outside the
+// registered fonts. Kept after a rebuild and a renderer switch.
+const HELVETICA_ALIAS_PROBE = `
+const { join } = require('path')
+const { GlobalFonts, createCanvas, setTextRenderer } = require('./index.js')
+const { RENDERER, PROBE_STEPS } = process.env
+setTextRenderer(RENDERER)
+const width = (font) => {
+  const ctx = createCanvas(10, 10).getContext('2d')
+  ctx.font = font
+  return ctx.measureText('Ag').width
+}
+const out = []
+// register:name[:file] (Lato by default), remove[:file]
+const keys = {}
+for (const step of PROBE_STEPS.split(',')) {
+  const [kind, a, b] = step.split(':')
+  if (kind === 'register') keys[b ?? 'Lato-Regular.ttf'] = GlobalFonts.registerFromPath(join('__test__', 'fonts', b ?? 'Lato-Regular.ttf'), a)
+  else if (kind === 'remove') GlobalFonts.remove(keys[a ?? 'Lato-Regular.ttf'])
+  else if (kind === 'alias') out.push(GlobalFonts.setAlias(a, b))
+  else if (kind === 'rebuild') GlobalFonts.remove(GlobalFonts.registerFromPath(join('__test__', 'fonts', 'Oswald.ttf'), 'Unrelated'))
+  else if (kind === 'switch') {
+    setTextRenderer(RENDERER === 'system' ? 'portable' : 'system')
+    setTextRenderer(RENDERER)
+  } else out.push(['40px Helvetica', '40px HELVETICA', 'bold 40px Helvetica', '40px Brand', '40px Brand2', '40px NoSuchFamily', '40px "EB Garamond"'].map(width))
+}
+console.log(JSON.stringify(out))
+`
+
+macTest('a name registered over Helvetica, other spellings and setAlias on macOS', (t) => {
+  const LATO = 47.63996887207031
+  const near = (a: number, b: number) => Math.abs(a - b) <= 1e-3
+  for (const renderer of ['portable', 'system']) {
+    const check = (steps: string[], expected: (boolean | null)[]) => {
+      const out = macProbe(HELVETICA_ALIAS_PROBE, {
+        RENDERER: renderer,
+        PROBE_STEPS: [...steps, 'state', 'rebuild', 'state', 'switch', 'state'].join(','),
+      })
+      for (const [i, row] of out.entries()) {
+        if (!Array.isArray(row)) {
+          t.true(row, `${renderer} ${steps}: setAlias`)
+          continue
+        }
+        for (const [j, lato] of expected.entries()) {
+          if (lato !== null) {
+            t.is(near(row[j], LATO), lato, `${renderer} ${steps} row ${i}: ${row[j]}`)
+          }
+        }
+      }
+    }
+    check(['register:helvetica'], [true, true, true, null, null])
+    check(['register:HELVETICA'], [true, true, true, null, null])
+    check(['register:Helvetica', 'alias:Helvetica:Brand', 'alias:Brand:Brand2'], [true, true, true, true, true])
+    check(['register:helvetica', 'alias:Helvetica:Brand'], [true, true, true, true, null])
+    check(['register:Helvetica', 'alias:Helvetica:Helvetica'], [true, true, true, null, null])
+    check(['register:Helvetica', 'state', 'alias:Helvetica:HELVETICA'], [true, true, true, null, null])
+  }
+})
+
+// An alias remembers the registration its face came from (through the chain,
+// whatever spelling each name has): removing that font drops the aliases, so
+// they do not move to another font registered as Helvetica (EB Garamond) or
+// to the installed Helvetica. Removing the other font keeps them, and an
+// alias of the installed Helvetica stays when a font registered after it is
+// removed. Kept after a rebuild and a renderer switch.
+macTest('an alias of a name registered over Helvetica follows its registration on macOS', (t) => {
+  const LATO = 47.63996887207031
+  const near = (a: number, b: number) => Math.abs(a - b) <= 1e-3
+  const ALIASES = ['alias:Helvetica:Brand', 'alias:Brand:Brand2']
+  const FILES = ['Lato-Regular.ttf', 'EBGaramond-Regular.ttf']
+  for (const renderer of ['portable', 'system']) {
+    const probe = (steps: string[]) => {
+      const out = macProbe(HELVETICA_ALIAS_PROBE, {
+        RENDERER: renderer,
+        PROBE_STEPS: [...steps, 'state', 'rebuild', 'state', 'switch', 'state'].join(','),
+      })
+      t.true(
+        out.filter((row: unknown) => !Array.isArray(row)).every((ok: boolean) => ok),
+        `${renderer} ${steps}: setAlias`,
+      )
+      return out.filter((row: unknown) => Array.isArray(row))
+    }
+    const [installed] = probe([])
+    for (const [lato, garamond] of [
+      ['Helvetica', 'Helvetica'],
+      ['helvetica', 'helvetica'],
+      ['Helvetica', 'HELVETICA'],
+      ['HELVETICA', 'Helvetica'],
+    ]) {
+      const registers = [`register:${lato}`, `register:${garamond}:EBGaramond-Regular.ttf`]
+      const at = `${renderer} ${lato}, ${garamond}`
+      const [before] = probe([...registers, ...ALIASES])
+      t.true(near(before[3], before[0]), `${at}: Brand ${before[3]}, named ${before[0]}`)
+      t.true(near(before[4], before[0]), `${at}: Brand2 ${before[4]}, named ${before[0]}`)
+      const source = near(before[3], LATO) ? 0 : 1
+      t.true(source === 0 || near(before[3], before[6]), `${at}: Brand ${before[3]}`)
+      for (const [file, removed] of FILES.entries()) {
+        for (const [i, row] of probe([...registers, ...ALIASES, `remove:${removed}`]).entries()) {
+          t.true(near(row[0], file === 0 ? row[6] : LATO), `${at}, ${removed} removed, row ${i}: named ${row[0]}`)
+          for (const j of [3, 4]) {
+            const expected = file === source ? row[5] : before[3]
+            t.true(near(row[j], expected), `${at}, ${removed} removed, row ${i}: ${row[j]}, expected ${expected}`)
+          }
+        }
+      }
+    }
+    for (const register of ['register:Helvetica', 'register:helvetica']) {
+      for (const [i, row] of probe([...ALIASES, register, 'remove']).entries()) {
+        for (const j of [0, 3, 4]) {
+          t.true(near(row[j], installed[0]), `${renderer} installed alias, ${register} removed, row ${i}: ${row[j]}`)
+        }
+      }
+    }
+  }
+})
+
+// hasVariations and getVariationAxes report the face that text naming the
+// family draws: Roboto Mono (variable, wght) registered as Helvetica, any
+// spelling, for every style. Kept after a rebuild and a renderer switch.
+const HELVETICA_VARIATIONS_PROBE = `
+const { join } = require('path')
+const { GlobalFonts, createCanvas, setTextRenderer } = require('./index.js')
+const { RENDERER, PROBE_NAME } = process.env
+setTextRenderer(RENDERER)
+const width = (font) => {
+  const ctx = createCanvas(10, 10).getContext('2d')
+  ctx.font = font
+  return ctx.measureText('Ag').width
+}
+const QUERIES = [['Helvetica', 400], ['HELVETICA', 400], ['helvetica', 700]]
+const state = () =>
+  QUERIES.map(([name, weight]) => ({
+    has: GlobalFonts.hasVariations(name, weight, 5, 0),
+    axes: GlobalFonts.getVariationAxes(name, weight, 5, 0).map((axis) => axis.tag),
+    width: width(weight + ' 40px "' + name + '"'),
+  }))
+const out = { states: [state()] }
+GlobalFonts.registerFromPath(join('__test__', 'fonts', 'RobotoMono-VariableFont_wght.ttf'), PROBE_NAME)
+out.robotoMono = [400, 700].map((weight) => width(weight + ' 40px "Roboto Mono"'))
+out.states.push(state())
+GlobalFonts.remove(GlobalFonts.registerFromPath(join('__test__', 'fonts', 'Oswald.ttf'), 'Unrelated'))
+out.states.push(state())
+setTextRenderer(RENDERER === 'system' ? 'portable' : 'system')
+setTextRenderer(RENDERER)
+out.states.push(state())
+console.log(JSON.stringify(out))
+`
+
+macTest('variation queries of a name registered over Helvetica use the face text draws on macOS', (t) => {
+  const WGHT = 0x77676874
+  const near = (a: number, b: number) => Math.abs(a - b) <= 1e-3
+  for (const renderer of ['portable', 'system']) {
+    for (const name of ['Helvetica', 'helvetica']) {
+      const out = macProbe(HELVETICA_VARIATIONS_PROBE, { RENDERER: renderer, PROBE_NAME: name })
+      // The installed Helvetica has no axes.
+      for (const query of out.states[0]) {
+        t.false(query.has, `${renderer} ${name}: installed`)
+      }
+      for (const [i, queries] of out.states.slice(1).entries()) {
+        for (const [j, query] of queries.entries()) {
+          const at = `${renderer} ${name} state ${i + 1}, query ${j}`
+          t.true(near(query.width, out.robotoMono[j === 2 ? 1 : 0]), `${at}: draws ${query.width}`)
+          t.true(query.has, `${at}: hasVariations`)
+          t.deepEqual(query.axes, [WGHT], `${at}: axes`)
+        }
+      }
+    }
+  }
+})
+
+// Fonts registered under two spellings of Helvetica follow the order of the
+// registrations and setAlias calls, whatever spelling each used: EB Garamond
+// as "helvetica", then Roboto Mono as "Helvetica" draws EB Garamond, as with
+// Roboto Mono as "helvetica". convertSVGTextToPath uses the same face: Lato
+// registered as Helvetica gives the path bytes of Lato. Kept after a rebuild
+// and a renderer switch.
+const HELVETICA_SPELLINGS_PROBE = `
+const { join } = require('path')
+const { GlobalFonts, createCanvas, setTextRenderer, convertSVGTextToPath } = require('./index.js')
+const { RENDERER, PROBE_STEPS } = process.env
+setTextRenderer(RENDERER)
+const NAMES = ['Helvetica', 'helvetica', 'EB Garamond', 'Lato']
+const width = (family) => {
+  const ctx = createCanvas(10, 10).getContext('2d')
+  ctx.font = '40px "' + family + '"'
+  return ctx.measureText('Ag').width
+}
+const path = (family) =>
+  convertSVGTextToPath(
+    '<svg xmlns="http://www.w3.org/2000/svg" width="200" height="60"><text x="5" y="45" font-size="40" font-family="' +
+      family + '">Ag</text></svg>',
+  ).toString('base64')
+const out = { installedPath: path('Helvetica'), steps: [], states: [] }
+for (const step of PROBE_STEPS.split(',')) {
+  const [kind, a, b] = step.split(':')
+  if (kind === 'register') out.steps.push(GlobalFonts.registerFromPath(join('__test__', 'fonts', b), a) !== null)
+  else if (kind === 'alias') out.steps.push(GlobalFonts.setAlias(a, b))
+  else if (kind === 'rebuild') GlobalFonts.remove(GlobalFonts.registerFromPath(join('__test__', 'fonts', 'Oswald.ttf'), 'Unrelated'))
+  else if (kind === 'switch') {
+    setTextRenderer(RENDERER === 'system' ? 'portable' : 'system')
+    setTextRenderer(RENDERER)
+  } else
+    out.states.push({
+      widths: NAMES.map(width),
+      variations: NAMES.map((name) => GlobalFonts.hasVariations(name, 400, 5, 0)),
+      paths: NAMES.map(path),
+    })
+}
+console.log(JSON.stringify(out))
+`
+
+macTest('spellings of Helvetica keep registration order, and SVG paths use the drawn face on macOS', (t) => {
+  const near = (a: number, b: number) => Math.abs(a - b) <= 1e-3
+  const ROBOTO = 'RobotoMono-VariableFont_wght.ttf'
+  for (const renderer of ['portable', 'system']) {
+    const probe = (steps: string[]) => {
+      const out = macProbe(HELVETICA_SPELLINGS_PROBE, {
+        RENDERER: renderer,
+        PROBE_STEPS: [...steps, 'state', 'rebuild', 'state', 'switch', 'state'].join(','),
+      })
+      t.true(
+        out.steps.every((ok: boolean) => ok),
+        `${renderer} ${steps}: ${out.steps}`,
+      )
+      t.is(out.states.length, 3)
+      return out
+    }
+    for (const steps of [
+      ['register:helvetica:EBGaramond-Regular.ttf', `register:Helvetica:${ROBOTO}`],
+      ['register:Helvetica:EBGaramond-Regular.ttf', `register:helvetica:${ROBOTO}`],
+      ['register:EB Garamond:EBGaramond-Regular.ttf', 'alias:EB Garamond:helvetica', `register:Helvetica:${ROBOTO}`],
+    ]) {
+      for (const [i, s] of probe(steps).states.entries()) {
+        const at = `${renderer} ${steps} state ${i}`
+        for (const j of [0, 1]) {
+          t.true(near(s.widths[j], s.widths[2]), `${at}: ${s.widths[j]}, EB Garamond ${s.widths[2]}`)
+          // Roboto Mono has a wght axis, EB Garamond none.
+          t.false(s.variations[j], at)
+          t.is(s.paths[j], s.paths[2], at)
+        }
+      }
+    }
+    const out = probe(['register:Helvetica:Lato-Regular.ttf'])
+    for (const [i, s] of out.states.entries()) {
+      const at = `${renderer} Lato as Helvetica, state ${i}`
+      t.not(s.paths[3], out.installedPath, at)
+      for (const j of [0, 1]) {
+        t.true(near(s.widths[j], s.widths[3]), `${at}: ${s.widths[j]}, Lato ${s.widths[3]}`)
+        t.is(s.paths[j], s.paths[3], at)
+      }
+    }
+  }
+})
+
+const PRELOADED_NAMES_PROBE = `
+const { copyFileSync, mkdtempSync } = require('fs')
+const { tmpdir } = require('os')
+const { join } = require('path')
+const { GlobalFonts, createCanvas, setTextRenderer } = require('./index.js')
+const { RENDERER } = process.env
+setTextRenderer(RENDERER)
+const width = ([font, lang]) => {
+  const ctx = createCanvas(10, 10).getContext('2d')
+  if (lang) ctx.lang = lang
+  ctx.font = font
+  return ctx.measureText('Ag').width
+}
+const fonts = [
+  ['40px Brand'],
+  ['40px Brand, -webkit-body', 'ja'],
+  ['bold 40px Brand, -webkit-body', 'ja'],
+  ['40px Helvetica'],
+  ['40px Helvetica, -webkit-body', 'ja'],
+  ['40px sans-serif'],
+  ['40px Lato, -webkit-body', 'ja'],
+  ['40px NoSuchFamily, -webkit-body', 'ja'],
+]
+const out = { before: fonts.map(width), states: [] }
+const dir = mkdtempSync(join(tmpdir(), 'canvas-preloaded-'))
+const file = join(dir, 'Lato-Regular.ttf')
+copyFileSync(join('__test__', 'fonts', 'Lato-Regular.ttf'), file)
+out.loaded = GlobalFonts.loadFontsFromDir(dir)
+GlobalFonts.registerFromPath(file, 'Brand')
+GlobalFonts.registerFromPath(file, 'Helvetica')
+out.states.push(fonts.map(width))
+GlobalFonts.remove(GlobalFonts.registerFromPath(join('__test__', 'fonts', 'Oswald.ttf'), 'Unrelated'))
+out.states.push(fonts.map(width))
+setTextRenderer(RENDERER === 'system' ? 'portable' : 'system')
+setTextRenderer(RENDERER)
+out.states.push(fonts.map(width))
+console.log(JSON.stringify(out))
+`
+
+// Lato loaded by loadFontsFromDir, then registered again as Brand and as
+// Helvetica: both names are FontFace names (lang ja "40px Brand,
+// -webkit-body" draws Lato, not Hiragino), "40px sans-serif" is still the
+// installed Helvetica, and the file's own family Lato stays installed (the
+// standard font under -webkit-body). Right after the calls, after a rebuild
+// and after a renderer switch.
+macTest('names registered for a file loadFontsFromDir loaded are FontFace names on macOS', (t) => {
+  const LATO = 47.63996887207031
+  const near = (a: number, b: number) => Math.abs(a - b) <= 1e-3
+  for (const renderer of ['portable', 'system']) {
+    const out = macProbe(PRELOADED_NAMES_PROBE, { RENDERER: renderer })
+    t.is(out.loaded, 1)
+    t.false(near(out.before[5], LATO), `${renderer}: sans-serif ${out.before[5]}`)
+    t.false(near(out.before[7], LATO), `${renderer}: standard ${out.before[7]}`)
+    t.is(out.states.length, 3)
+    for (const [i, row] of out.states.entries()) {
+      const at = `${renderer} state ${i}`
+      for (const j of [0, 1, 2, 3, 4]) {
+        t.true(near(row[j], LATO), `${at}: ${j} ${row[j]}`)
+      }
+      t.true(near(row[5], out.before[5]), `${at}: sans-serif ${row[5]}, before ${out.before[5]}`)
+      t.true(near(row[6], out.before[7]), `${at}: Lato, -webkit-body ${row[6]}, standard ${out.before[7]}`)
+      t.true(near(row[7], out.before[7]), `${at}: standard ${row[7]}, before ${out.before[7]}`)
+    }
+  }
 })
 
 const REMOVE_ALL_PROBE = `

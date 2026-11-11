@@ -990,3 +990,118 @@ test.serial('a setAlias family under -webkit-body is sized as a generic family',
   t.true(serif < 39, `serif: ${serif} (font-size-adjust sizes the alias)`)
   t.true(Math.abs(body - serif) <= 1e-3, `-webkit-body: ${body}, serif: ${serif}`)
 })
+
+// A name registered over an installed family works like a FontFace
+// (CSSFontSelector::GetFontData asks FontFaceCache for a named family only):
+// a family list naming it draws the registered faces for every style (bold
+// synthesized from a regular one), and the generic families, the standard
+// font and the last resort keep the installed family. Lato FontFace (or
+// local(Arial), which is setAlias('Arial', alias)) under Times, Helvetica,
+// Arial, Hiragino Kaku Gothic ProN and PingFang SC; widths before and after.
+// One child process per case, as the registrations change every other row.
+const REGISTERED: {
+  darwin: string
+  cases: { alias: string; src: string; rows: [string, number, number][] }[]
+} = JSON.parse(readFileSync(join(__dirname, 'fixtures', 'text-fonts', 'registered-installed.json'), 'utf8'))
+const LATO_FILE = join(__dirname, 'fonts', 'Lato-Regular.ttf')
+
+function registeredScript(alias: string, src: string, keys: string[], renderer: string) {
+  return `
+    const { createCanvas, GlobalFonts, setTextRenderer } = require(${INDEX_JS})
+    setTextRenderer(${JSON.stringify(renderer)})
+    const keys = ${JSON.stringify(keys)}
+    const run = () => keys.map((key) => {
+      const [font, lang, text] = key.split(' | ')
+      const ctx = createCanvas(10, 10).getContext('2d')
+      ctx.font = font
+      ctx.lang = lang
+      return ctx.measureText(text).width
+    })
+    const before = run()
+    const added = ${JSON.stringify(src)} === 'lato'
+      ? GlobalFonts.registerFromPath(${JSON.stringify(LATO_FILE)}, ${JSON.stringify(alias)}) !== null
+      : GlobalFonts.setAlias('Arial', ${JSON.stringify(alias)})
+    const after = run()
+    // A removal rebuilds the provider: every face and alias is made again.
+    GlobalFonts.remove(GlobalFonts.registerFromPath(${JSON.stringify(join(__dirname, 'fonts', 'SourceSerifPro-Regular.ttf'))}, 'S14Rebuild'))
+    console.log(JSON.stringify({ added, before, after, rebuilt: run() }))`
+}
+
+test.serial('a name registered over an installed family works like a FontFace (system renderer)', async (t) => {
+  if (!DARWIN || release().split('.')[0] !== REGISTERED.darwin) {
+    t.pass('the macOS system fonts of the capture')
+    return
+  }
+  t.timeout(REGISTERED.cases.length * CHILD_TIMEOUT, 'one child process per case')
+  const near = (a: number, b: number) => Math.abs(a - b) <= 1e-3
+  let rows = 0
+  for (const { alias, src, rows: cases } of REGISTERED.cases) {
+    const keys = cases.map(([key]) => key)
+    const { added, before, after, rebuilt } = JSON.parse(
+      await runChild(t, registeredScript(alias, src, keys, 'system'), hostEnv({ LANG: 'C' })),
+    ) as { added: boolean; before: number[]; after: number[]; rebuilt: number[] }
+    t.true(added, `${alias} <- ${src}`)
+    cases.forEach(([key, chromeBefore, chromeAfter], i) => {
+      t.true(near(before[i], chromeBefore), `${alias} <- ${src}: ${key}: before ${before[i]}, Chrome ${chromeBefore}`)
+      t.true(near(after[i], chromeAfter), `${alias} <- ${src}: ${key}: after ${after[i]}, Chrome ${chromeAfter}`)
+      t.is(rebuilt[i], after[i], `${alias} <- ${src}: ${key}: after a rebuild`)
+      rows++
+    })
+  }
+  t.is(rows, 555)
+})
+
+// The portable renderer (Linux's rules) gives the same split: the name draws
+// Lato, the families that come from the font settings stay as they were.
+test.serial('a name registered over an installed family works like a FontFace (portable renderer)', async (t) => {
+  if (!DARWIN) {
+    t.pass('the macOS installed families')
+    return
+  }
+  t.timeout(4 * CHILD_TIMEOUT, 'one child process per alias')
+  const LATO = 47.63996887207031
+  const near = (a: number, b: number) => Math.abs(a - b) <= 1e-3
+  for (const alias of ['Times', 'Helvetica', 'Arial']) {
+    const named = [
+      `40px "${alias}" | inherit | Ag`,
+      `bold 40px "${alias}" | inherit | Ag`,
+      `40px NoSuchFamily, "${alias}" | inherit | Ag`,
+    ]
+    const kept = [
+      '40px serif | inherit | Ag',
+      '40px sans-serif | inherit | Ag',
+      'bold 40px sans-serif | inherit | Ag',
+      '40px NoSuchFamily | inherit | Ag',
+      '40px -webkit-body | inherit | Ag',
+    ]
+    const keys = [...named, ...kept]
+    const { added, before, after } = JSON.parse(
+      await runChild(t, registeredScript(alias, 'lato', keys, 'portable'), hostEnv({ LANG: 'C' })),
+    ) as { added: boolean; before: number[]; after: number[] }
+    t.true(added)
+    keys.forEach((key, i) => {
+      if (i < named.length) {
+        t.false(near(before[i], LATO), `${alias}: ${key}: before ${before[i]}`)
+        t.true(near(after[i], LATO), `${alias}: ${key}: after ${after[i]}`)
+      } else {
+        t.is(after[i], before[i], `${alias}: ${key}`)
+      }
+    })
+  }
+  // A setAlias face made again for the other renderer (the replay of a
+  // switch) is still the alias's face: bold is made from Arial.
+  const script = `
+    const { createCanvas, GlobalFonts, setTextRenderer } = require(${INDEX_JS})
+    const width = (font) => {
+      const ctx = createCanvas(10, 10).getContext('2d')
+      ctx.font = font
+      return ctx.measureText('Ag').width
+    }
+    setTextRenderer('system')
+    GlobalFonts.setAlias('Arial', 'Helvetica')
+    setTextRenderer('portable')
+    console.log(JSON.stringify(['bold 40px "Helvetica"', '40px Arial', 'bold 40px Arial'].map(width)))`
+  const [bold, arial, arialBold] = JSON.parse(await runChild(t, script, hostEnv({ LANG: 'C' }))) as number[]
+  t.is(bold, arial, `bold "Helvetica" ${bold}, Arial ${arial}`)
+  t.not(bold, arialBold)
+})
