@@ -341,6 +341,10 @@ fn prepare_root(
   };
   let svg = build::emit_document(&doc, root, &mut shared).ok_or(PrepareError::Unsupported)?;
   if for_paths && shared.budget_hit {
+    // What was written is not used: freed before the cleanup reads the
+    // document again.
+    drop(svg);
+    drop(shared);
     return Err(match fallback::clean(&doc, text) {
       Ok(text) => PrepareError::OverBudget(text),
       Err(()) => PrepareError::Loops,
