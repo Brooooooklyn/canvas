@@ -24,6 +24,7 @@ fn main() {
   println!("cargo:rerun-if-changed=skia-c/shaper_features.cpp");
   println!("cargo:rerun-if-changed=skia-c/shaper_chars.cpp");
   println!("cargo:rerun-if-changed=skia-c/shaper_fallback_mac.cpp");
+  println!("cargo:rerun-if-changed=skia-c/shaper_fallback_installed.cpp");
   println!("cargo:rerun-if-changed=third_party/emoji-segmenter/emoji_presentation_scanner.c");
   println!("cargo:rerun-if-changed=skia-c/font_families.cpp");
   println!("cargo:rerun-if-changed=skia-c/text_metrics.cpp");
@@ -319,6 +320,7 @@ fn main() {
     .file("skia-c/shaper_features.cpp")
     .file("skia-c/shaper_chars.cpp")
     .file("skia-c/shaper_fallback_mac.cpp")
+    .file("skia-c/shaper_fallback_installed.cpp")
     .include("./skia-c")
     .include(skia_path)
     // https://github.com/rust-lang/rust/pull/93901#issuecomment-1119360260

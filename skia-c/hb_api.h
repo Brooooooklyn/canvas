@@ -320,6 +320,14 @@ hb_bool_t hb_ot_layout_get_baseline(hb_font_t* font,
 hb_set_t* hb_set_create(void);
 void hb_set_destroy(hb_set_t* set);
 hb_bool_t hb_set_has(const hb_set_t* set, hb_codepoint_t codepoint);
+void hb_set_add(hb_set_t* set, hb_codepoint_t codepoint);
+hb_bool_t hb_set_next(const hb_set_t* set, hb_codepoint_t* codepoint);
+// HB_SET_VALUE_INVALID (hb-set.h).
+#define HB_SET_VALUE_INVALID ((hb_codepoint_t) - 1)
+hb_bool_t hb_set_next_range(const hb_set_t* set,
+                            hb_codepoint_t* first,
+                            hb_codepoint_t* last);
+void hb_face_collect_unicodes(hb_face_t* face, hb_set_t* out);
 hb_bool_t hb_ot_layout_has_substitution(hb_face_t* face);
 hb_bool_t hb_ot_layout_has_positioning(hb_face_t* face);
 unsigned int hb_ot_layout_table_get_lookup_count(hb_face_t* face,
@@ -379,6 +387,8 @@ const char* hb_version_string(void);
 
 // hb-blob.h
 void hb_blob_destroy(hb_blob_t* blob);
+const char* hb_blob_get_data(hb_blob_t* blob, unsigned int* length);
+hb_blob_t* hb_face_reference_table(const hb_face_t* face, hb_tag_t tag);
 hb_blob_t* hb_blob_get_empty(void);
 
 // hb-face.h

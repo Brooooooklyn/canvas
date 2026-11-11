@@ -30,7 +30,10 @@ struct SystemFallbackKeyHash {
     for (const uint64_t part :
          {uint64_t{key.emoji_presentation}, uint64_t{key.primary},
           key.primary_axes, uint64_t{key.weight_bits}, uint64_t{key.slope_bits},
-          static_cast<uint64_t>(key.pixel_size)}) {
+          static_cast<uint64_t>(key.pixel_size),
+          static_cast<uint64_t>(key.source), static_cast<uint64_t>(key.stretch),
+          static_cast<uint64_t>(key.slant),
+          static_cast<uint64_t>(key.han_script), uint64_t{key.monospace}}) {
       hash = hash * 31 + std::hash<uint64_t>()(part);
     }
     return hash;
@@ -108,6 +111,9 @@ struct SystemFallbackCache {
                      std::list<Result>::iterator,
                      SystemFallbackKeyHash>
       fonts;
+  // The installed-font source's families and coverage.
+  std::unique_ptr<InstalledFallbackIndex, InstalledFallbackIndexDeleter>
+      installed;
 #if defined(__APPLE__)
   struct InputsDeleter {
     void operator()(MacFallbackInputs* inputs) const {
@@ -120,6 +126,17 @@ struct SystemFallbackCache {
 
 void SystemFallbackCacheDeleter::operator()(SystemFallbackCache* cache) const {
   delete cache;
+}
+
+void ForgetSystemFallbackFaces(SystemFallbackCache* cache) {
+  cache->results.clear();
+  cache->fonts.clear();
+#if defined(__APPLE__)
+  cache->inputs.reset();
+#endif
+  if (cache->installed) {
+    ForgetInstalledFallbackFaces(cache->installed.get());
+  }
 }
 
 namespace {
@@ -619,6 +636,32 @@ void StoreSystemFallback(skiac_font_collection* c_collection,
   }
   cache.results.emplace_back(key, std::move(font));
   cache.fonts[key] = std::prev(cache.results.end());
+}
+
+InstalledFallbackIndex* InstalledFallbacks(
+    skiac_font_collection* c_collection) {
+  if (!c_collection->system_fallbacks) {
+    c_collection->system_fallbacks.reset(new SystemFallbackCache());
+  }
+  SystemFallbackCache& cache = *c_collection->system_fallbacks;
+  if (!cache.installed) {
+    cache.installed.reset(MakeInstalledFallbackIndex());
+  }
+  if (ListInstalledFallbackFamilies(c_collection, cache.installed.get())) {
+    for (auto it = cache.results.begin(); it != cache.results.end();) {
+      if (it->first.source == SystemFallbackSource::kInstalled) {
+        cache.fonts.erase(it->first);
+        it = cache.results.erase(it);
+      } else {
+        ++it;
+      }
+    }
+  }
+  return cache.installed.get();
+}
+
+bool TypefaceHasColorTable(SkTypeface* typeface) {
+  return HasColorTable(typeface);
 }
 
 #if defined(__APPLE__)

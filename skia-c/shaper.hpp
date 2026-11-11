@@ -458,9 +458,13 @@ SyntheticStyle MacMatchedFontSynthetic(SkTypeface* face,
 
 // The system fallback results of a collection
 // (skiac_font_collection::system_fallbacks, kept across the drops of
-// TextCaches), by code point, emoji presentation, primary font (family face
-// and axes), weight, slope and ComputedPixelSize. At most 4096, the least
-// recently used dropped first.
+// TextCaches), by source, code point, emoji presentation, primary font
+// (CoreText: family face and axes; installed: the first family's installed
+// face, 0 for none), weight, slope, ComputedPixelSize (CoreText), and
+// stretch, slant keyword, Han script and monospace (installed). At most 4096,
+// the least recently used dropped first. The installed source's results go when
+// the installed fonts' listing changes (InstalledFallbacks).
+enum class SystemFallbackSource : uint8_t { kCoreText, kInstalled };
 struct SystemFallbackKey {
   uint32_t code_point;
   bool emoji_presentation;
@@ -469,6 +473,13 @@ struct SystemFallbackKey {
   uint32_t weight_bits;
   uint32_t slope_bits;
   int pixel_size;
+  SystemFallbackSource source = SystemFallbackSource::kCoreText;
+  int stretch = 0;
+  // The font-style keyword (SkFontStyle::Slant): italic and oblique share
+  // slope 14 but match a family's faces apart (installed).
+  int slant = 0;
+  int han_script = 0;
+  bool monospace = false;
   bool operator==(const SystemFallbackKey&) const = default;
 };
 const SystemFallbackFont* FindSystemFallback(
@@ -481,6 +492,53 @@ void StoreSystemFallback(skiac_font_collection* c_collection,
 // The collection's MacFallbackInputs, kept with the results.
 MacFallbackInputs* SystemFallbackInputs(skiac_font_collection* c_collection);
 #endif
+// The installed-font fallback source (shaper_fallback_installed.cpp): the
+// installed families in scan order and the characters of each face it read
+// (the `cmap` table only, as code point ranges). Kept with the system
+// fallback results. rebuildAssets (removeFont, removeAll, a renderer switch)
+// drops its faces (ForgetInstalledFallbackFaces) and keeps what it read.
+struct InstalledFallbackIndex;
+struct InstalledFallbackIndexDeleter {
+  void operator()(InstalledFallbackIndex* index) const;
+};
+InstalledFallbackIndex* MakeInstalledFallbackIndex();
+// Drops the faces the index holds (a removed font's among them); the
+// families are listed again at the next use. The coverage, color and
+// identity read of each face stay, by typeface ID (never reused), so the
+// faces listed again are not read again; the listing drops the others.
+void ForgetInstalledFallbackFaces(InstalledFallbackIndex* index);
+// Lists the installed families again when families_generation or the
+// renderer moved since the last listing. Returns whether it did (the
+// results found from the old listing are then stale).
+bool ListInstalledFallbackFamilies(skiac_font_collection* c_collection,
+                                   InstalledFallbackIndex* index);
+// The collection's index, listed for the current installed fonts; the
+// installed source's cached results are dropped when the listing changed.
+InstalledFallbackIndex* InstalledFallbacks(skiac_font_collection* c_collection);
+// The installed font for `character` (PUA and non-characters are never
+// asked), from the installed faces only:
+// 0. FallbackOnStandardFontStyle from `first_family` (an installed face, or
+//    null);
+// 1. Windows' hard-coded choices by name (font_fallback_win.cc: emoji,
+//    block and script families, the Han ones by `han_script`, 0 for the
+//    host's unresolved Han; Courier New for Arabic and Hebrew `monospace`);
+//    on Apple then the font Chrome mac's CoreText cascade picks for the
+//    script, by name; then Windows' pan-Unicode lists;
+// 2. the first installed family by case-folded name with a face that has
+//    the character (color faces first for emoji presentation), the face of
+//    it matching the request's style.
+// Synthetic bold and italic for what the face lacks.
+SystemFallbackFont InstalledFallback(skiac_font_collection* c_collection,
+                                     InstalledFallbackIndex* index,
+                                     const skiac_text_request& request,
+                                     SkTypeface* first_family,
+                                     uint32_t character,
+                                     Priority priority,
+                                     int han_script,
+                                     bool monospace);
+// ColorTableLookup::TypefaceHasAnySupportedColorTable.
+bool TypefaceHasColorTable(SkTypeface* typeface);
+
 // A system fallback face at an opsz (FontPlatformDataFromCTFont), cached by
 // typeface and opsz.
 sk_sp<SkTypeface> SystemFallbackInstance(skiac_font_collection* c_collection,

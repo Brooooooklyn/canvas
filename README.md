@@ -145,7 +145,7 @@ GlobalFonts.registerFromPath('./fonts/Lato-Regular.ttf', 'sans-serif')
 These still depend on the OS and the machine:
 
 - Installed fonts. Names like `Arial` or `Helvetica`, and the generic families (`sans-serif`, `serif`, `monospace`, `system-ui`, the canvas default `10px sans-serif`) resolve to whatever is installed.
-- Characters your registered fonts lack. They are taken from the installed default fonts when those have them, else they draw as boxes. There is no search through all installed fonts.
+- Characters your registered fonts lack. They are taken from an installed font (the ones `loadSystemFonts` and `loadFontsFromDir` load, or the OS font folder) that has them, else they draw as boxes. A font you `register` or `registerFromPath` is never used for a character another font lacks, as in Chrome: to give a host without fonts a fallback font, load it with `loadFontsFromDir`.
 - The `ex`, `ch`, `cap` and line-height units inside SVG images use an installed default font.
 - Lottie (Skottie) text uses installed fonts.
 - PDF font embedding depends on the build target.
@@ -168,6 +168,8 @@ getTextRenderer() // 'system'
 It applies to the whole process. Call it once at startup, before you create canvases. `setTextRenderer('portable')` switches back. Any other value throws a `TypeError`. A canvas created before the switch keeps its old text gamma until you set its width or height. A `ctx.font` value set before the switch keeps its parsed form (sizes in `ex`, `ch` and other font-relative units, and on macOS the `BlinkMacSystemFont` to `system-ui` rewrite), so set `ctx.font` again after the switch.
 
 > **Behavior change** ([#1402](https://github.com/Brooooooklyn/canvas/issues/1402)): text on macOS and Linux is drawn the way Windows draws it, so pixels and `measureText` results differ from 1.0.12 and 1.0.13. On macOS, the installed fonts are FreeType faces again (as in 1.0.11), read from `/System/Library/Fonts`, `/Library/Fonts` and `~/Library/Fonts`; CoreText's per-character fallback is off, and `sans-serif`, `serif` and `monospace` map to Arial, Times New Roman and the Linux monospace list. On macOS, `DISABLE_SYSTEM_FONTS_LOAD` no longer hides installed fonts from name lookup, as on Linux and Windows and before 1.0.12; it only keeps them out of `GlobalFonts.families`. Call `setTextRenderer('system')` to get the 1.0.12 / 1.0.13 behavior back.
+
+> **Behavior change**: a character no font of the font list has is taken from an installed font, as Chrome's font cache takes it from the platform's fonts. This applies to the portable renderer on every OS and to the system renderer off macOS (on macOS, CoreText still picks first). The font is chosen the way Chrome on Windows chooses it: a bold or italic list first tries its first family at the normal style, then the font Windows names for the character's script (on macOS, the font Chrome's CoreText fallback names for it), then the first installed family, by name, that has the character. Before, such a character drew as a box (the first font's `.notdef`). Private use characters still draw as boxes.
 
 ## Emoji text
 

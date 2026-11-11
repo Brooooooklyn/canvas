@@ -1,0 +1,471 @@
+// A character no family of the font list has is taken from an installed
+// font (loadSystemFonts, loadFontsFromDir), as Chrome's font cache takes it
+// from the platform's fonts: on the portable renderer on every OS, and with
+// the system renderer off Apple or where CoreText gives none. A FontFace
+// (register / registerFromPath) is never a fallback font (Chrome 157: an
+// unnamed FontFace with the character is not used,
+// followups2/portable-loaded-fallback/chrome.json).
+//
+// Each case runs in a child process with DISABLE_SYSTEM_FONTS_LOAD, so the
+// only installed fonts are the ones a temp dir gives loadFontsFromDir. A host
+// whose font manager still finds a font with the character (macOS portable
+// reads /System/Library/Fonts; a Linux desktop's /usr/share/fonts) is not
+// "bare": there only "a real glyph, not .notdef" is checked.
+import { spawnSync } from 'node:child_process'
+import { copyFileSync, existsSync, mkdirSync, rmdirSync, rmSync } from 'node:fs'
+import { release } from 'node:os'
+import { dirname, join } from 'node:path'
+import { fileURLToPath } from 'node:url'
+
+import test from 'ava'
+
+const __dirname = dirname(fileURLToPath(import.meta.url))
+
+type Box = [number, number, number, number, number]
+
+const PROBE = `
+const fs = require('fs'), os = require('os'), path = require('path')
+const { createCanvas, GlobalFonts, setTextRenderer } = require('./index.js')
+if (process.env.RENDERER === 'system') setTextRenderer('system')
+const F = path.join('__test__', 'fonts')
+const m = (font, text, lang) => {
+  const ctx = createCanvas(10, 10).getContext('2d')
+  if (lang) ctx.lang = lang
+  ctx.font = font
+  const t = ctx.measureText(text)
+  return [t.width, t.actualBoundingBoxLeft, t.actualBoundingBoxRight, t.actualBoundingBoxAscent, t.actualBoundingBoxDescent]
+}
+const dirOf = (files) => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'installed-fallback-'))
+  for (const file of files) fs.copyFileSync(path.join(F, file), path.join(dir, file))
+  return dir
+}
+GlobalFonts.registerFromPath(path.join(F, 'Lato-Regular.ttf'), 'MyLatoOnly')
+const out = {
+  notdef: m('700 32px MyLatoOnly', '\\uE000'),
+  before: m('700 32px MyLatoOnly', '中'),
+  before水: m('400 32px MyLatoOnly', '水'),
+}
+const SHS = 'SourceHanSerifCN-Bold.ttf'
+const NOTO = 'NotoSansCJKjp-Regular-subset-halt.otf'
+const HY = 'HYXiXingKaiW.ttf'
+switch (process.env.CASE) {
+  case 'A': {
+    const dir = dirOf([SHS])
+    GlobalFonts.loadFontsFromDir(dir)
+    out.l700 = m('700 32px MyLatoOnly', '中')
+    out.s700 = m('700 32px "Source Han Serif CN"', '中')
+    out.lAHan = m('700 32px MyLatoOnly', 'A中')[0]
+    out.lA = m('700 32px MyLatoOnly', 'A')[0]
+    out.l400 = m('400 32px MyLatoOnly', '中')
+    out.s400 = m('400 32px "Source Han Serif CN"', '中')
+    out.pua = m('700 32px MyLatoOnly', '\\uE000')
+    // A FontFace name for the same file (S18's web twin) is not a fallback
+    // font: the installed face stays the one taken.
+    GlobalFonts.registerFromPath(path.join(dir, SHS), 'SHSWeb')
+    out.twin = m('700 32px MyLatoOnly', '中')
+    // removeAll drops the installed faces with the index.
+    GlobalFonts.removeAll()
+    GlobalFonts.registerFromPath(path.join(F, 'Lato-Regular.ttf'), 'MyLatoOnly')
+    out.removed = m('700 32px MyLatoOnly', '中')
+    fs.rmSync(dir, { recursive: true, force: true })
+    break
+  }
+  case 'K': {
+    // The tables the installed fallback source read so far.
+    const reads = () => {
+      const ctx = createCanvas(10, 10).getContext('2d')
+      ctx.font = '32px MyLatoOnly'
+      return JSON.parse(ctx.__debugTextLine('a')).fallbackReads
+    }
+    const dir = dirOf([SHS])
+    GlobalFonts.loadFontsFromDir(dir)
+    out.k = m('700 32px MyLatoOnly', '中')
+    out.kReads = reads()
+    const key = GlobalFonts.register(fs.readFileSync(path.join(F, 'Lato-Regular.ttf')), 'KTmp')
+    GlobalFonts.remove(key)
+    out.kRemoved = m('700 32px MyLatoOnly', '中')
+    out.kRemovedReads = reads()
+    fs.rmSync(dir, { recursive: true, force: true })
+    break
+  }
+  case 'C': {
+    GlobalFonts.registerFromPath(path.join(F, SHS), 'SHSWeb')
+    out.c = m('700 32px MyLatoOnly', '中')
+    out.web = m('700 32px SHSWeb', '中')
+    break
+  }
+  case 'D': {
+    const dir = dirOf([NOTO])
+    GlobalFonts.loadFontsFromDir(dir)
+    out.d = m('700 32px MyLatoOnly', '水')
+    out.n700 = m('700 32px "Noto Sans CJK JP"', '水')
+    out.n400 = m('400 32px "Noto Sans CJK JP"', '水')
+    fs.rmSync(dir, { recursive: true, force: true })
+    break
+  }
+  case 'E': {
+    const dir = dirOf([HY, SHS, NOTO])
+    GlobalFonts.loadFontsFromDir(dir)
+    out.e = m('400 32px MyLatoOnly', '水')
+    out.hy = m('400 32px HYXiXingKaiW', '水')
+    out.ja = m('400 32px MyLatoOnly', '水', 'ja')
+    out.noto = m('400 32px "Noto Sans CJK JP"', '水', 'ja')
+    fs.rmSync(dir, { recursive: true, force: true })
+    break
+  }
+  case 'W': {
+    // A WOFF2 file: its characters are read through the typeface's tables
+    // (HarfBuzz reads no WOFF2 data).
+    out.wBefore = m('400 32px MyLatoOnly', '\u2500')
+    const dir = dirOf(['Cascadia.woff2'])
+    GlobalFonts.loadFontsFromDir(dir)
+    out.w = m('400 32px MyLatoOnly', '\u2500')
+    out.cascadia = m('400 32px "Cascadia Code"', '\u2500')
+    fs.rmSync(dir, { recursive: true, force: true })
+    break
+  }
+  case 'S': {
+    // A symbol font (only a (3,0) cmap, U+F020..U+F0FF): HarfBuzz draws
+    // U+00E9 with its U+F0E9 glyph, and fontconfig's charset and Windows
+    // list U+0000..U+00FF for it too.
+    GlobalFonts.registerFromPath(path.join(F, 'NotoSansDevanagari-subset.ttf'), 'MyDevaOnly')
+    out.sNotdef = m('32px MyDevaOnly', '\uE000')
+    out.sBefore = m('32px MyDevaOnly', '\u00E9')
+    const dir = dirOf(['SymCmapProbe.ttf'])
+    GlobalFonts.loadFontsFromDir(dir)
+    out.s = m('32px MyDevaOnly', '\u00E9')
+    out.sym = m('32px SymCmapProbe', '\u00E9')
+    fs.rmSync(dir, { recursive: true, force: true })
+    break
+  }
+  case 'V': {
+    // A variable font: the fallback is its instance at the request's
+    // weight and width, as the family named is.
+    GlobalFonts.registerFromPath(path.join(F, 'NotoSansDevanagari-subset.ttf'), 'MyDevaOnly')
+    out.vNotdef = m('32px MyDevaOnly', '\uE000')
+    out.vBefore = m('32px MyDevaOnly', 'H')
+    const dir = dirOf(['ScienceGothic-VariableFont.ttf'])
+    GlobalFonts.loadFontsFromDir(dir)
+    out.v900 = m('900 32px MyDevaOnly', 'HELLO')
+    out.named900 = m('900 32px "Science Gothic"', 'HELLO')
+    out.v400 = m('400 32px MyDevaOnly', 'HELLO')
+    out.named400 = m('400 32px "Science Gothic"', 'HELLO')
+    out.vCondensed = m('condensed 32px MyDevaOnly', 'HELLO')
+    out.namedCondensed = m('condensed 32px "Science Gothic"', 'HELLO')
+    fs.rmSync(dir, { recursive: true, force: true })
+    break
+  }
+  case 'R': {
+    // Lato with its Unicode cmap records relabelled Mac Roman (1,0): no
+    // Unicode or symbol cmap, so fontconfig's charset (Chrome Linux's
+    // fallback) has no characters for it.
+    GlobalFonts.registerFromPath(path.join(F, 'NotoSansDevanagari-subset.ttf'), 'MyDevaOnly')
+    out.rNotdef = m('32px MyDevaOnly', '\uE000')
+    out.rBefore = m('32px MyDevaOnly', 'A')
+    const font = fs.readFileSync(path.join(F, 'Lato-Regular.ttf'))
+    const tables = font.readUInt16BE(4)
+    for (let i = 0; i < tables; i++) {
+      const record = 12 + 16 * i
+      if (font.toString('latin1', record, record + 4) !== 'cmap') continue
+      const cmap = font.readUInt32BE(record + 8)
+      for (let j = 0; j < font.readUInt16BE(cmap + 2); j++) {
+        font.writeUInt16BE(1, cmap + 4 + 8 * j)
+        font.writeUInt16BE(0, cmap + 6 + 8 * j)
+      }
+    }
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'installed-fallback-'))
+    fs.writeFileSync(path.join(dir, 'LatoMacRoman.ttf'), font)
+    GlobalFonts.loadFontsFromDir(dir)
+    out.r = m('32px MyDevaOnly', 'A')
+    fs.rmSync(dir, { recursive: true, force: true })
+    break
+  }
+  case 'B': {
+    // U+1BC0 from the font manager's (/System/Library/Fonts) Noto Sans Batak,
+    // then with a bold face of that family loaded that lacks it: the
+    // manager's regular face stays a fallback face.
+    const family = (text) => {
+      const ctx = createCanvas(10, 10).getContext('2d')
+      ctx.font = '32px MyLatoOnly'
+      return JSON.parse(ctx.__debugTextLine(text)).runs[0].family
+    }
+    out.bFamilyBefore = family('\u1BC0')
+    out.bBefore = m('32px MyLatoOnly', '\u1BC0')
+    out.bBoldBefore = m('700 32px MyLatoOnly', '\u1BC0')
+    const dir = dirOf(['BatakBoldProbe.ttf'])
+    GlobalFonts.loadFontsFromDir(dir)
+    out.bFamily = family('\u1BC0')
+    out.b = m('32px MyLatoOnly', '\u1BC0')
+    out.bBold = m('700 32px MyLatoOnly', '\u1BC0')
+    fs.rmSync(dir, { recursive: true, force: true })
+    break
+  }
+  case 'G': {
+    // G_CHAR bold from a variable installed font the font manager also lists
+    // as named instances: macOS 27's .SF Gurmukhi (SFIndia.ttc) for U+0A76,
+    // or G_FONT, loaded from a temp dir as well.
+    const ch = String.fromCodePoint(parseInt(process.env.G_CHAR, 16))
+    const dir = process.env.G_FONT && dirOf([process.env.G_FONT])
+    if (dir) GlobalFonts.loadFontsFromDir(dir)
+    const ctx = createCanvas(10, 10).getContext('2d')
+    ctx.font = '700 32px MyLatoOnly'
+    out.gFamily = JSON.parse(ctx.__debugTextLine(ch)).runs[0].family
+    out.g700 = m('700 32px MyLatoOnly', ch)
+    out.gNamed700 = m('700 32px "' + out.gFamily + '"', ch)
+    if (dir) fs.rmSync(dir, { recursive: true, force: true })
+    break
+  }
+  case 'mac': {
+    const ctx = createCanvas(10, 10).getContext('2d')
+    ctx.font = '700 32px MyLatoOnly'
+    out.family = JSON.parse(ctx.__debugTextLine('中')).runs[0].family
+    out.l700 = m('700 32px MyLatoOnly', '中')
+    out.named700 = m('700 32px "' + out.family + '"', '中')
+    out.l400 = m('400 32px MyLatoOnly', '中')
+    out.named400 = m('400 32px "' + out.family + '"', '中')
+    out.lAHan = m('700 32px MyLatoOnly', 'A中')[0]
+    break
+  }
+}
+console.log(JSON.stringify(out))
+`
+
+function run(renderer: string, testCase: string, env: Record<string, string> = { DISABLE_SYSTEM_FONTS_LOAD: '1' }) {
+  const { stdout, stderr, status } = spawnSync(process.execPath, ['-e', PROBE], {
+    cwd: join(__dirname, '..'),
+    env: { ...process.env, ...env, RENDERER: renderer, CASE: testCase },
+    encoding: 'utf8',
+    timeout: 60_000,
+  })
+  if (status !== 0) throw new Error(stderr)
+  return JSON.parse(stdout) as Record<string, Box & number>
+}
+
+// No installed font has 中 before the dir is loaded: it draws Lato's
+// .notdef, as the private use character does.
+const bare = (out: Record<string, Box>) => JSON.stringify(out.before) === JSON.stringify(out.notdef)
+
+for (const renderer of ['portable', 'system']) {
+  test(`${renderer}: a character the list lacks comes from a font loadFontsFromDir loaded`, (t) => {
+    const out = run(renderer, 'A')
+    t.notDeepEqual(out.l700, out.notdef)
+    t.true(Math.abs(out.l700[0] - 32) < 0.01, String(out.l700[0]))
+    // Private use characters never fall back.
+    t.deepEqual(out.pua, out.notdef)
+    if (!bare(out)) {
+      t.pass('the host has a font with 中')
+      return
+    }
+    // The only installed CJK face: its box, bold (the face is bold).
+    t.deepEqual(out.l700, out.s700)
+    t.true(Math.abs(out.lAHan - (out.lA + 32)) < 1e-3)
+    // 400: the bold face as it is, no synthesis either way.
+    t.deepEqual(out.l400, out.s400)
+    t.deepEqual(out.twin, out.l700)
+    t.deepEqual(out.removed, out.before)
+  })
+
+  // remove() rebuilds the font provider; the installed faces it keeps are
+  // not read again for the next fallback character.
+  test(`${renderer}: remove() keeps what the installed fallback source read`, (t) => {
+    const out = run(renderer, 'K')
+    t.notDeepEqual(out.k, out.notdef)
+    t.deepEqual(out.kRemoved, out.k)
+    if (renderer === 'system' && process.platform === 'darwin') {
+      t.pass('CoreText gives the font')
+      return
+    }
+    t.true(out.kReads > 0)
+    t.is(out.kRemovedReads, out.kReads)
+  })
+
+  test(`${renderer}: a FontFace is never a fallback font`, (t) => {
+    const out = run(renderer, 'C')
+    t.is(out.web[0], 32)
+    if (!bare(out)) {
+      t.pass('the host has a font with 中')
+      return
+    }
+    t.deepEqual(out.c, out.before)
+  })
+
+  test(`${renderer}: a regular installed face is made bold for bold text`, (t) => {
+    const out = run(renderer, 'D')
+    t.notDeepEqual(out.d, out.notdef)
+    if (!bare(out)) {
+      t.pass('the host has a font with 中')
+      return
+    }
+    t.deepEqual(out.d, out.n700)
+    t.notDeepEqual(out.d, out.n400)
+  })
+
+  test(`${renderer}: the scan goes by family name, and Han follows the language`, (t) => {
+    const out = run(renderer, 'E')
+    if (!bare(out)) {
+      t.pass('the host has a font with 中')
+      return
+    }
+    // No Han list name is installed: the first family by name, HYXiXingKaiW.
+    t.deepEqual(out.e, out.hy)
+    // lang ja: Windows' Japanese list names Noto Sans CJK JP.
+    t.deepEqual(out.ja, out.noto)
+    t.notDeepEqual(out.e, out.noto)
+  })
+
+  test(`${renderer}: a WOFF2 file loadFontsFromDir loaded is a fallback font`, (t) => {
+    const out = run(renderer, 'W')
+    t.notDeepEqual(out.w, out.notdef)
+    if (JSON.stringify(out.wBefore) !== JSON.stringify(out.notdef)) {
+      t.pass('the host has a font with U+2500')
+      return
+    }
+    t.deepEqual(out.w, out.cascadia)
+  })
+
+  test(`${renderer}: a symbol font loadFontsFromDir loaded is a fallback font for U+0000..U+00FF`, (t) => {
+    const out = run(renderer, 'S')
+    t.notDeepEqual(out.s, out.sNotdef)
+    if (JSON.stringify(out.sBefore) !== JSON.stringify(out.sNotdef)) {
+      t.pass('the host has a font with U+00E9')
+      return
+    }
+    t.notDeepEqual(out.sym, out.sNotdef)
+    t.deepEqual(out.s, out.sym)
+  })
+
+  test(`${renderer}: a variable installed font is a fallback font at the request's weight and width`, (t) => {
+    const out = run(renderer, 'V')
+    t.notDeepEqual(out.v400, out.vNotdef)
+    if (JSON.stringify(out.vBefore) !== JSON.stringify(out.vNotdef)) {
+      t.pass('the host has a font with H')
+      return
+    }
+    t.deepEqual(out.v400, out.named400)
+    t.deepEqual(out.v900, out.named900)
+    t.deepEqual(out.vCondensed, out.namedCondensed)
+    t.notDeepEqual(out.v900, out.v400)
+    t.notDeepEqual(out.vCondensed, out.v400)
+  })
+
+  test(`${renderer}: a font with only a Mac Roman cmap is not a fallback font`, (t) => {
+    const out = run(renderer, 'R')
+    if (JSON.stringify(out.rBefore) !== JSON.stringify(out.rNotdef)) {
+      t.pass('the host has a font with A')
+      return
+    }
+    t.deepEqual(out.r, out.rNotdef)
+  })
+}
+
+// The font manager's faces (macOS portable: FreeType over
+// /System/Library/Fonts) and loadFontsFromDir's are one family per name, as
+// fontconfig and DirectWrite list faces: a loaded face of a family the
+// manager has does not hide the manager's other faces. Only a real
+// installed font can be the manager's side (a bare Linux host has none), so
+// this needs macOS's Noto Sans Batak.
+const BATAK = '/System/Library/Fonts/Supplemental/NotoSansBatak-Regular.ttf'
+const batakTest = process.platform === 'darwin' && existsSync(BATAK) ? test : test.skip
+
+batakTest(`portable: a loaded face of an installed family keeps the family's other faces`, (t) => {
+  const out = run('portable', 'B') as unknown as Record<string, Box> & { bFamily: string; bFamilyBefore: string }
+  t.is(out.bFamilyBefore, 'Noto Sans Batak')
+  t.notDeepEqual(out.bBefore, out.notdef)
+  t.is(out.bFamily, 'Noto Sans Batak')
+  t.deepEqual(out.b, out.bBefore)
+  t.deepEqual(out.bBold, out.bBoldBefore)
+})
+
+// macOS 27 (the Chrome 157 capture's host), the installed fonts on.
+const MEASURED_MACOS = process.platform === 'darwin' && Number.parseInt(release(), 10) === 27
+const macTest = MEASURED_MACOS ? test : test.skip
+
+// loadSystemFonts and loadFontsFromDir register a variable face once; the
+// font manager also lists each of its named instances. An instance is the
+// same face, so the fallback face is the one the family name gives, at the
+// request's axes, not a named instance's other axes (CTRS, opsz).
+//
+// The manager only scans SK_FONT_FILE_PREFIX, so the test copies
+// NamedInstanceProbe.ttf (its Bold instance at CTRS 85) there: the CI's Linux
+// containers run as root and its Windows runners as an administrator. There
+// (root, or CI set) a failed copy or another font with U+1E290 fails the
+// test, so it cannot pass without checking; elsewhere nothing is checked.
+// macOS's /System/Library/Fonts is read-only.
+const MANAGER_DIR = ({ linux: '/usr/share/fonts', win32: 'C:/Windows/Fonts' } as Record<string, string>)[
+  process.platform
+]
+const managerTest = MANAGER_DIR ? test : test.skip
+const MUST_CHECK = Boolean(process.env.CI) || process.getuid?.() === 0
+
+managerTest(`portable: a named instance of a loaded variable face is not another fallback face`, (t) => {
+  const createdDir = !existsSync(MANAGER_DIR)
+  const file = join(MANAGER_DIR, `napi-rs-canvas-named-instance-probe-${process.pid}.ttf`)
+  try {
+    mkdirSync(MANAGER_DIR, { recursive: true })
+    copyFileSync(join(__dirname, 'fonts', 'NamedInstanceProbe.ttf'), file)
+  } catch (e) {
+    if (createdDir && existsSync(MANAGER_DIR)) rmdirSync(MANAGER_DIR)
+    const why = `${MANAGER_DIR} is not writable (${(e as NodeJS.ErrnoException).code})`
+    if (MUST_CHECK) t.fail(why)
+    else t.pass(why)
+    return
+  }
+  let out: Record<string, Box> & { gFamily: string }
+  try {
+    out = run('portable', 'G', {
+      DISABLE_SYSTEM_FONTS_LOAD: '1',
+      G_CHAR: '1E290',
+      G_FONT: 'NamedInstanceProbe.ttf',
+    }) as unknown as typeof out
+  } finally {
+    rmSync(file, { force: true })
+    if (createdDir) rmdirSync(MANAGER_DIR)
+  }
+  t.not(out.gFamily, 'Lato')
+  if (out.gFamily !== 'Named Instance Probe') {
+    const why = `the host has another font with U+1E290 (${out.gFamily})`
+    if (MUST_CHECK) t.fail(why)
+    else t.pass(why)
+    return
+  }
+  t.deepEqual(out.g700, out.gNamed700)
+})
+
+// The same with macOS 27's SFIndia.ttc, which has U+0A76 (its Bold instance
+// taken as it is draws at the wght 400 advance). macOS 26 has no installed
+// font with U+0A76 (the run stays on Lato), so there only a fallback face,
+// if any, is checked.
+const SF_INDIA = '/System/Library/Fonts/SFIndia.ttc'
+const sfIndiaTest = process.platform === 'darwin' && existsSync(SF_INDIA) ? test : test.skip
+
+sfIndiaTest(`portable on macOS: a named instance of .SF Gurmukhi is not another fallback face`, (t) => {
+  const out = run('portable', 'G', { G_CHAR: '0A76' }) as unknown as Record<string, Box> & { gFamily: string }
+  if (MEASURED_MACOS) {
+    t.is(out.gFamily, '.SF Gurmukhi')
+  } else if (out.gFamily === 'Lato') {
+    t.pass('the host has no installed font with U+0A76')
+    return
+  }
+  t.deepEqual(out.g700, out.gNamed700)
+})
+
+// Portable: the font Chrome mac's CoreText cascade picks for Han, by name
+// (Chrome 157: PingFang SC). PingFang is a MobileAsset font that
+// loadSystemFonts does not read, so Hiragino Sans GB, the next Simplified
+// Chinese font of the cascade, is taken where PingFang is not installed.
+macTest('portable on macOS: Han comes from the font Chrome mac picks', (t) => {
+  const out = run('portable', 'mac', {}) as unknown as Record<string, Box> & { family: string }
+  t.true(['PingFang SC', 'Hiragino Sans GB'].includes(out.family), out.family)
+  t.deepEqual(out.l700, out.named700)
+  t.deepEqual(out.l400, out.named400)
+})
+
+// System renderer: CoreText first, as before (Chrome 157,
+// followups2/portable-loaded-fallback/chrome.json).
+macTest('system on macOS: CoreText still picks PingFang SC', (t) => {
+  const out = run('system', 'mac', {})
+  t.deepEqual(out.l700, [32, -2.944000005722046, 29.08799934387207, 26.43199920654297, 3.5840015411376953])
+  t.deepEqual(out.l400, [32, -3.359999895095825, 28.672000885009766, 26.27199935913086, 3.424001693725586])
+  t.is(out.lAHan, 53.75999450683594)
+})

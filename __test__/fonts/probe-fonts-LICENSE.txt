@@ -50,6 +50,12 @@ IDs) and saved as TrueType.
   Copyright 2022 The Noto Project Authors
   (https://github.com/notofonts/devanagari). No Reserved Font Name.
 
+BatakBoldProbe.ttf: NotoSansDevanagari-subset.ttf (this folder) subset to
+U+0020 and U+0915, renamed to the family "Noto Sans Batak" (style Bold) and
+marked bold (OS/2 weight 700, fsSelection and macStyle bold): a loaded face
+of a family macOS installs, without its Batak characters
+(installed-fallback.spec.ts). Same copyright and license as its source.
+
 IcWghtProbe.ttf: ScienceGothic-VariableFont.ttf (this folder) subset to
 U+0020..U+007E (all layout features, all name IDs), the CTRS, slnt and
 wdth axes pinned at 0, 0 and 100 with fontTools.varLib.instancer (wght
@@ -60,6 +66,13 @@ wdth axes pinned at 0, 0 and 100 with fontTools.varLib.instancer (wght
   (https://github.com/googlefonts/science-gothic/blob/main/AUTHORS.txt).
   No Reserved Font Name. Science Gothic is a trademark of Font Detective
   LLC; the copy is named IcWghtProbe.
+
+NamedInstanceProbe.ttf: ScienceGothic-VariableFont.ttf (this folder) subset
+to its "m" glyph (all axes and named instances kept, no layout features),
+that glyph mapped only at U+1E290, the Bold named instance moved to CTRS 85,
+and renamed to the family "Named Instance Probe"
+(installed-fallback.spec.ts). Same copyright and license as IcWghtProbe.ttf;
+the copy is named Named Instance Probe.
 
 IcOpszProbe.ttf: Newsreader-opsz-only.ttf (this folder) subset to
 U+0020..U+007E (opsz 6..72 kept), and U+6C34 mapped to the "M" glyph

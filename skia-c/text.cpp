@@ -612,6 +612,8 @@ void skiac_debug_text_line(skiac_font_collection* c_collection,
   put_float(line->line_width);
   out += ",\"lastWordAdvance\":";
   put_float(line->last_word_advance);
+  out += ",\"fallbackReads\":";
+  out += std::to_string(c_collection->installed_fallback_reads);
   out += ",\"runs\":[";
   for (size_t r = 0; r < line->blink.runs.size(); ++r) {
     const BlinkRun& run = line->blink.runs[r];
