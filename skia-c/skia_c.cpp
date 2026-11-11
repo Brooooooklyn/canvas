@@ -4593,15 +4593,17 @@ void skiac_font_collection_get_family(
 // or path: the call returned its FontKey) is a FontFace added again: its
 // face becomes the newest under the call's name (the alias, else its own
 // family name). A font loadFontsFromDir or loadSystemFonts registered keeps
-// its place (an installed font, not a FontFace).
+// its place under its own names (an installed font, not a FontFace); a
+// FontFace name a call gave a file loadFontsFromDir loaded is a FontFace
+// (its web twin, RegisteredFont::WebName) and moves too (Chrome 157,
+// FontFaces "ReX" Lato, Oswald, Lato, Oswald: Oswald draws, 37.32).
 static void RelistRegistered(skiac_font_collection* c_font_collection,
                              uint32_t id,
                              size_t registered,
                              const sk_sp<SkTypeface>& typeface,
                              const char* name_alias) {
   const auto& fonts = c_font_collection->assets->getRegisteredFonts();
-  if (fonts.size() > registered ||
-      c_font_collection->system_font_ids.count(id)) {
+  if (fonts.size() > registered) {
     return;
   }
   auto it = fonts.find(id);
@@ -4615,6 +4617,10 @@ static void RelistRegistered(skiac_font_collection* c_font_collection,
     SkString family;
     typeface->getFamilyName(&family);
     name.assign(family.c_str(), family.size());
+  }
+  if (c_font_collection->system_font_ids.count(id) &&
+      !c_font_collection->assets->isWebName(id, name)) {
+    return;
   }
   c_font_collection->assets->relist(id, name);
 }

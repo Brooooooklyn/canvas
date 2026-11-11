@@ -123,10 +123,6 @@ std::string Fold(std::string_view name) {
   return folded;
 }
 
-std::string FoldFamilyName(std::string_view name) {
-  return Fold(name);
-}
-
 bool EqualsIgnoringAsciiCase(std::string_view a, std::string_view b) {
   if (a.size() != b.size()) {
     return false;
@@ -1133,6 +1129,11 @@ StandardScript LocaleStandardScript(std::string_view lang,
 
 }  // namespace
 
+// Outside the anonymous namespace: skia_c.hpp declares it.
+std::string FoldFamilyName(std::string_view name) {
+  return Fold(name);
+}
+
 int HanScriptForLocale(std::string_view lang) {
   // ScriptNameToCode's names (locale_to_script_mapping.cc; "zzzz", Unknown,
   // is not one): 0 for a script that is not an unambiguous Han script.
@@ -1759,6 +1760,9 @@ uint32_t skiac_font_collection_register_system_font(
   if (c_collection->assets->getRegisteredFonts().size() > registered) {
     c_collection->system_font_ids.insert(id);
     c_collection->system_typeface_ids.insert(typeface_id);
+    // A name a register call gives this file later is a FontFace of its own
+    // (RegisteredFont::WebName).
+    c_collection->assets->markPreloaded(id);
   }
   c_collection->markCachesDirty();
   return id;

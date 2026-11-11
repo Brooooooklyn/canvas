@@ -155,12 +155,16 @@ test('a font loaded from a directory is an installed font', (t) => {
   copyFileSync(oswald, join(FONTS_DIR, 'Oswald.ttf'))
   t.is(GlobalFonts.loadFontsFromDir(FONTS_DIR), 1)
   GlobalFonts.registerFromPath(oswald, 'OswaldWeb')
+  // The file loadFontsFromDir loaded, under another name: a FontFace of its
+  // own, so a web font too (Chrome 157, FontFace OswaldWeb: [2, 1]).
+  GlobalFonts.registerFromPath(join(FONTS_DIR, 'Oswald.ttf'), 'OswaldSame')
   const metrics = (family: string) => {
     const m = measure(`2px ${family}`, 'alphabetic', 'Hg')
     return [m.fontBoundingBoxAscent, m.fontBoundingBoxDescent].map((v) => Math.round(v * 1000) / 1000)
   }
   t.deepEqual(metrics('Oswald'), [2.386, 0.578])
   t.deepEqual(metrics('OswaldWeb'), [2, 1])
+  t.deepEqual(metrics('OswaldSame'), [2, 1])
 })
 
 test('measureText of the empty string keeps the font metrics like Chrome', (t) => {
