@@ -91,10 +91,11 @@ enum class ShaperReject : uint32_t {
   // (UsedSizes::faces) is laid out since stage S6 (each FontEntry has its
   // size and opsz, in one shaping pass).
   kFaceSizes,
-  // A character that no family's face draws, where the shaper has no system
-  // fallback source: off Apple, with the portable renderer, or before the
-  // system fonts are loaded (Linux and Windows system fallback is not part
-  // of this work). The Apple system renderer lays it out since stage S3.
+  // The line has no family font: the family matching found no face at all
+  // (no font manager has a typeface), or a face has no font data. A
+  // character no family draws is laid out since stage S3 with the Apple
+  // system renderer and since stage P2 everywhere else (no system fallback
+  // source: the first font's .notdef, as the old path draws it).
   kFallback,
   // Kept so the slot numbers stay: variation selectors are laid out since
   // stage S3 (the second pass that ignores them).

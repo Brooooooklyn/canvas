@@ -2,6 +2,7 @@
 // SegmentText and SegmentWord (plain_text_node.cc), with the bidi runs of
 // BidiParagraph (bidi_paragraph.cc: logical runs, then ubidi_reorderVisual).
 
+#include <algorithm>
 #include <memory>
 
 #include "icu_api.h"
@@ -15,7 +16,9 @@ struct BidiCloser {
 
 // SegmentWord: the words of [start, start + length) when shaping word by
 // word, else the run as one item; an RTL run's words go in front of the
-// run's place, in reverse order.
+// run's place, in reverse order (Blink inserts each word there, moving the
+// run's words before it each time; appending them and reversing them once
+// gives the same order).
 void SegmentWord(const PreparedText& prepared,
                  uint32_t start,
                  uint32_t length,
@@ -31,13 +34,11 @@ void SegmentWord(const PreparedText& prepared,
   for (uint32_t index = 0; index < length;) {
     const uint32_t next = static_cast<uint32_t>(
         NextWordEndIndex(text, length, index, prepared.is_8bit));
-    const Item item{start + index, next - index, rtl};
-    if (!rtl) {
-      items->push_back(item);
-    } else {
-      items->insert(items->begin() + insertion_index, item);
-    }
+    items->push_back({start + index, next - index, rtl});
     index = next;
+  }
+  if (rtl) {
+    std::reverse(items->begin() + insertion_index, items->end());
   }
 }
 

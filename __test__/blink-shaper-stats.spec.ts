@@ -3,6 +3,7 @@
 // is laid out by the shaper, and each request it does not cover yet is
 // counted under its reason and laid out by the old path. Also the guard that
 // the text caches never change while the shaper holds references into them.
+import { execFileSync } from 'node:child_process'
 import { createRequire } from 'node:module'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -108,28 +109,126 @@ test.serial(
   },
 )
 
-test.serial('each request the shaper cannot lay out yet is counted under its reason', (t) => {
+// Stage P2: where the shaper has no system fallback source (the portable
+// renderer everywhere; the system renderer off macOS) the system stages find
+// no font, as Blink's do on a platform whose fallback returns none, and a
+// character no family has draws the first font's .notdef, as the old path
+// draws it: no request is turned down for it.
+test.serial('a character no family has is laid out by the shaper without a fallback source', (t) => {
   stats()
-  // A character no family has goes to the old path where the shaper has no
-  // system fallback source: always with the portable renderer.
   setTextRenderer('portable')
-  const cases: [string, string, Record<string, string>, string][] = [
-    ['40px StatsLato', '\uE000', {}, 'fallback'],
-    ['40px StatsLato', '\u{10FFFD}', {}, 'fallback'],
-  ]
+  const texts = ['\uE000', '\u{10FFFD}', 'a\uE000b', '水', 'x\u3000y', 'a\u263A\uFE0Fb']
   try {
-    for (const [font, text, props, reason] of cases) {
-      measure(font, text, props)
+    for (const text of texts) {
+      t.true(measure('40px StatsLato', text).width > 0, text)
       const s = stats()
-      if (BLINK) {
-        t.deepEqual(rejected(s), { [reason]: 1 }, reason)
-        t.is(s.accepted, 0, reason)
-      } else {
-        t.deepEqual(rejected(s), {}, reason)
-      }
+      t.deepEqual(rejected(s), {}, text)
+      t.is(s.accepted, BLINK ? 1 : 0, text)
     }
   } finally {
     setTextRenderer('system')
+  }
+})
+
+// The same lines with the switch unset (the old path) and on, each in its own
+// process (the switch is read once per process): the shaper lays them out
+// and gives the old path's widths, on every OS. The system renderer has no
+// fallback source off macOS too; on macOS it has CoreText's (stage S3).
+test.serial('a character no family has keeps the old path width without a fallback source', (t) => {
+  const renderers = process.platform === 'darwin' ? ['portable'] : ['portable', 'system']
+  const script = `
+    const { createCanvas, GlobalFonts, setTextRenderer } = require(${JSON.stringify(join(__dirname, '..', 'index.js'))})
+    const binding = require(${JSON.stringify(join(__dirname, '..', 'js-binding.js'))})
+    GlobalFonts.registerFromPath(${JSON.stringify(join(__dirname, 'fonts', 'Lato-Regular.ttf'))}, 'StatsLato')
+    GlobalFonts.registerFromPath(${JSON.stringify(join(__dirname, 'fonts', 'SourceSerifPro-Regular.ttf'))}, 'StatsSerif')
+    const out = { widths: [], stats: null }
+    binding.__shaperStats(true)
+    for (const renderer of ${JSON.stringify(renderers)}) {
+      setTextRenderer(renderer)
+      for (const font of ['40px StatsLato', '13px StatsLato, StatsSerif', 'bold 24px StatsLato', '14.6666667px StatsLato']) {
+        for (const text of ['\\uE000', 'a\\uE000b', '\\uE000\\uE001 \\uF8FF', 'Hello \\u{10FFFD} world']) {
+          const ctx = createCanvas(10, 10).getContext('2d')
+          ctx.font = font
+          out.widths.push(ctx.measureText(text).width)
+        }
+      }
+    }
+    out.stats = JSON.parse(binding.__shaperStats(true))
+    console.log(JSON.stringify(out))`
+  const run = (shaper: string) =>
+    JSON.parse(
+      execFileSync(process.execPath, ['-e', script], {
+        env: { ...process.env, NAPI_RS_CANVAS_SHAPER: shaper },
+        encoding: 'utf8',
+        timeout: 20_000,
+      }),
+    ) as { widths: number[]; stats: Stats }
+  const old = run('skparagraph')
+  const blink = run('blink')
+  t.is(old.stats.accepted, 0)
+  t.deepEqual(rejected(blink.stats), {})
+  t.is(blink.stats.accepted, blink.widths.length)
+  t.true(blink.widths.every((w) => w > 0))
+  t.deepEqual(blink.widths, old.widths)
+})
+
+// A line whose characters alternate between the first family and the next
+// one: each character the second font draws is a run between two of the
+// first font's runs. Putting each run in the middle of the item's runs as it
+// was shaped took quadratic time (64000 pairs: 2.5 s, the old path 0.3 s);
+// the shaper must stay near the old path's time, and with Iosevka's and
+// Source Serif's 5 px advances the widths are exact and equal. RTL too
+// (Harmattan, then Source Serif for U+20AB), where the float sums differ.
+test.serial('a line of many runs is laid out in about the old path time', (t) => {
+  const script = `
+    const { createCanvas, GlobalFonts, setTextRenderer } = require(${JSON.stringify(join(__dirname, '..', 'index.js'))})
+    const binding = require(${JSON.stringify(join(__dirname, '..', 'js-binding.js'))})
+    GlobalFonts.registerFromPath(${JSON.stringify(join(__dirname, 'fonts', 'iosevka-slab-regular.ttf'))}, 'RunsIosevka')
+    GlobalFonts.registerFromPath(${JSON.stringify(join(__dirname, 'fonts', 'SourceSerifPro-Regular.ttf'))}, 'RunsSerif')
+    GlobalFonts.registerFromPath(${JSON.stringify(join(__dirname, 'fonts', 'Harmattan-Regular.ttf'))}, 'RunsArabic')
+    const out = { lines: [], stats: null }
+    binding.__shaperStats(true)
+    for (const [renderer, font, text, direction] of [
+      ['portable', '10px RunsIosevka, RunsSerif', 'a\\u20AB', 'ltr'],
+      ['system', '10px RunsIosevka, RunsSerif', 'a\\u20AB', 'ltr'],
+      ['portable', '10px RunsArabic, RunsSerif', '\\u0628\\u20AB', 'rtl'],
+    ]) {
+      setTextRenderer(renderer)
+      const ctx = createCanvas(10, 10).getContext('2d')
+      ctx.font = font
+      ctx.direction = direction
+      const line = text.repeat(64000)
+      const start = process.hrtime.bigint()
+      const width = ctx.measureText(line).width
+      out.lines.push({ width, ms: Number(process.hrtime.bigint() - start) / 1e6 })
+    }
+    out.stats = JSON.parse(binding.__shaperStats(true))
+    console.log(JSON.stringify(out))`
+  const run = (shaper: string) =>
+    JSON.parse(
+      execFileSync(process.execPath, ['-e', script], {
+        env: { ...process.env, NAPI_RS_CANVAS_SHAPER: shaper },
+        encoding: 'utf8',
+        timeout: 120_000,
+      }),
+    ) as { lines: { width: number; ms: number }[]; stats: Stats }
+  const old = run('skparagraph')
+  const blink = run('blink')
+  t.is(old.stats.accepted, 0)
+  t.deepEqual(rejected(blink.stats), {})
+  t.is(blink.stats.accepted, 3)
+  t.deepEqual(
+    blink.lines.slice(0, 2).map((line) => line.width),
+    [640000, 640000],
+  )
+  t.deepEqual(
+    old.lines.slice(0, 2).map((line) => line.width),
+    [640000, 640000],
+  )
+  t.true(Math.abs(blink.lines[2].width - old.lines[2].width) < 1e-3 * old.lines[2].width)
+  for (const [i, line] of blink.lines.entries()) {
+    const bound = Math.max(1000, 3 * old.lines[i].ms)
+    t.true(line.ms < bound, `line ${i}: ${line.ms} ms, old path ${old.lines[i].ms} ms`)
   }
 })
 
@@ -241,7 +340,8 @@ test.serial('per-face sizes and opsz are laid out by the shaper', (t) => {
 // shape (also the second pass that ignores it) is laid out by the shaper
 // everywhere. With the system renderer on macOS, a character no family has
 // goes to CoreText's fallback (or, for private use and non-characters, to the
-// first font's .notdef), so nothing is turned down; elsewhere it still is.
+// first font's .notdef); elsewhere (stage P2) to the first font's .notdef.
+// Nothing is turned down.
 test.serial('variation selectors and system fallback are laid out by the shaper', (t) => {
   stats()
   // A selector after a character it makes no variation sequence with is not
@@ -259,15 +359,8 @@ test.serial('variation selectors and system fallback are laid out by the shaper'
     measure('40px StatsLato', text)
   }
   s = stats()
-  const apple = process.platform === 'darwin'
-  if (!BLINK) {
-    t.deepEqual(rejected(s), {})
-  } else if (apple) {
-    t.deepEqual(rejected(s), {})
-    t.is(s.accepted, fallback.length)
-  } else {
-    t.true((rejected(s).fallback ?? 0) > 0)
-  }
+  t.deepEqual(rejected(s), {})
+  t.is(s.accepted, BLINK ? fallback.length : 0)
   t.is(s.cacheChanges, 0)
 })
 
@@ -279,7 +372,6 @@ test.serial('variation selectors and system fallback are laid out by the shaper'
 // localeFallback reason is not used any more).
 test.serial('a character the standard font of the lang has is laid out by the shaper', (t) => {
   stats()
-  const apple = process.platform === 'darwin'
   for (const [text, lang] of [
     ['直骨', 'ja'],
     ['ア', 'ja'],
@@ -296,25 +388,11 @@ test.serial('a character the standard font of the lang has is laid out by the sh
   ]) {
     measure('40px StatsLato', text, { lang })
     const s = stats()
-    if (BLINK && apple) {
-      t.deepEqual(rejected(s), {}, `${text} ${lang}`)
-      t.is(s.accepted, 1, `${text} ${lang}`)
-    } else if (BLINK) {
-      // Off macOS the standard font is not per script and the shaper has no
-      // system fallback, so a character no family has turns the line down
-      // for `fallback`, never for the old localeFallback reason; the Latin
-      // line stays on the shaper.
-      const reasons = rejected(s)
-      t.true(
-        Object.keys(reasons).every((reason) => reason === 'fallback') && s.accepted + (reasons.fallback ?? 0) === 1,
-        `${text} ${lang}: ${JSON.stringify(reasons)}, ${s.accepted} accepted`,
-      )
-      if (text === 'Hello') {
-        t.is(s.accepted, 1, `${text} ${lang}`)
-      }
-    } else {
-      t.deepEqual(rejected(s), {}, `${text} ${lang}`)
-    }
+    // Off macOS the standard font is not per script and the shaper has no
+    // system fallback: a character no family has draws the first font's
+    // .notdef (stage P2), also on the shaper.
+    t.deepEqual(rejected(s), {}, `${text} ${lang}`)
+    t.is(s.accepted, BLINK ? 1 : 0, `${text} ${lang}`)
   }
 })
 

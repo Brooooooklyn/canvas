@@ -178,11 +178,14 @@ class LineFonts {
 
   // Whether this host has a system fallback source the shaper ports: the
   // CoreText one, with the system renderer once the installed fonts are on.
+  // Without one, SystemFallback finds no font, as Blink's FontCache does on
+  // a platform whose fallback returns none.
   void set_system_source(bool system_source) { system_source_ = system_source; }
-  bool system_source() const { return system_source_; }
 
   // FontCache::GetLastResortFallbackFont through the family matching, found
-  // before the layout takes any reference into the caches.
+  // before the layout takes any reference into the caches. Set only with a
+  // system source: without one the old path draws the first font's .notdef
+  // (no font manager gives a fallback, skia_c.hpp), and so does the shaper.
   void set_last_resort(sk_sp<SkTypeface> face, SkTypeface* base) {
     last_resort_face_ = std::move(face);
     last_resort_base_ = base;
@@ -311,15 +314,15 @@ class LineFonts {
 // segment one font for the first hint with the segment's priority; one
 // system font per call for the hint ChooseHintIndex picks, each hint asked
 // once; the last resort font; the first candidate, whose .notdef is drawn.
-// Without a system source (off Apple) the iterator stops after the family
-// entries and the request is turned down.
+// Without a system source (off Apple, or the portable renderer) the system
+// stages find no font and there is no last resort font, so a character no
+// family has is drawn with the first candidate's .notdef.
 class FallbackIterator {
  public:
   FallbackIterator(LineFonts& fonts, Priority priority)
       : fonts_(fonts), priority_(priority) {}
 
   bool HasNext() const { return stage_ != Stage::kOutOfLuck; }
-  bool needs_system_source() const { return needs_system_source_; }
 
   void Reset() {
     index_ = 0;
@@ -353,10 +356,6 @@ class FallbackIterator {
     }
     std::deque<FontEntry>& families = fonts_.families();
     if (index_ >= families.size()) {
-      if (!fonts_.system_source()) {
-        needs_system_source_ = true;
-        return nullptr;
-      }
       stage_ = IsNonTextFallbackPriority(priority_)
                    ? Stage::kFallbackPriorityFonts
                    : Stage::kSystemFonts;
@@ -420,7 +419,6 @@ class FallbackIterator {
   std::unordered_set<uint32_t> asked_;
   std::unordered_set<SkTypefaceID> returned_;
   FontEntry* first_candidate_ = nullptr;
-  bool needs_system_source_ = false;
 };
 
 enum class QueueAction { kNextFont, kRange, kReset };
@@ -466,10 +464,22 @@ class ItemShaper {
         fonts_(fonts),
         result_(result) {}
 
-  // HarfBuzzShaper::ShapeSegment. False when a character no family font
-  // has needs a system fallback font this host has no source for
-  // (ShaperReject::kFallback): reject_reason().
-  bool ShapeSegment(const Segment& segment) {
+  // The order of the runs InsertRun's lower_bound inserts give, after the
+  // item's last segment: by start, LTR ascending and RTL descending, a run
+  // before the runs of its start inserted earlier (the runs' characters are
+  // disjoint, so no two have one start, but the order would hold for them
+  // too). Reversed, then sorted stably: O(n log n) for n runs.
+  void SortRuns() {
+    std::vector<ShapedRun>& runs = result_->runs;
+    std::reverse(runs.begin(), runs.end());
+    std::stable_sort(runs.begin(), runs.end(),
+                     [this](const ShapedRun& a, const ShapedRun& b) {
+                       return rtl_ ? a.start > b.start : a.start < b.start;
+                     });
+  }
+
+  // HarfBuzzShaper::ShapeSegment.
+  void ShapeSegment(const Segment& segment) {
     HanKerning han_kerning(text_, length_, segment.start, segment.end);
     FallbackIterator iterator(fonts_, segment.priority);
     queue_.clear();
@@ -498,10 +508,6 @@ class ItemShaper {
           break;
         }
         font = iterator.Next(hints_);
-        if (iterator.needs_system_source()) {
-          reject_reason_ = ShaperReject::kFallback;
-          return false;
-        }
         if (!font) {
           break;
         }
@@ -579,10 +585,7 @@ class ItemShaper {
       }
       hb_buffer_reset(buffer_);
     }
-    return true;
   }
-
-  ShaperReject reject_reason() const { return reject_reason_; }
 
  private:
   // HarfBuzzShaper::FallbackFontStage.
@@ -873,13 +876,12 @@ class ItemShaper {
     result_->width += run.width;
     *run_characters = run.num_characters;
     // ShapeResult::InsertRun(run): LTR before the next run with a bigger
-    // start, RTL before the next run with a smaller one.
-    auto at = std::lower_bound(
-        result_->runs.begin(), result_->runs.end(), run.start,
-        [this](const ShapedRun& existing, uint32_t start) {
-          return rtl_ ? existing.start > start : existing.start < start;
-        });
-    result_->runs.insert(at, std::move(run));
+    // start, RTL before the next run with a smaller one. Blink's runs are
+    // pointers; these hold their glyphs, and moving every later run for each
+    // run put in the middle (each character a fallback font draws, between
+    // the first font's runs) is quadratic. So the run is appended, and
+    // SortRuns gives the item's runs that order once it is shaped.
+    result_->runs.push_back(std::move(run));
     return start_glyph + num_glyphs + num_glyphs_removed;
   }
 
@@ -1030,7 +1032,6 @@ class ItemShaper {
   std::deque<QueueItem> queue_;
   std::vector<uint32_t> hints_;
   FallbackStage stage_ = FallbackStage::kIntermediate;
-  ShaperReject reject_reason_ = ShaperReject::kFallback;
 };
 
 // A family entry's face (the instance at its opsz), its face before font
@@ -1469,7 +1470,8 @@ bool LayOutLineBlink(skiac_font_collection* c_collection,
   PreparedText prepared = PrepareText(request.text, request.text_len);
   // The system fallback source: CoreText's, with the system renderer and
   // the installed fonts on (the old path's defaultFallback asks the same
-  // manager). Elsewhere a character no family has is turned down.
+  // manager). Elsewhere there is none: a character no family has is drawn
+  // with the first family font's .notdef, as the old path draws it.
   bool system_source = false;
   sk_sp<SkTypeface> last_resort_face;
   sk_sp<SkTypeface> last_resort_base;
@@ -1545,11 +1547,9 @@ bool LayOutLineBlink(skiac_font_collection* c_collection,
                       case_map_locale, fonts, &result.result);
     for (const Segment& segment :
          SegmentItem(text, item.length, prepared.is_8bit)) {
-      if (!shaper.ShapeSegment(segment)) {
-        hb_buffer_reset(buffer);
-        return Reject(shaper.reject_reason());
-      }
+      shaper.ShapeSegment(segment);
     }
+    shaper.SortRuns();
     shaped.push_back(std::move(result));
   }
   // PlainTextNode::Shape: the spacing over the whole text, item by item.

@@ -25,7 +25,7 @@ const __dirname = dirname(fileURLToPath(import.meta.url))
 const require = createRequire(import.meta.url)
 
 // The stage this branch has landed, and the classes it may change.
-const STAGE = 'S8'
+const STAGE = 'P2'
 const ALLOWED = new Set([
   // PR-D10: no forced liga 0 (letter spacing is still turned down in S2).
   'd10',
@@ -80,6 +80,33 @@ const ALLOWED = new Set([
   // font's .notdef. Chrome 157: "pua: 16px \"g_d0_f1\", sans-serif" rows
   // (10.140625 for U+E000, U+F8FF, U+100000, U+FFFE).
   'pua',
+  // P2 (detected, not tagged): with HarfBuzz's default cluster level (Blink
+  // sets none, harfbuzz_shaper.cc; D8) a character that does not start a
+  // grapheme (a variation selector, a Thai vowel sign, a ZWJ sequence's
+  // parts) is in the cluster of its grapheme's first character; skshaper
+  // (MONOTONE_CHARACTERS) gives it its own. The same glyphs at the same
+  // places, the same metrics and pixels: only the clusters move, each to
+  // its grapheme's start. Seen where a line without a system fallback
+  // source draws the first font's .notdef (portable renderer, P2), e.g.
+  // 40px BSLato "\u231A\uFE0E", "a\u263A\uFE0Fb", "\u2205\uFE00".
+  'grapheme-cluster',
+  // P2 (detected, not tagged): a line drawn all in .notdef by a synthetic
+  // bold or oblique font, with combining marks that HarfBuzz places by its
+  // fallback (a GPOS with no script for them: the Hebrew shaper's gpos_tag
+  // 'hebr', hb-ot-shape.cc disable_gpos). Blink's glyph extents come from
+  // the SkFont with the synthetic styles (font_platform_data.cc:271-272
+  // CreateSkFont, mac/font_platform_data_mac.mm:255-256,
+  // harfbuzz_font_data.h:52-59, harfbuzz_face.cc:309-317,
+  // skia_text_metrics.cc:81-118); the old path shapes without them
+  // (setFakeMissingFontStyles(false), skhb_glyph_extents). Only the marks
+  // move; the other glyphs, the advances and the font metrics stay. Seen
+  // off macOS, where no font has Hebrew: bold 24px and italic 30px BSLato
+  // "שָׁלוֹם" (Linux CI). Chrome 157 (stages/P2/heb-marks/chrome.json), web
+  // font Lato with Hebrew marks no macOS font has, so all .notdef: the mark
+  // moves with the synthetic style, "א֢" 24px descent 18.696, bold
+  // 19.821, 30px left -0.668, italic 2.019 (old path 21.5, 21.875, -0.648,
+  // -0.648: the same offsets); the shaper equals Chrome in 35 of 35 rows.
+  'notdef-mark-synthetic',
   // S4, letter spacing once per cluster, on its last glyph in HarfBuzz order
   // (ShapeResult::ApplySpacingOrExpansion), none between the letters of a
   // cursive script or after a zero width character. Chrome 157
@@ -748,21 +775,76 @@ function cases() {
   return out.map((c, i) => ({ id: i, ...c }))
 }
 
-// Whether the new path must lay a case out in this stage: plain text in the
-// registered fonts and every character in a family (no fallback tag).
-// Letter and word spacing are laid out since S4, font-variant-caps since
-// S5, font-size-adjust (a size per family) since S6.
+// Whether the new path must lay a case out in this stage. Letter and word
+// spacing are laid out since S4, font-variant-caps since S5,
+// font-size-adjust (a size per family) since S6, a character no family has
+// since S3 with the system renderer on macOS and since P2 everywhere else
+// (no system fallback source: the first font's .notdef). Only a line with
+// no family font at all is turned down (ShaperReject::kFallback), which a
+// family list of NoSuchFamily could give on a host with no fonts.
 function mustAccept(c) {
-  // S3: with the system renderer on macOS, a character no family has (and
-  // a private use one) is laid out by the shaper.
-  const fallback = ['system-fallback', 'vs16', 'vs15', 'pua']
-  if (process.platform === 'darwin' && c.renderer === 'system' && c.tags.some((t) => fallback.includes(t))) {
-    return !c.font.includes('NoSuchFamily')
+  return !c.font.includes('NoSuchFamily')
+}
+
+// The classes of the Apple system fallback (S3), which only the system
+// renderer on macOS has; elsewhere such a case draws the first font's
+// .notdef, as the old path does.
+const APPLE_FALLBACK = ['system-fallback', 'vs16', 'vs15', 'pua']
+
+// `dump` with each cluster moved to the start of its grapheme in `text`.
+function graphemeClusters(text, dump) {
+  const starts = [...new Intl.Segmenter('und', { granularity: 'grapheme' }).segment(text)].map((g) =>
+    Buffer.byteLength(text.slice(0, g.index), 'utf8'),
+  )
+  const start = (cluster) => starts.findLast((s) => s <= cluster) ?? cluster
+  const parsed = JSON.parse(dump)
+  for (const run of parsed.runs) {
+    run.clusters = run.clusters.map(start)
   }
-  if (c.tags.some((t) => ['emoji', 'family-fallback'].includes(t))) {
+  return JSON.stringify(parsed)
+}
+
+// Whether `newRow` differs from `oldRow` only where HarfBuzz's fallback put
+// the combining marks of a line drawn all in .notdef by a synthetic bold or
+// oblique font ('notdef-mark-synthetic'): the same runs, fonts and glyphs,
+// the clusters at their graphemes' starts (`grouped`, the old dump so
+// moved), every glyph that is not a mark where it was, and the same
+// metrics but the ink box. Only the marks' x and y may change, by less than
+// half the font size (losing the fallback moves an above or below mark by
+// more), and y only with the synthetic bold: an oblique font's skewX shears
+// x alone, so the glyph extents' y and the marks' y offsets stay.
+function notdefMarkSynthetic(text, oldRow, newRow, grouped) {
+  if (!/\p{M}/u.test(text)) {
     return false
   }
-  return /^[ -~]*$/.test(c.text) && !c.font.includes('NoSuchFamily')
+  const bytes = Buffer.from(text, 'utf8')
+  const mark = (cluster) => /^\p{M}/u.test(bytes.subarray(cluster).toString('utf8'))
+  const a = JSON.parse(oldRow.dump)
+  const b = JSON.parse(newRow.dump)
+  const g = JSON.parse(grouped)
+  if (
+    !a.runs.length ||
+    a.runs.length !== b.runs.length ||
+    JSON.stringify({ ...a, runs: null }) !== JSON.stringify({ ...b, runs: null })
+  ) {
+    return false
+  }
+  const runs = a.runs.every((ra, r) => {
+    const { x: ax, y: ay, clusters: ac, ...fontA } = ra
+    const { x: bx, y: by, clusters: bc, ...fontB } = b.runs[r]
+    return (
+      JSON.stringify(fontA) === JSON.stringify(fontB) &&
+      (ra.embolden === true || ra.skew !== 0) &&
+      ra.glyphs.every((glyph) => glyph === 0) &&
+      JSON.stringify(g.runs[r].clusters) === JSON.stringify(bc) &&
+      ac.every((cluster, i) => {
+        const dx = Math.abs(ax[i] - bx[i])
+        const dy = Math.abs(ay[i] - by[i])
+        return mark(cluster) ? Math.max(dx, dy) < ra.size / 2 && (ra.embolden || dy === 0) : dx === 0 && dy === 0
+      })
+    )
+  })
+  return runs && oldRow.metrics.every((v, i) => (i >= 1 && i <= 4) || v === newRow.metrics[i])
 }
 
 const FIELDS = [
@@ -980,13 +1062,24 @@ function compare(oldFile, newFile, limit) {
     // (drawn as Chrome draws them), and for a long line (past 256 px
     // skparagraph's float sums lose bits that 16.16 keeps) the same runs
     // with rounding-sized moves of the metrics and of every glyph.
-    const tags = c.tags.filter((t) => t !== 'long')
+    const apple = process.platform === 'darwin' && c.renderer === 'system'
+    const tags = c.tags.filter((t) => t !== 'long' && (apple || !APPLE_FALLBACK.includes(t)))
     const width = Math.abs(a.metrics[0])
     const shift = Math.max(...a.metrics.map((v, i) => Math.abs(v - b.metrics[i])))
     if (/\s$/.test(c.text) && sameInk(c.text, a.dump, b.dump) && !shift && a.pixels === b.pixels) {
       tags.push('trailing-space')
     }
-    if (width > 256 && Math.max(shift, moved(c.text, a.dump, b.dump)) <= 1e-5 * width) {
+    // The old path's clusters at their graphemes' starts, for the classes
+    // below that compare clusters.
+    const grouped = graphemeClusters(c.text, a.dump)
+    if (grouped !== a.dump && dump({ dump: grouped }) === dump(b) && !shift && a.pixels === b.pixels) {
+      tags.push('grapheme-cluster')
+    }
+    if (notdefMarkSynthetic(c.text, a, b, grouped)) {
+      tags.push('notdef-mark-synthetic')
+    }
+    const move = Math.min(moved(c.text, a.dump, b.dump), moved(c.text, grouped, b.dump))
+    if (width > 256 && Math.max(shift, move) <= 1e-5 * width) {
       tags.push('long')
     }
     // The runs but their clusters, and how far their glyphs moved.
