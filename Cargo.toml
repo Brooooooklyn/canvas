@@ -23,7 +23,7 @@ napi-derive      = { version = "3.1", default-features = false }
 num_cpus         = "1"
 precomputed-hash = "0.1"
 roxmltree        = "0.21"
-selectors        = "0.42"
+selectors        = "0.43"
 serde            = "1"
 serde_derive     = "1"
 serde_json       = "1"
