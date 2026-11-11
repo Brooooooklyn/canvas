@@ -114,7 +114,6 @@ test.serial('each request the shaper cannot lay out yet is counted under its rea
   // system fallback source: always with the portable renderer.
   setTextRenderer('portable')
   const cases: [string, string, Record<string, string>, string][] = [
-    ['40px StatsLato, StatsHan', 'Hello', { fontSizeAdjust: '0.5' }, 'faceSizes'],
     ['40px StatsLato', '\uE000', {}, 'fallback'],
     ['40px StatsLato', '\u{10FFFD}', {}, 'fallback'],
   ]
@@ -196,6 +195,39 @@ test.serial('font-variant-caps is laid out by the shaper', (t) => {
         measure(font, text, { ...props, fontVariantCaps })
         count++
       }
+    }
+  }
+  setTextRenderer('system')
+  const s = stats()
+  t.deepEqual(rejected(s), {})
+  t.is(s.accepted, BLINK ? count : 0)
+  t.is(s.cacheChanges, 0)
+})
+
+// Stage S6: each family entry has its own size and opsz (UsedSizes::faces),
+// shaped in one pass, and HarfBuzz gets ptem at the specified size. A family
+// sized by its own aspect (font-size-adjust, a number and from-font), a
+// missing family before it, a variable font's opsz at its own size, and
+// font-optical-sizing none (each face's own opsz default with the system
+// renderer on Apple) are laid out by the shaper: no request is turned down
+// for a per-face size.
+test.serial('per-face sizes and opsz are laid out by the shaper', (t) => {
+  stats()
+  let count = 0
+  for (const renderer of ['portable', 'system'] as const) {
+    setTextRenderer(renderer)
+    for (const [font, text, props] of [
+      ['40px StatsLato, StatsSerif', 'ke\u030c Te\u030c', { fontSizeAdjust: '0.5' }],
+      ['40px StatsLato, StatsSerif', 'ke\u030c Te\u030c', { fontSizeAdjust: 'from-font' }],
+      ['40px NoSuchFamily, StatsLato, StatsSerif', 'ke\u030c', { fontSizeAdjust: '0.5' }],
+      ['40px StatsLato, StatsHan', 'Hamburgefonstiv水Hamburgefonstiv', { fontSizeAdjust: 'ex-height 0.6' }],
+      ['40px StatsLato, StatsHan', 'Hello 水', { fontSizeAdjust: 'cap-height 0.7', direction: 'rtl' }],
+      ['40px StatsMono, StatsSerif', 'ab q\u0301x', { fontSizeAdjust: '0.4', letterSpacing: '2px' }],
+      ['40px StatsLato, StatsSerif', 'ke\u030c', { fontSizeAdjust: '0.5', fontVariantCaps: 'small-caps' }],
+      ['40px StatsLato, StatsSerif', 'ke\u030c', { fontSizeAdjust: '0.5', fontOpticalSizing: 'none' }],
+    ] as [string, string, Record<string, string>][]) {
+      t.true(measure(font, text, props).width > 0, `${font} ${text}`)
+      count++
     }
   }
   setTextRenderer('system')

@@ -52,7 +52,9 @@ enum class ShaperReject : uint32_t {
   // Kept so the slot numbers stay: fontVariantCaps is laid out since stage
   // S5 (caps per font in the shaping loop).
   kCaps,
-  // A family has its own size or opsz (UsedSizes::faces: stage S6).
+  // Kept so the slot numbers stay: a family with its own size or opsz
+  // (UsedSizes::faces) is laid out since stage S6 (each FontEntry has its
+  // size and opsz, in one shaping pass).
   kFaceSizes,
   // A character that no family's face draws, where the shaper has no system
   // fallback source: off Apple, with the portable renderer, or before the
@@ -242,10 +244,26 @@ SkGlyphID HbNominalGlyph(skiac_font_collection* c_collection,
                          SkTypeface* typeface,
                          uint32_t code_point);
 
+// Whether `typeface` has an AAT `trak` table (from the cached parent font).
+bool TypefaceHasTrak(skiac_font_collection* c_collection, SkTypeface* typeface);
+
+struct EntryFontOptions {
+  // hb_font_set_ptem: the specified size (not floored), or the entry's size
+  // when that is 0 (HarfBuzzFace::GetScaledFont).
+  float ptem;
+  // A font of the page (registered, not installed): Chrome's OTS step drops
+  // its `trak` table, so HarfBuzz shapes it without one.
+  bool web_font;
+  // SystemFontRenderer() for the request: on Apple, CoreText's typefaces.
+  bool system_renderer;
+};
+
 // Gives `entry` its HarfBuzz font: a sub font of the typeface's cached
 // parent, with Blink's font funcs over entry->draw_font. False when the
 // typeface has no data.
-bool MakeEntryFont(skiac_font_collection* c_collection, FontEntry* entry);
+bool MakeEntryFont(skiac_font_collection* c_collection,
+                   FontEntry* entry,
+                   const EntryFontOptions& options);
 
 // Blink's VariationSelectorMode values the font funcs read.
 enum class VariationSelectorMode {

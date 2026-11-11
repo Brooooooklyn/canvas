@@ -40,6 +40,12 @@ struct SystemFallbackKeyHash {
 struct ShaperCaches {
   struct Parent {
     HbFontRef font;
+    // The same font without the face's `trak` table, for a web font (made
+    // when one is asked for).
+    HbFontRef web_font;
+    // The typeface has a `trak` table, an `sbix` table.
+    bool trak = false;
+    bool sbix = false;
     std::list<SkTypefaceID>::iterator lru;
   };
   std::unordered_map<SkTypefaceID, Parent> parents;
@@ -108,25 +114,29 @@ ShaperCaches& GetShaperCaches(skiac_font_collection* c_collection) {
   return *caches.shaper;
 }
 
-// HarfBuzzFace's parent font: the face with HarfBuzz's OpenType funcs at the
+// A face's table as a blob, or none for a `trak` table: Blink's OTS step
+// keeps only the color, variation and layout tables of a web font
+// (web_font_decoder.cc BlinkOTSContext::GetTableAction), so HarfBuzz never
+// sees a web font's `trak`.
+hb_blob_t* ReferenceWebFontTable(hb_face_t*, hb_tag_t tag, void* user_data) {
+  if (!tag || tag == SkSetFourByteTag('t', 'r', 'a', 'k')) {
+    return nullptr;
+  }
+  sk_sp<SkData> data = static_cast<SkTypeface*>(user_data)->copyTableData(tag);
+  if (!data) {
+    return nullptr;
+  }
+  SkData* table = data.release();
+  return hb_blob_create(static_cast<const char*>(table->data()),
+                        static_cast<unsigned int>(table->size()),
+                        HB_MEMORY_MODE_READONLY, table,
+                        [](void* ptr) { static_cast<SkData*>(ptr)->unref(); });
+}
+
+// HarfBuzzFace's parent font: `face` with HarfBuzz's OpenType funcs at the
 // typeface's variation position (harfbuzz_face.cc, SkShaper_harfbuzz.cpp
-// create_typeface_hb_font).
-hb_font_t* ParentFont(skiac_font_collection* c_collection,
-                      SkTypeface* typeface) {
-  ShaperCaches& caches = GetShaperCaches(c_collection);
-  const SkTypefaceID id = typeface->uniqueID();
-  auto found = caches.parents.find(id);
-  if (found != caches.parents.end()) {
-    caches.lru.splice(caches.lru.end(), caches.lru, found->second.lru);
-    return found->second.font.get();
-  }
-  // A FontEntry keeps its own reference to the sub font, which keeps the
-  // parent: dropping the cache's reference never frees a font in use.
-  while (caches.parents.size() >= kMaxParents) {
-    caches.parents.erase(caches.lru.front());
-    caches.lru.pop_front();
-  }
-  hb_face_t* face = CreateHbFace(typeface);
+// create_typeface_hb_font). Takes over `face`.
+hb_font_t* MakeParentFont(hb_face_t* face, SkTypeface* typeface) {
   hb_font_t* font = hb_font_create(face);
   hb_face_destroy(face);
   hb_ot_font_set_funcs(font);
@@ -141,10 +151,36 @@ hb_font_t* ParentFont(skiac_font_collection* c_collection,
           axis_count);
     }
   }
-  auto& parent = caches.parents[id];
-  parent.font = HbFontRef(font);
-  parent.lru = caches.lru.insert(caches.lru.end(), id);
   return font;
+}
+
+// The cached parent font of a typeface, made on first use.
+ShaperCaches::Parent& FindParent(skiac_font_collection* c_collection,
+                                 SkTypeface* typeface) {
+  ShaperCaches& caches = GetShaperCaches(c_collection);
+  const SkTypefaceID id = typeface->uniqueID();
+  auto found = caches.parents.find(id);
+  if (found != caches.parents.end()) {
+    caches.lru.splice(caches.lru.end(), caches.lru, found->second.lru);
+    return found->second;
+  }
+  // A FontEntry keeps its own reference to the sub font, which keeps the
+  // parent: dropping the cache's reference never frees a font in use.
+  while (caches.parents.size() >= kMaxParents) {
+    caches.parents.erase(caches.lru.front());
+    caches.lru.pop_front();
+  }
+  auto& parent = caches.parents[id];
+  parent.font = HbFontRef(MakeParentFont(CreateHbFace(typeface), typeface));
+  parent.trak = typeface->getTableSize(SkSetFourByteTag('t', 'r', 'a', 'k'));
+  parent.sbix = typeface->getTableSize(SkSetFourByteTag('s', 'b', 'i', 'x'));
+  parent.lru = caches.lru.insert(caches.lru.end(), id);
+  return parent;
+}
+
+hb_font_t* ParentFont(skiac_font_collection* c_collection,
+                      SkTypeface* typeface) {
+  return FindParent(c_collection, typeface).font.get();
 }
 
 bool IsUnicodeVariationSelector(hb_codepoint_t c) {
@@ -332,18 +368,33 @@ hb_bool_t GetExtents(hb_font_t*,
   return true;
 }
 
-hb_font_funcs_t* FontFuncs() {
-  static hb_font_funcs_t* const funcs = [] {
-    hb_font_funcs_t* f = hb_font_funcs_create();
-    hb_font_funcs_set_variation_glyph_func(f, GetGlyph, nullptr, nullptr);
-    hb_font_funcs_set_nominal_glyph_func(f, GetNominalGlyph, nullptr, nullptr);
-    hb_font_funcs_set_glyph_h_advance_func(f, GetAdvance, nullptr, nullptr);
-    hb_font_funcs_set_glyph_h_advances_func(f, GetAdvances, nullptr, nullptr);
-    hb_font_funcs_set_glyph_extents_func(f, GetExtents, nullptr, nullptr);
-    hb_font_funcs_make_immutable(f);
-    return f;
-  }();
-  return funcs;
+// HarfBuzzSkiaFontFuncs: with Skia's advances, or (on Apple, for a face with
+// `trak` and no `sbix`) with HarfBuzz's own (hmtx and HVAR).
+hb_font_funcs_t* FontFuncs(bool harfbuzz_advances) {
+  static hb_font_funcs_t* const funcs[2] = {
+      [] {
+        hb_font_funcs_t* f = hb_font_funcs_create();
+        hb_font_funcs_set_variation_glyph_func(f, GetGlyph, nullptr, nullptr);
+        hb_font_funcs_set_nominal_glyph_func(f, GetNominalGlyph, nullptr,
+                                             nullptr);
+        hb_font_funcs_set_glyph_h_advance_func(f, GetAdvance, nullptr, nullptr);
+        hb_font_funcs_set_glyph_h_advances_func(f, GetAdvances, nullptr,
+                                                nullptr);
+        hb_font_funcs_set_glyph_extents_func(f, GetExtents, nullptr, nullptr);
+        hb_font_funcs_make_immutable(f);
+        return f;
+      }(),
+      [] {
+        hb_font_funcs_t* f = hb_font_funcs_create();
+        hb_font_funcs_set_variation_glyph_func(f, GetGlyph, nullptr, nullptr);
+        hb_font_funcs_set_nominal_glyph_func(f, GetNominalGlyph, nullptr,
+                                             nullptr);
+        hb_font_funcs_set_glyph_extents_func(f, GetExtents, nullptr, nullptr);
+        hb_font_funcs_make_immutable(f);
+        return f;
+      }(),
+  };
+  return funcs[harfbuzz_advances ? 1 : 0];
 }
 
 }  // namespace
@@ -359,20 +410,47 @@ SkGlyphID HbNominalGlyph(skiac_font_collection* c_collection,
   return glyph > 0xFFFF ? 0 : static_cast<SkGlyphID>(glyph);
 }
 
-bool MakeEntryFont(skiac_font_collection* c_collection, FontEntry* entry) {
-  hb_font_t* parent = ParentFont(c_collection, entry->face.get());
-  if (!parent) {
+bool TypefaceHasTrak(skiac_font_collection* c_collection,
+                     SkTypeface* typeface) {
+  return FindParent(c_collection, typeface).trak;
+}
+
+bool MakeEntryFont(skiac_font_collection* c_collection,
+                   FontEntry* entry,
+                   const EntryFontOptions& options) {
+  ShaperCaches::Parent& cached = FindParent(c_collection, entry->face.get());
+  if (!cached.font.get()) {
     return false;
   }
+  const bool trak = cached.trak && !options.web_font;
+  hb_font_t* parent = cached.font.get();
+  if (cached.trak && options.web_font) {
+    if (!cached.web_font.get()) {
+      SkTypeface* typeface = entry->face.get();
+      typeface->ref();
+      hb_face_t* face = hb_face_create_for_tables(
+          ReferenceWebFontTable, typeface,
+          [](void* ptr) { static_cast<SkTypeface*>(ptr)->unref(); });
+      cached.web_font = HbFontRef(MakeParentFont(face, typeface));
+    }
+    parent = cached.web_font.get();
+  }
+  // harfbuzz_face.cc HarfBuzzSkiaFontFuncs::GetFunctions: on Apple a face
+  // with `trak` and no `sbix` takes HarfBuzz's advances, which HarfBuzz
+  // then tracks at ptem; CoreText's own already are.
+  bool harfbuzz_advances = false;
+#if defined(__APPLE__)
+  harfbuzz_advances = options.system_renderer && trak && !cached.sbix;
+#endif
   hb_font_t* font = hb_font_create_sub_font(parent);
   auto* data = new HbFontData{entry->draw_font};
-  hb_font_set_funcs(font, FontFuncs(), data,
+  hb_font_set_funcs(font, FontFuncs(harfbuzz_advances), data,
                     [](void* ptr) { delete static_cast<HbFontData*>(ptr); });
   // harfbuzz_face.cc GetScaledFont: SkiaScalarToHarfBuzzPosition of the
-  // size. No ptem before stage S6: HarfBuzz applies trak at 12 pt, as
-  // skshaper does.
+  // size, and ptem at the specified size, where HarfBuzz reads `trak`.
   const hb_position_t scale = SkiaScalarToHarfBuzzPosition(entry->size);
   hb_font_set_scale(font, scale, scale);
+  hb_font_set_ptem(font, options.ptem);
   entry->hb = HbFontRef(font);
   entry->hb_data = data;
   return true;

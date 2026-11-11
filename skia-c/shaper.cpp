@@ -90,7 +90,8 @@ class LineFonts {
       : c_collection_(c_collection),
         request_(request),
         policy_(policy),
-        sizes_(sizes) {
+        sizes_(sizes),
+        system_renderer_(SystemFontRenderer()) {
     policy_.ApplyToTextStyle(&flags_);
   }
 
@@ -107,16 +108,31 @@ class LineFonts {
     entry->shaping_font = font;
     entry->draw_font = policy_.DrawFont(font, nullptr);
     entry->space_glyph = HbNominalGlyph(c_collection_, entry->face.get(), 0x20);
-    return MakeEntryFont(c_collection_, entry);
+    // HarfBuzzShaper passes the description's specified size, whichever
+    // font shapes (also a small caps or fallback font).
+    EntryFontOptions options;
+    options.ptem = request_.size > 0 ? request_.size : entry->size;
+    // A registered font is Chrome's web font; a system fallback font (no
+    // base) is installed. Only a face with `trak` is affected, so only such
+    // a face is looked up.
+    options.web_font = entry->base &&
+                       TypefaceHasTrak(c_collection_, entry->face.get()) &&
+                       !IsSystemTypeface(c_collection_, entry->base);
+    options.system_renderer = system_renderer_;
+    return MakeEntryFont(c_collection_, entry, options);
   }
 
-  // A family entry (Blink's SimpleFontData of a font-family font).
-  bool AddFamily(sk_sp<SkTypeface> face, SkTypeface* base) {
+  // A family entry (Blink's SimpleFontData of a font-family font), at the
+  // family's own size and opsz (UsedSizes::face_sizes, face_opsz).
+  bool AddFamily(sk_sp<SkTypeface> face,
+                 SkTypeface* base,
+                 float size,
+                 float opsz) {
     FontEntry entry;
     entry.face = std::move(face);
     entry.base = base;
-    entry.size = sizes_.effective;
-    entry.opsz = sizes_.opsz;
+    entry.size = size;
+    entry.opsz = opsz;
     entry.synthetic =
         SynthesizeStyle(c_collection_, entry.face.get(), base, request_);
     if (!Finish(&entry)) {
@@ -274,6 +290,7 @@ class LineFonts {
   const skiac_text_request& request_;
   const TextRasterPolicy& policy_;
   const UsedSizes& sizes_;
+  const bool system_renderer_;
   TextStyle flags_;
   std::deque<FontEntry> families_;
   std::deque<FontEntry> others_;
@@ -1038,6 +1055,92 @@ class ItemShaper {
   ShaperReject reject_reason_ = ShaperReject::kFallback;
 };
 
+// A family entry's face (the instance at its opsz), its face before font
+// arguments, its size and its opsz.
+struct FamilyFace {
+  sk_sp<SkTypeface> face;
+  SkTypeface* base;
+  float size;
+  float opsz;
+};
+
+// The FontList's family entries (DESIGN-SHAPER 2.8): for each found face k
+// (an index into `base_faces`, not into `families`), the size and opsz
+// ComputeUsedSizes gives its family, and its instance at that opsz from the
+// same findTypefaces call and cloneTypeface cache as the old path (so the
+// same SkTypeface). A face of no family in `sizes.faces`, or one whose
+// instance list has another count than `base_faces`, takes the primary's
+// size, opsz and instance. Every font argument list is noted here, before
+// the layout takes any reference into the caches.
+std::vector<FamilyFace> FamilyFaces(
+    skiac_font_collection* c_collection,
+    const std::vector<SkString>& families,
+    const SkFontStyle& font_style,
+    const std::vector<sk_sp<SkTypeface>>& base_faces,
+    const std::vector<sk_sp<SkTypeface>>& faces,
+    const UsedSizes& sizes,
+    const skiac_text_request& request) {
+  std::vector<FamilyFace> out;
+  out.reserve(faces.size());
+  const bool same_count = faces.size() == base_faces.size();
+  // The instances at each other opsz, by opsz.
+  std::vector<std::pair<float, std::vector<sk_sp<SkTypeface>>>> instances;
+  for (size_t k = 0; k < faces.size(); ++k) {
+    FamilyFace family{faces[k],
+                      same_count ? base_faces[k].get() : faces[k].get(),
+                      sizes.effective, sizes.opsz};
+    if (!sizes.faces.empty() && same_count) {
+      // The family of the face, as the old path's family_of finds it.
+      std::optional<size_t> index;
+      for (size_t i = 0; !index && i < sizes.faces.size(); ++i) {
+        if (sizes.faces[i]->uniqueID() == base_faces[k]->uniqueID()) {
+          index = i;
+        }
+      }
+      if (!index && sizes.faces.size() == base_faces.size()) {
+        index = k;
+      }
+      if (index) {
+        const float opsz = sizes.face_opsz[*index];
+        if (opsz != sizes.opsz) {
+          auto known = std::find_if(
+              instances.begin(), instances.end(),
+              [opsz](const auto& entry) { return entry.first == opsz; });
+          if (known == instances.end()) {
+            std::vector<sk_sp<SkTypeface>> found;
+            const auto own = FontVariations({base_faces[k]}, request, opsz);
+            if (!own.empty()) {
+              SkFontArguments args;
+              args.setVariationDesignPosition(
+                  {own.data(), static_cast<int>(own.size())});
+              const std::optional<FontArguments> arguments(args);
+              c_collection->noteFontArguments(
+                  std::hash<FontArguments>()(*arguments));
+              found = c_collection->collection->findTypefaces(
+                  families, font_style, arguments);
+            }
+            instances.emplace_back(opsz, std::move(found));
+            known = instances.end() - 1;
+          }
+          if (known->second.empty()) {
+            // No variation to set: the face at the request's axes.
+            family.size = sizes.face_sizes[*index];
+            family.opsz = opsz;
+          } else if (known->second.size() == base_faces.size()) {
+            family.face = known->second[k];
+            family.size = sizes.face_sizes[*index];
+            family.opsz = opsz;
+          }
+        } else {
+          family.size = sizes.face_sizes[*index];
+        }
+      }
+    }
+    out.push_back(std::move(family));
+  }
+  return out;
+}
+
 // The HarfBuzz language of ctx.lang: "und" for none ("" or "inherit"; the
 // host language comes with stage S8), as skshaper does for none.
 hb_language_t ShapingLanguage(const skiac_text_request& request) {
@@ -1081,9 +1184,6 @@ bool LayOutLineBlink(skiac_font_collection* c_collection,
   const std::vector<sk_sp<SkTypeface>> base_faces =
       font_collection->findTypefaces(families, font_style);
   const UsedSizes sizes = ComputeUsedSizes(c_collection, base_faces, request);
-  if (!sizes.faces.empty()) {
-    return Reject(ShaperReject::kFaceSizes);
-  }
   const std::vector<SkFontArguments::VariationPosition::Coordinate> coords =
       FontVariations(base_faces, request, sizes.opsz);
   std::optional<FontArguments> font_args;
@@ -1098,6 +1198,8 @@ bool LayOutLineBlink(skiac_font_collection* c_collection,
       coords.empty()
           ? base_faces
           : font_collection->findTypefaces(families, font_style, font_args);
+  const std::vector<FamilyFace> family_faces = FamilyFaces(
+      c_collection, families, font_style, base_faces, faces, sizes, request);
 
   TextCaches::Line scratch;
   SkTypeface* primary = faces.empty() ? nullptr : faces.front().get();
@@ -1171,10 +1273,8 @@ bool LayOutLineBlink(skiac_font_collection* c_collection,
   // OneLineShaper builds, its synthetic styles, and the draw font.
   const TextRasterPolicy policy(request);
   LineFonts fonts(c_collection, request, policy, sizes);
-  for (size_t i = 0; i < faces.size(); ++i) {
-    if (!fonts.AddFamily(faces[i], faces.size() == base_faces.size()
-                                       ? base_faces[i].get()
-                                       : faces[i].get())) {
+  for (const FamilyFace& family : family_faces) {
+    if (!fonts.AddFamily(family.face, family.base, family.size, family.opsz)) {
       return Reject(ShaperReject::kFallback);
     }
   }
