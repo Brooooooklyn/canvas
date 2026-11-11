@@ -317,7 +317,20 @@ bool CanShapeWordByWord(skiac_font_collection* c_collection,
       request.text_rendering == 2 || request.text_rendering == 3;
   const bool kerning =
       request.kerning != 1 && (legible || request.kerning == 2);
-  const bool ligatures = legible;
+  bool ligatures = legible;
+  // font-variant-ligatures (0 normal, 1 enabled, 2 disabled), only without
+  // letter spacing.
+  if (request.letter_spacing == 0) {
+    if (request.lig_common == 2) {
+      ligatures = false;
+    } else if (request.lig_common == 1) {
+      ligatures = true;
+    }
+    if (request.lig_discretionary == 1 || request.lig_historical == 1 ||
+        request.lig_contextual == 1) {
+      ligatures = true;
+    }
+  }
   if (!kerning && !ligatures) {
     return true;
   }

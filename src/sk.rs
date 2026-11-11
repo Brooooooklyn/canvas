@@ -13,6 +13,10 @@ use std::sync::{Arc, Mutex, OnceLock, Weak};
 
 use crate::error::SkError;
 use crate::font::{ComputedFont, FamilyName, FontStretch, FontStyle};
+use crate::font_props::{
+  FontFeatureSettings, FontOpticalSizing, FontSizeAdjust, FontVariantLigatures, FontVariantNumeric,
+  FontVariantPosition,
+};
 use crate::webidl::{CanvasPixelFormat, ImageDataPixelFormat};
 
 #[allow(non_camel_case_types)]
@@ -264,6 +268,16 @@ pub mod ffi {
     pub value: f32,
   }
 
+  /// skia_c.hpp skiac_font_feature: a global OpenType feature. `value` is
+  /// the computed font-feature-settings value cast to u32, as Blink's
+  /// static_cast (-1 is 0xFFFFFFFF).
+  #[repr(C)]
+  #[derive(Debug, Clone, Copy)]
+  pub struct skiac_font_feature {
+    pub tag: u32,
+    pub value: u32,
+  }
+
   /// One family of the canvas font; `generic` is 0 for a named family, else
   /// `GenericFamily as i32`.
   #[repr(C)]
@@ -335,6 +349,25 @@ pub mod ffi {
     pub lang: *const c_char,
     pub lang_len: usize,
     pub text_rendering: i32,
+    /// The computed font-feature-settings, in order (sorted, deduped).
+    pub features: *const skiac_font_feature,
+    pub features_count: i32,
+    /// font-variant-ligatures: font_props::LigatureState of each group.
+    pub lig_common: u8,
+    pub lig_discretionary: u8,
+    pub lig_historical: u8,
+    pub lig_contextual: u8,
+    /// font-variant-numeric: bits 0-1 figure, 2-3 spacing, 4-5 fraction,
+    /// 6 ordinal, 7 slashed-zero (font_props::FontVariantNumeric values).
+    pub variant_numeric: u32,
+    /// font-variant-position: 0 normal, 1 sub, 2 super.
+    pub variant_position: i32,
+    /// font-optical-sizing: 0 auto, 1 none.
+    pub optical_sizing: i32,
+    /// font-size-adjust: -1 none, else font_props::SizeAdjustMetric.
+    pub size_adjust_metric: i32,
+    pub size_adjust_value: f32,
+    pub size_adjust_from_font: bool,
     pub lcd_text: bool,
   }
 
@@ -3241,6 +3274,12 @@ pub struct TextSettings {
   pub variant_caps: FontVariantCaps,
   pub lang: String,
   pub text_rendering: TextRendering,
+  pub feature_settings: FontFeatureSettings,
+  pub variant_ligatures: FontVariantLigatures,
+  pub variant_numeric: FontVariantNumeric,
+  pub variant_position: FontVariantPosition,
+  pub size_adjust: FontSizeAdjust,
+  pub optical_sizing: FontOpticalSizing,
   /// Whether Chrome's macOS canvas would draw the text from LCD masks: an
   /// alpha:false raster canvas, a source-over draw and no `ctx.filter` layer.
   /// skia-c checks the transform and size (text_raster.cpp UsesLcdText).
@@ -3268,6 +3307,22 @@ impl TextSettings {
         },
       })
       .collect();
+    // Lives until `f` returns, like `families`.
+    let features: Vec<ffi::skiac_font_feature> = self
+      .feature_settings
+      .0
+      .iter()
+      .map(|feature| ffi::skiac_font_feature {
+        tag: feature.tag,
+        value: feature.value as u32,
+      })
+      .collect();
+    let numeric = &self.variant_numeric;
+    let (size_adjust_metric, size_adjust_value, size_adjust_from_font) = match self.size_adjust {
+      FontSizeAdjust::None => (-1, 0.0, false),
+      FontSizeAdjust::Number(metric, value) => (metric as i32, value, false),
+      FontSizeAdjust::FromFont(metric) => (metric as i32, 0.0, true),
+    };
     let request = ffi::skiac_text_request {
       text: text.as_ptr().cast(),
       text_len: text.len(),
@@ -3291,13 +3346,29 @@ impl TextSettings {
       lang: self.lang.as_ptr().cast(),
       lang_len: self.lang.len(),
       text_rendering: self.text_rendering as i32,
+      features: features.as_ptr(),
+      features_count: features.len() as i32,
+      lig_common: self.variant_ligatures.common as u8,
+      lig_discretionary: self.variant_ligatures.discretionary as u8,
+      lig_historical: self.variant_ligatures.historical as u8,
+      lig_contextual: self.variant_ligatures.contextual as u8,
+      variant_numeric: u32::from(numeric.figure & 3)
+        | u32::from(numeric.spacing & 3) << 2
+        | u32::from(numeric.fraction & 3) << 4
+        | u32::from(numeric.ordinal) << 6
+        | u32::from(numeric.slashed_zero) << 7,
+      variant_position: self.variant_position as i32,
+      optical_sizing: self.optical_sizing as i32,
+      size_adjust_metric,
+      size_adjust_value,
+      size_adjust_from_font,
       lcd_text: self.lcd_text,
     };
     f(&request)
   }
 
   /// A hash of the settings that pick the typeface: the families, weight,
-  /// slope, stretch and variations. Not the size.
+  /// slope, stretch, variations and optical sizing. Not the size.
   pub fn typeface_key(&self) -> u64 {
     use std::hash::{Hash, Hasher};
     let mut hasher = std::collections::hash_map::DefaultHasher::new();
@@ -3323,6 +3394,7 @@ impl TextSettings {
       v.tag.hash(&mut hasher);
       v.value.to_bits().hash(&mut hasher);
     }
+    (self.optical_sizing as i32).hash(&mut hasher);
     hasher.finish()
   }
 }
@@ -7096,6 +7168,12 @@ mod text_line_tests {
       variant_caps: FontVariantCaps::default(),
       lang: String::new(),
       text_rendering: TextRendering::default(),
+      feature_settings: FontFeatureSettings::default(),
+      variant_ligatures: FontVariantLigatures::default(),
+      variant_numeric: FontVariantNumeric::default(),
+      variant_position: FontVariantPosition::Normal,
+      size_adjust: FontSizeAdjust::None,
+      optical_sizing: FontOpticalSizing::Auto,
       lcd_text: false,
     }
   }

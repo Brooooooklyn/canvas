@@ -1350,6 +1350,13 @@ struct skiac_font_variation {
   float value;   // Value for this axis
 };
 
+// A global OpenType feature (sk.rs skiac_font_feature): the computed
+// font-feature-settings value cast to uint32_t, as Blink does.
+struct skiac_font_feature {
+  uint32_t tag;
+  uint32_t value;
+};
+
 // One family of the canvas font (font.rs FamilyName). `name` is UTF-8 and
 // not NUL-terminated; a generic family has no name.
 struct skiac_text_family {
@@ -1417,6 +1424,27 @@ struct skiac_text_request {
   const char* lang;
   size_t lang_len;
   int text_rendering;
+  // The computed font-feature-settings, sorted by tag and deduped.
+  const skiac_font_feature* features;
+  int features_count;
+  // font-variant-ligatures per group: 0 normal, 1 enabled, 2 disabled.
+  uint8_t lig_common;
+  uint8_t lig_discretionary;
+  uint8_t lig_historical;
+  uint8_t lig_contextual;
+  // font-variant-numeric: bits 0-1 figure (1 lining, 2 oldstyle), 2-3
+  // spacing (1 proportional, 2 tabular), 4-5 fraction (1 diagonal,
+  // 2 stacked), 6 ordinal, 7 slashed-zero.
+  uint32_t variant_numeric;
+  // font-variant-position: 0 normal, 1 sub, 2 super.
+  int variant_position;
+  // font-optical-sizing: 0 auto, 1 none.
+  int optical_sizing;
+  // font-size-adjust: -1 none, else 0 ex-height, 1 cap-height, 2 ch-width,
+  // 3 ic-width, 4 ic-height; the number, or from-font.
+  int size_adjust_metric;
+  float size_adjust_value;
+  bool size_adjust_from_font;
   // The draw may get LCD glyph masks (macOS): an alpha:false raster canvas,
   // source-over, no filter layer. text_raster.cpp checks the size and matrix.
   bool lcd_text;

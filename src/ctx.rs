@@ -10,6 +10,10 @@ use regex::Regex;
 
 use crate::font::FONT_MEDIUM_PX;
 use crate::font::{parse_canvas_font, parse_size_px};
+use crate::font_props::{
+  FontFeatureSettings, FontOpticalSizing, FontSizeAdjust, FontVariantLigatures, FontVariantNumeric,
+  FontVariantPosition,
+};
 use crate::global_fonts::get_font;
 use crate::page_recorder::{PageRecorder, RasterKey, next_resource_id};
 use crate::sk::Canvas;
@@ -2530,6 +2534,13 @@ impl Context {
       variant_caps: FontVariantCaps::Normal,
       lang: String::new(),
       text_rendering: crate::sk::TextRendering::Auto,
+      // Blink's ch is the unshaped "0" and ex/cap/ic come from the primary
+      // font: no OpenType features. Size-adjust and optical sizing stay, as
+      // they pick the font's size and instance.
+      feature_settings: Default::default(),
+      variant_ligatures: Default::default(),
+      variant_numeric: Default::default(),
+      variant_position: crate::font_props::FontVariantPosition::Normal,
       ..self.text_settings()
     };
     let paint = Paint::default();
@@ -2604,6 +2615,44 @@ impl Context {
     self.state.font_variation_settings = settings;
     self.state.font_variations = variations;
     Ok(())
+  }
+
+  /// The six CSS font properties (`font_props.rs`): a value that does not
+  /// parse, a CSS-wide keyword, var() or '' is ignored (DESIGN D2).
+  pub fn set_font_feature_settings(&mut self, value: &str) {
+    if let Some(v) = FontFeatureSettings::parse(value) {
+      self.state.font_feature_settings = v;
+    }
+  }
+
+  pub fn set_font_variant_ligatures(&mut self, value: &str) {
+    if let Some(v) = FontVariantLigatures::parse(value) {
+      self.state.font_variant_ligatures = v;
+    }
+  }
+
+  pub fn set_font_variant_numeric(&mut self, value: &str) {
+    if let Some(v) = FontVariantNumeric::parse(value) {
+      self.state.font_variant_numeric = v;
+    }
+  }
+
+  pub fn set_font_variant_position(&mut self, value: &str) {
+    if let Some(v) = FontVariantPosition::parse(value) {
+      self.state.font_variant_position = v;
+    }
+  }
+
+  pub fn set_font_size_adjust(&mut self, value: &str) {
+    if let Some(v) = FontSizeAdjust::parse(value) {
+      self.state.font_size_adjust = v;
+    }
+  }
+
+  pub fn set_font_optical_sizing(&mut self, value: &str) {
+    if let Some(v) = FontOpticalSizing::parse(value) {
+      self.state.font_optical_sizing = v;
+    }
   }
 
   pub fn get_stroke_width(&self) -> f32 {
@@ -3995,6 +4044,12 @@ impl Context {
       variant_caps: state.font_variant_caps,
       lang: state.lang.clone(),
       text_rendering: state.text_rendering,
+      feature_settings: state.font_feature_settings.clone(),
+      variant_ligatures: state.font_variant_ligatures,
+      variant_numeric: state.font_variant_numeric,
+      variant_position: state.font_variant_position,
+      size_adjust: state.font_size_adjust,
+      optical_sizing: state.font_optical_sizing,
       lcd_text: false,
     }
   }
@@ -5263,6 +5318,81 @@ impl CanvasRenderingContext2D {
   ) -> Result<()> {
     self.context.set_font_kerning(kerning.0)?;
     Ok(())
+  }
+
+  #[napi(getter)]
+  pub fn get_font_feature_settings(&self) -> String {
+    self.context.state.font_feature_settings.serialize()
+  }
+
+  #[napi(setter)]
+  pub fn set_font_feature_settings(
+    &mut self,
+    value: webidl::DomString<webidl::SetFontFeatureSettings>,
+  ) {
+    self.context.set_font_feature_settings(&value.0);
+  }
+
+  #[napi(getter)]
+  pub fn get_font_variant_ligatures(&self) -> String {
+    self.context.state.font_variant_ligatures.serialize()
+  }
+
+  #[napi(setter)]
+  pub fn set_font_variant_ligatures(
+    &mut self,
+    value: webidl::DomString<webidl::SetFontVariantLigatures>,
+  ) {
+    self.context.set_font_variant_ligatures(&value.0);
+  }
+
+  #[napi(getter)]
+  pub fn get_font_variant_numeric(&self) -> String {
+    self.context.state.font_variant_numeric.serialize()
+  }
+
+  #[napi(setter)]
+  pub fn set_font_variant_numeric(
+    &mut self,
+    value: webidl::DomString<webidl::SetFontVariantNumeric>,
+  ) {
+    self.context.set_font_variant_numeric(&value.0);
+  }
+
+  #[napi(getter)]
+  pub fn get_font_variant_position(&self) -> String {
+    self.context.state.font_variant_position.serialize()
+  }
+
+  #[napi(setter)]
+  pub fn set_font_variant_position(
+    &mut self,
+    value: webidl::DomString<webidl::SetFontVariantPosition>,
+  ) {
+    self.context.set_font_variant_position(&value.0);
+  }
+
+  #[napi(getter)]
+  pub fn get_font_size_adjust(&self) -> String {
+    self.context.state.font_size_adjust.serialize()
+  }
+
+  #[napi(setter)]
+  pub fn set_font_size_adjust(&mut self, value: webidl::DomString<webidl::SetFontSizeAdjust>) {
+    self.context.set_font_size_adjust(&value.0);
+  }
+
+  #[napi(getter)]
+  pub fn get_font_optical_sizing(&self) -> String {
+    self.context.state.font_optical_sizing.serialize()
+  }
+
+  #[napi(setter)]
+  pub fn set_font_optical_sizing(
+    &mut self,
+    value: webidl::DomString<webidl::SetFontOpticalSizing>,
+  ) {
+    self.context.set_font_optical_sizing(&value.0);
   }
 
   #[napi(getter)]
