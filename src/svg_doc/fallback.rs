@@ -877,12 +877,14 @@ fn cycle_breaks(next: &[Option<u32>], painted: &[bool]) -> Vec<usize> {
 }
 
 /// How a reference is written: an element child, a value that is an IRI
-/// (`#id` first), or anything else with `#id` in it (`url(#id)`, a paint
-/// some descendant may inherit).
+/// (`#id` first), a `clip-path`, `mask` or `filter` attribute (SkSVG reads
+/// it once per call of its element and does not inherit it), or anything
+/// else with `#id` in it (`url(#id)`, a paint some descendant may inherit).
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 enum Ek {
   Tree,
   Bare,
+  Once,
   Url,
 }
 
@@ -891,7 +893,7 @@ impl Ek {
   fn weight(self) -> u64 {
     match self {
       Ek::Tree | Ek::Bare => 1,
-      Ek::Url => 8,
+      Ek::Once | Ek::Url => 8,
     }
   }
 }
@@ -948,6 +950,10 @@ impl Scan {
           }
           let ek = if Some(p) == first && a.name != "style" {
             Ek::Bare
+          } else if a.ns == dom::Ns::None
+            && matches!(a.name.as_str(), "clip-path" | "mask" | "filter")
+          {
+            Ek::Once
           } else {
             Ek::Url
           };
@@ -1031,9 +1037,12 @@ fn class(name: &str) -> Class {
 /// draw of `<use>` its target; every other call is N; a bounding box asks
 /// for the children's and the references' (a text element's is a shaping,
 /// N). A url() reference is followed once per call and once more for each
-/// fill and stroke of each element and text below (inherited paints).
-/// Each call of an Obb element walks the scope's bounding box
-/// OBB_CALLS times: a draw of S with t such calls in its scope walks S's
+/// fill and stroke of each element and text below (inherited paints); one
+/// in a `clip-path`, `mask` or `filter` attribute once per call. Each call
+/// of an Obb element walks the scope's bounding box OBB_CALLS times (a
+/// clipPath only when an attribute of it holds `objectBoundingBox`, as
+/// clipPathUnits must: its default is userSpaceOnUse, which walks
+/// nothing): a draw of S with t such calls in its scope walks S's
 /// bounding box t times. A bounding box walk that shapes text which may
 /// make such calls (or inherit a url() paint) asks for the box again,
 /// nested at most as deep as there are elements that make them.
@@ -1051,6 +1060,8 @@ struct Graph {
   /// no paint (a pattern's content is drawn with a fresh presentation
   /// context, SkSVGRenderContext::commonPaint; the rest paint nothing).
   fresh: Vec<bool>,
+  /// The bounding box walks one call makes (0 or OBB_CALLS).
+  obb: Vec<u64>,
   out: Vec<Vec<(u32, Ek, bool)>>,
   /// Topological order from the root.
   order: Vec<u32>,
@@ -1089,12 +1100,20 @@ impl Graph {
     let mut own = Vec::with_capacity(n);
     let mut texts = Vec::with_capacity(n);
     let mut fresh = Vec::with_capacity(n);
+    let mut obb = Vec::with_capacity(n);
     let mut out = Vec::with_capacity(n);
     for (k, &id) in scan.nodes.iter().enumerate() {
       let NodeData::Element { name, attrs, .. } = &doc.nodes[id].data else {
         unreachable!()
       };
       let c = class(name);
+      let user_space_clip =
+        name == "clipPath" && !attrs.iter().any(|a| a.value.contains("objectBoundingBox"));
+      obb.push(if c == Class::Obb && !user_space_clip {
+        OBB_CALLS
+      } else {
+        0
+      });
       let drawn = matches!(
         name.as_str(),
         "rect" | "circle" | "ellipse" | "line" | "path" | "polygon" | "polyline" | "image"
@@ -1166,6 +1185,7 @@ impl Graph {
       own,
       texts,
       fresh,
+      obb,
       out,
       order: post,
     })
@@ -1184,13 +1204,7 @@ impl Graph {
   /// The calls SkSVG may make.
   fn bound(&self) -> Bound {
     let n = self.out.len();
-    let obb = |x: usize| {
-      if self.class[x] == Class::Obb {
-        OBB_CALLS
-      } else {
-        0
-      }
-    };
+    let obb = |x: usize| self.obb[x];
     // Whether a url() paint may reach x (its own included).
     let mut url_in = vec![false; n];
     for &x in &self.order {
@@ -1219,7 +1233,7 @@ impl Graph {
       let mut u = add(1, self.texts[x]);
       let mut un = 0;
       for &(y, ek, new) in &self.out[x] {
-        if ek == Ek::Url && self.fresh[y as usize] {
+        if matches!(ek, Ek::Url | Ek::Once) && self.fresh[y as usize] {
           continue;
         }
         u = add(u, u1[y as usize]);
@@ -1481,9 +1495,9 @@ impl Sk<'_> {
         .enumerate()
         .map(|(k, &i)| (self.els[i as usize].node, k))
         .collect();
-      // A paint is a url(): never a value's first `#`.
+      // A paint is a url(), in any attribute: never a value's first `#`.
       for refs in &scan.refs {
-        for &(_, t, _) in refs.iter().filter(|r| r.2 == Ek::Url) {
+        for &(_, t, _) in refs.iter().filter(|r| matches!(r.2, Ek::Url | Ek::Once)) {
           if let Some(&k) = at.get(&scan.nodes[t as usize]) {
             painted[k] = true;
           }
@@ -1926,7 +1940,7 @@ mod tests {
     // A group with a mask, filter or clip path walks the bounding box of
     // all below it, <defs> too, and follows <use> there (Codex round 2,
     // #1). An 8^10 fan-out in its <defs>: not renamed.
-    let filters = r##"<defs><mask id="k"/><filter id="f"/><clipPath id="c"/></defs>"##;
+    let filters = r##"<defs><mask id="k"/><filter id="f"/><clipPath id="c" clipPathUnits="objectBoundingBox"/></defs>"##;
     for attr in [
       r#"mask="url(#k)""#,
       r#"filter="url(#f)""#,
@@ -1945,11 +1959,15 @@ mod tests {
     assert_eq!(cleaned(&body), body);
     // Text in such a walk is shaped, and a gradient fill there asks for
     // the box being walked again, nested up to once per mask, filter, clip
-    // path and gradient: too much.
+    // path and gradient: an 8^6 fan-out the walks follow is too much with
+    // the text, renamed without it.
+    let fan = fan_defs(8, 6, "m");
     let body = format!(
-      r##"{filters}<linearGradient id="lg"/><g mask="url(#k)"><text fill="url(#lg)">x</text><rect id="r"/><use href="#r"/></g>"##
+      r##"{filters}{fan}<linearGradient id="lg"/><g mask="url(#k)"><text fill="url(#lg)">x</text><use href="#m6"/></g>"##
     );
     assert_eq!(cleaned(&body), body);
+    let body = format!(r##"{filters}{fan}<g mask="url(#k)"><use href="#m6"/></g>"##);
+    assert!(!cleaned(&body).contains(" href="));
     // A gradient on text outside such a group: its box is the text's, and
     // the gradient is borrowed while it asks. Renamed.
     let body = format!(
@@ -1959,6 +1977,37 @@ mod tests {
     // Without one, a small <use href> is renamed.
     let body = format!(r##"{filters}<g mask="url(#k)"><rect id="r"/><use href="#r"/></g>"##);
     assert!(!cleaned(&body).contains(" href="));
+  }
+
+  #[test]
+  fn a_clip_path_mask_or_filter_counts_once_per_call() {
+    // A plot: 2000 <use href> markers in a group with a clip path, a mask
+    // or a filter. Each is read once per draw of the group, not once per
+    // marker as an inherited paint. Renamed.
+    let defs = r##"<defs><clipPath id="c"><rect width="9" height="9"/></clipPath><mask id="k"/><filter id="f"/><circle id="dot" r="1"/></defs>"##;
+    let dots = r##"<use href="#dot"/>"##.repeat(2000);
+    for attr in [
+      r#"clip-path="url(#c)""#,
+      r#"mask="url(#k)""#,
+      r#"filter="url(#f)""#,
+    ] {
+      let body = format!("{defs}<g {attr}>{dots}</g>");
+      assert!(!cleaned(&body).contains(" href="), "{attr}");
+    }
+    // A clipPath with clipPathUnits="userSpaceOnUse" (the default) walks
+    // no bounding box: an 8^10 fan-out in the group's <defs> stays unread
+    // by SkSVG, so the renames are made.
+    let body = format!(
+      r##"<defs><clipPath id="u" clipPathUnits="userSpaceOnUse"/></defs><g clip-path="url(#u)">{}<rect/></g>"##,
+      fan_defs(8, 10, "m")
+    );
+    assert!(!cleaned(&body).contains(" href="));
+    // The same url() as a fill counts per marker: not renamed.
+    let body = format!(
+      r##"{defs}<pattern id="p" width="1" height="1">{}<use href="#m4"/></pattern><g fill="url(#p)">{dots}</g>"##,
+      fan_defs(8, 4, "m")
+    );
+    assert_eq!(cleaned(&body), body);
   }
 
   #[test]

@@ -263,6 +263,24 @@ test('convertSVGTextToPath past the budget: SVG2 href under a bounding box walk 
   }
 })
 
+// A clip path, mask or filter is read once per draw of its group, not once
+// per element below as an inherited paint is: a clipped plot of 300
+// <use href> markers is renamed and drawn as with xlink:href.
+test('convertSVGTextToPath past the budget: <use href> markers in a clipped group are drawn', (t) => {
+  let dots = ''
+  for (let i = 0; i < 300; i++) {
+    dots += `<use href="#dot" x="${i % 20}" y="${Math.floor(i / 20)}"/>`
+  }
+  const svg = (markers: string) =>
+    `<svg ${XLINK} width="20" height="20"><defs><clipPath id="c"><rect width="20" height="20"/></clipPath>` +
+    `<rect id="dot" width="0.5" height="0.5"/></defs><g clip-path="url(#c)">${markers}</g>${fanOut(6)}</svg>`
+  const child = convertInChild(svg(dots))
+  t.is(child.signal, null, 'crashed or timed out')
+  t.is(child.status, 0, child.stderr)
+  t.is(child.stdout.match(/<rect/g)?.length, 301)
+  t.is(child.stdout, convertInChild(svg(dots.replaceAll(' href=', ' xlink:href='))).stdout)
+})
+
 // SkSVG reads a nested style="style:fill:url(#c)": the pattern c it paints
 // runs into the cycle a -> a, which is broken.
 test('convertSVGTextToPath past the budget: a pattern a nested style paints is walked', (t) => {
