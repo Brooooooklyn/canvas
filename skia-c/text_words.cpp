@@ -5,9 +5,7 @@
 
 #include <array>
 #include <iterator>
-#include <string>
 
-#include <src/core/SkUTF.h>
 #include "icu_api.h"
 #include "text.hpp"
 
@@ -102,97 +100,6 @@ bool IsCommonOrInheritedScript(UChar32 c) {
          (script == USCRIPT_COMMON || script == USCRIPT_INHERITED);
 }
 
-// Character::TreatAsZeroWidthSpaceInComplexScriptLegacy without form feed
-// and carriage return (spaces on a canvas): PlainTextNode makes these
-// zero width spaces, which end words. They stay in the text here, where
-// HarfBuzz draws them with no width and the bidi controls keep their
-// effect (Blink runs BiDi on the original text). Letter spacing skips a
-// wider set (GetsNoLetterSpacing).
-bool IsZeroWidthSpaceLike(UChar32 c) {
-  return c == 0xAD || c == kZeroWidthSpace || c == 0x200E || c == 0x200F ||
-         (c >= 0x202A && c <= 0x202E) || c == 0xFEFF || c == 0xFFFC;
-}
-
-// ShapeResultSpacing::ComputeSpacing adds no letter spacing to a HarfBuzz
-// cluster whose first UTF-16 code unit is Character::TreatAsZeroWidthSpace:
-// form feed, carriage return, U+FFFC and the Default_Ignorable_Code_Points
-// (below U+0100 only the soft hyphen; ZWNJ and ZWJ are among them). Blink's
-// clusters are grapheme clusters; skparagraph's are characters
-// (HB_BUFFER_CLUSTER_LEVEL_MONOTONE_CHARACTERS), so a default ignorable
-// after a base, a cluster of its own here, is inside the base's cluster
-// there and adds nothing to it either. Above U+FFFF Blink reads a lead
-// surrogate, which is not default ignorable, so a default ignorable there
-// gets letter spacing when it starts a cluster. U+E0001 always starts one.
-// A Grapheme_Extend one (the tags and variation selectors of U+E0000 to
-// U+E0FFF) goes in the cluster before it and gets none, unless it is the
-// first character of a HarfBuzz buffer, where it starts a cluster: Blink
-// shapes each piece (a word, or the whole text, and its caps runs) as its
-// own buffer. `starts_piece`: `c` is the first character of a piece.
-bool GetsNoLetterSpacing(UChar32 c, bool starts_piece) {
-  if (c == 0xC || c == 0xD || c == 0xFFFC) {
-    return true;
-  }
-  if (c < 0x100) {
-    return c == 0xAD;
-  }
-  if (!u_hasBinaryProperty(c, UCHAR_DEFAULT_IGNORABLE_CODE_POINT)) {
-    return false;
-  }
-  return c <= 0xFFFF ||
-         (!starts_piece && u_hasBinaryProperty(c, UCHAR_GRAPHEME_EXTEND));
-}
-
-bool IsWordDelimiter(UChar32 c) {
-  return c == kSpace || c == kTab || IsZeroWidthSpaceLike(c);
-}
-
-struct CodePoint {
-  UChar32 value;
-  size_t end;  // byte offset just past it
-};
-
-// plain_text_node.cc NextWordEndIndex over code points: the index of the
-// first code point after the word that starts at `start`.
-size_t NextWordEnd(const std::vector<CodePoint>& text, size_t start) {
-  const size_t length = text.size();
-  if (start + 1 == length || IsWordDelimiter(text[start].value)) {
-    return start + 1;
-  }
-  size_t end = start + 1;
-  UChar32 ch = text[start].value;
-  if (!IsCjkIdeographOrSymbol(ch)) {
-    for (; end < length; ++end) {
-      ch = text[end].value;
-      if (IsWordDelimiter(ch) || IsCjkIdeographOrSymbolBase(ch)) {
-        return end;
-      }
-    }
-    return length;
-  }
-  // CJK and emoji: one word per character, keeping marks, modifiers, ZWJ
-  // sequences and common-script symbols with the character before them.
-  bool has_any_script = !IsCommonOrInheritedScript(ch);
-  for (; end < length; ++end) {
-    ch = text[end].value;
-    if (IsMarkOrModifier(ch) || ch == kZeroWidthJoiner ||
-        u_hasBinaryProperty(ch, UCHAR_EMOJI_COMPONENT) ||
-        u_hasBinaryProperty(ch, UCHAR_EXTENDED_PICTOGRAPHIC)) {
-      continue;
-    }
-    if (IsCjkIdeographOrSymbol(ch)) {
-      if (IsCommonOrInheritedScript(ch)) {
-        continue;
-      }
-      if (!has_any_script) {
-        has_any_script = true;
-        continue;
-      }
-    }
-    return end;
-  }
-  return length;
-}
-
 // U16_NEXT over `text`; a lone surrogate is itself.
 UChar32 NextCodePoint(const char16_t* text, size_t length, size_t* i) {
   UChar32 c = text[(*i)++];
@@ -219,72 +126,6 @@ bool TableHasSpace(hb_face_t* face, hb_tag_t table, hb_codepoint_t space) {
 }
 
 }  // namespace
-
-std::string_view PrepareCanvasText(std::string_view text,
-                                   std::string* storage) {
-  // U+2028 and U+2029 (E2 80 A8/A9) and U+FFFC (EF BF BC).
-  auto special = [&](size_t i) {
-    const auto c = static_cast<unsigned char>(text[i]);
-    if (c >= 0x09 && c <= 0x0D) {
-      return true;
-    }
-    if (i + 2 >= text.size()) {
-      return false;
-    }
-    const auto c1 = static_cast<unsigned char>(text[i + 1]);
-    const auto c2 = static_cast<unsigned char>(text[i + 2]);
-    return (c == 0xE2 && c1 == 0x80 && (c2 == 0xA8 || c2 == 0xA9)) ||
-           (c == 0xEF && c1 == 0xBF && c2 == 0xBC);
-  };
-  size_t i = 0;
-  while (i < text.size() && !special(i)) {
-    ++i;
-  }
-  if (i == text.size()) {
-    return text;
-  }
-  storage->assign(text.substr(0, i));
-  while (i < text.size()) {
-    if (!special(i)) {
-      storage->push_back(text[i++]);
-    } else if (static_cast<unsigned char>(text[i]) <= 0x0D) {
-      storage->push_back(' ');
-      ++i;
-    } else if (static_cast<unsigned char>(text[i]) == 0xE2) {
-      // HarfBuzzFace draws the line and paragraph separators with the space
-      // glyph; skparagraph would break the line at them.
-      storage->push_back(' ');
-      i += 3;
-    } else {
-      storage->append("\xE2\x80\x8B");  // U+200B
-      i += 3;
-    }
-  }
-  return *storage;
-}
-
-std::vector<std::pair<size_t, size_t>> SplitWords(std::string_view text) {
-  std::vector<CodePoint> code_points;
-  code_points.reserve(text.size());
-  const char* ptr = text.data();
-  const char* const end = text.data() + text.size();
-  while (ptr < end) {
-    SkUnichar c = SkUTF::NextUTF8(&ptr, end);
-    if (c < 0) {
-      // Not UTF-8 (the Rust side only passes str): one word.
-      return {{0, text.size()}};
-    }
-    code_points.push_back({c, static_cast<size_t>(ptr - text.data())});
-  }
-  std::vector<std::pair<size_t, size_t>> words;
-  for (size_t index = 0; index < code_points.size();) {
-    const size_t next = NextWordEnd(code_points, index);
-    words.emplace_back(index ? code_points[index - 1].end : 0,
-                       code_points[next - 1].end);
-    index = next;
-  }
-  return words;
-}
 
 size_t NextWordEndIndex(const char16_t* text,
                         size_t length,
@@ -345,38 +186,6 @@ size_t NextWordEndIndex(const char16_t* text,
   return length;
 }
 
-std::vector<std::pair<size_t, size_t>> NoLetterSpacingRanges(
-    std::string_view text,
-    const std::vector<size_t>& piece_starts) {
-  std::vector<std::pair<size_t, size_t>> ranges;
-  const char* ptr = text.data();
-  const char* const end = text.data() + text.size();
-  // The first of `piece_starts` at or after the current character.
-  size_t piece = 0;
-  while (ptr < end) {
-    const size_t start = static_cast<size_t>(ptr - text.data());
-    const SkUnichar c = SkUTF::NextUTF8(&ptr, end);
-    if (c < 0) {
-      break;
-    }
-    while (piece < piece_starts.size() && piece_starts[piece] < start) {
-      ++piece;
-    }
-    const bool starts_piece =
-        piece < piece_starts.size() && piece_starts[piece] == start;
-    if (!GetsNoLetterSpacing(c, starts_piece)) {
-      continue;
-    }
-    const size_t next = static_cast<size_t>(ptr - text.data());
-    if (!ranges.empty() && ranges.back().second == start) {
-      ranges.back().second = next;
-    } else {
-      ranges.emplace_back(start, next);
-    }
-  }
-  return ranges;
-}
-
 bool CanShapeWordByWord(skiac_font_collection* c_collection,
                         const std::vector<sk_sp<SkTypeface>>& faces,
                         const skiac_text_request& request,
@@ -409,8 +218,7 @@ bool CanShapeWordByWord(skiac_font_collection* c_collection,
   SkTypeface* primary = nullptr;
   SkGlyphID space = 0;
   for (const auto& face : faces) {
-    space = space_glyph ? space_glyph(c_collection, face.get())
-                        : face->unicharToGlyph(kSpace);
+    space = space_glyph(c_collection, face.get());
     if (space) {
       primary = face.get();
       break;
@@ -419,11 +227,8 @@ bool CanShapeWordByWord(skiac_font_collection* c_collection,
   if (!primary) {
     return false;
   }
-  // Bits: 1 GPOS checked, 2 space in GPOS, 4 GSUB checked, 8 space in GSUB;
-  // the Blink shaper's space glyph (HarfBuzz's cmap) is kept apart, as it can
-  // be another glyph (a symbol cmap on FreeType).
-  auto& cache = space_glyph ? c_collection->hb_space_in_lookups
-                            : c_collection->space_in_lookups;
+  // Bits: 1 GPOS checked, 2 space in GPOS, 4 GSUB checked, 8 space in GSUB.
+  auto& cache = c_collection->hb_space_in_lookups;
   if (cache.size() > 1024) {
     cache.clear();
   }

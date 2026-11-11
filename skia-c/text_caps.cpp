@@ -6,11 +6,9 @@
 
 #include <math.h>
 #include <algorithm>
-#include <optional>
 #include <string>
 #include <vector>
 
-#include <src/core/SkUTF.h>
 #include "icu_api.h"
 #include "text.hpp"
 
@@ -278,11 +276,6 @@ bool LocaleMatches(std::string_view locale, std::string_view lang) {
 
 }  // namespace
 
-const char* CaseMapLocale(const skiac_text_request& request) {
-  return CaseMapLocale(std::string_view(request.lang ? request.lang : "",
-                                        request.lang ? request.lang_len : 0));
-}
-
 const char* CaseMapLocale(std::string_view lang) {
   if (LocaleMatches(lang, "tr") || LocaleMatches(lang, "az")) {
     return "tr";
@@ -321,201 +314,8 @@ std::u16string MapCase(CaseMapIntend intend,
   return out;
 }
 
-namespace {
-
-void AppendUtf16(std::u16string* out, SkUnichar c) {
-  uint16_t units[2];
-  const size_t count = SkUTF::ToUTF16(c, units);
-  out->append(reinterpret_cast<const char16_t*>(units), count);
-}
-
-void AppendUtf8(std::string* out, const std::u16string& text) {
-  const uint16_t* ptr = reinterpret_cast<const uint16_t*>(text.data());
-  const uint16_t* const end = ptr + text.size();
-  while (ptr < end) {
-    const SkUnichar c = SkUTF::NextUTF16(&ptr, end);
-    char utf8[SkUTF::kMaxBytesInUTF8Sequence];
-    out->append(utf8, SkUTF::ToUTF8(c < 0 ? 0xFFFD : c, utf8));
-  }
-}
-
-struct CodePoint {
-  SkUnichar value;
-  size_t utf8_start;
-  size_t utf8_end;
-  size_t utf16_start;
-  size_t utf16_end;
-};
-
-hb_script_t HbScript(int script) {
-  const char* name = uscript_getShortName(script);
-  return name ? hb_script_from_string(name, -1) : 0;
-}
-
-}  // namespace
-
-void AddCapsFeatures(TextStyle* style, int caps) {
-  switch (caps) {
-    case kSmallCaps:
-      style->addFontFeature(SkString("smcp"), 1);
-      break;
-    case kAllSmallCaps:
-      style->addFontFeature(SkString("smcp"), 1);
-      style->addFontFeature(SkString("c2sc"), 1);
-      break;
-    case kPetiteCaps:
-      style->addFontFeature(SkString("pcap"), 1);
-      break;
-    case kAllPetiteCaps:
-      style->addFontFeature(SkString("pcap"), 1);
-      style->addFontFeature(SkString("c2pc"), 1);
-      break;
-    case kUnicase:
-      style->addFontFeature(SkString("unic"), 1);
-      break;
-    case kTitlingCaps:
-      style->addFontFeature(SkString("titl"), 1);
-      break;
-    default:
-      break;
-  }
-}
-
 float SmallCapsSize(float size) {
   return lroundf(size * kSmallCapsFontSizeMultiplier);
-}
-
-std::vector<CapsPiece> SplitCaps(skiac_font_collection* c_collection,
-                                 SkTypeface* face,
-                                 std::string_view word,
-                                 const skiac_text_request& request) {
-  const int caps = request.variant_caps;
-  std::vector<CodePoint> code_points;
-  std::u16string utf16;
-  {
-    const char* ptr = word.data();
-    const char* const end = word.data() + word.size();
-    while (ptr < end) {
-      const size_t start = ptr - word.data();
-      const SkUnichar c = SkUTF::NextUTF8(&ptr, end);
-      if (c < 0 || !face) {
-        return {{std::string(word), caps, false}};
-      }
-      const size_t utf16_start = utf16.size();
-      AppendUtf16(&utf16, c);
-      code_points.push_back({c, start, static_cast<size_t>(ptr - word.data()),
-                             utf16_start, utf16.size()});
-    }
-  }
-  if (code_points.empty()) {
-    return {};
-  }
-  // RunSegmenter's script runs: common and inherited characters take the
-  // script of the run they are in, or of the first run after them.
-  std::vector<int> scripts(code_points.size(), USCRIPT_COMMON);
-  {
-    int current = USCRIPT_COMMON;
-    size_t pending = 0;
-    for (size_t i = 0; i < code_points.size(); ++i) {
-      UErrorCode error = 0;
-      int script = uscript_getScript(code_points[i].value, &error);
-      if (error > 0 || script == USCRIPT_INHERITED) {
-        script = USCRIPT_COMMON;
-      }
-      if (script == USCRIPT_COMMON) {
-        scripts[i] = current;
-        continue;
-      }
-      if (current == USCRIPT_COMMON) {
-        for (; pending < i; ++pending) {
-          scripts[pending] = script;
-        }
-      }
-      current = script;
-      scripts[i] = script;
-      pending = i + 1;
-    }
-  }
-
-  const char* locale = CaseMapLocale(request);
-  // CaseMappingHarfBuzzBufferFiller maps the whole word and takes the run
-  // from it, or maps the run character by character when the mapping
-  // changes the length.
-  std::u16string upper;
-  std::u16string lower;
-  auto mapped = [&](CaseMapIntend intend, size_t from, size_t to) {
-    std::u16string& whole = intend == CaseMapIntend::kUpperCase ? upper : lower;
-    if (whole.empty()) {
-      whole = MapCase(intend, locale, utf16);
-    }
-    std::string out;
-    if (whole.size() == utf16.size()) {
-      AppendUtf8(&out, whole.substr(code_points[from].utf16_start,
-                                    code_points[to - 1].utf16_end -
-                                        code_points[from].utf16_start));
-      return out;
-    }
-    for (size_t i = from; i < to; ++i) {
-      AppendUtf8(&out, MapCase(intend, locale,
-                               utf16.substr(code_points[i].utf16_start,
-                                            code_points[i].utf16_end -
-                                                code_points[i].utf16_start)));
-    }
-    return out;
-  };
-  auto original = [&](size_t from, size_t to) {
-    return std::string(word.substr(
-        code_points[from].utf8_start,
-        code_points[to - 1].utf8_end - code_points[from].utf8_start));
-  };
-
-  std::vector<CapsPiece> pieces;
-  for (size_t run_start = 0; run_start < code_points.size();) {
-    size_t run_end = run_start + 1;
-    while (run_end < code_points.size() &&
-           scripts[run_end] == scripts[run_start]) {
-      ++run_end;
-    }
-    const Support support = DetermineFontSupport(
-        caps, CapsFeatures(c_collection, face, HbScript(scripts[run_start])));
-    if (support.font == FontSupport::kFull || caps == kTitlingCaps) {
-      // NeedsRunCaseSplitting is false.
-      pieces.push_back({original(run_start, run_end),
-                        FeatureToUse(support, caps, CaseRun::kSameCase),
-                        false});
-      run_start = run_end;
-      continue;
-    }
-    // SmallCapsIterator: combining marks go with the letters before them.
-    for (size_t start = run_start; start < run_end;) {
-      std::optional<CaseRun> behavior;
-      size_t end = start;
-      for (; end < run_end; ++end) {
-        const SkUnichar c = code_points[end].value;
-        if (u_getCombiningClass(c)) {
-          continue;
-        }
-        const CaseRun next =
-            u_hasBinaryProperty(c, UCHAR_CHANGES_WHEN_UPPERCASED)
-                ? CaseRun::kUppercaseNeeded
-                : CaseRun::kSameCase;
-        if (behavior && *behavior != next) {
-          break;
-        }
-        behavior = next;
-      }
-      const CaseRun run = behavior.value_or(CaseRun::kSameCase);
-      const CaseMapIntend intend = CaseChange(support, run);
-      pieces.push_back({intend == CaseMapIntend::kKeepSameCase
-                            ? original(start, end)
-                            : mapped(intend, start, end),
-                        FeatureToUse(support, caps, run),
-                        SyntheticFont(support, caps, run)});
-      start = end;
-    }
-    run_start = run_end;
-  }
-  return pieces;
 }
 
 CapsSupport FontCapsSupport(skiac_font_collection* c_collection,

@@ -1733,7 +1733,7 @@ impl Context {
   ) -> result::Result<(), SkError> {
     self.flush_if_recording_limit_exceeded();
     let stroke_paint = self.stroke_paint()?;
-    // skia-c/text.cpp prepares the text (PrepareCanvasText).
+    // skia-c prepares the text (shaper_text.cpp PrepareText).
     self.draw_text(text, x, y, max_width, &stroke_paint, ShadowSource::Stroke)?;
     Ok(())
   }
@@ -1809,7 +1809,7 @@ impl Context {
   ) -> result::Result<(), SkError> {
     self.flush_if_recording_limit_exceeded();
     let fill_paint = self.fill_paint()?;
-    // skia-c/text.cpp prepares the text (PrepareCanvasText).
+    // skia-c prepares the text (shaper_text.cpp PrepareText).
     self.draw_text(text, x, y, max_width, &fill_paint, ShadowSource::Fill)?;
     Ok(())
   }
@@ -2523,17 +2523,12 @@ impl Context {
   /// font without one gives None.
   fn filter_font_units(&mut self, reads: FontReads) -> FontUnits {
     // The canvas font (family, size, weight, slope, stretch, variations)
-    // with no text styling. With the Blink shaper on, also its ctx.lang:
-    // the filter's font is the canvas state's font (SetFontForFilter), whose
-    // locale picks the generic and standard families like the text's
-    // (skia-c ResolveFontRequest). Chrome 157 OffscreenCanvas, lang ja
-    // "40px serif" (Hiragino Mincho ProN): 1ic 40px, 1ex 21.6px; no lang,
-    // Times: 16px and 18px. With it off, no lang, as before.
-    let lang = if unsafe { crate::sk::ffi::skiac_blink_shaper_on() } {
-      self.state.lang.clone()
-    } else {
-      String::new()
-    };
+    // with no text styling, and its ctx.lang: the filter's font is the
+    // canvas state's font (SetFontForFilter), whose locale picks the generic
+    // and standard families like the text's (skia-c ResolveFontRequest).
+    // Chrome 157 OffscreenCanvas, lang ja "40px serif" (Hiragino Mincho
+    // ProN): 1ic 40px, 1ex 21.6px; no lang, Times: 16px and 18px.
+    let lang = self.state.lang.clone();
     let settings = TextSettings {
       baseline: crate::sk::TextBaseline::Alphabetic,
       align: crate::sk::TextAlign::Left,
@@ -6440,9 +6435,9 @@ impl CanvasRenderingContext2D {
     })
   }
 
-  /// The Blink shaper's differential harness (__test__/shaper-diff.mjs): the
-  /// glyphs, positions and clusters the line of `text` draws, as JSON. Not
-  /// part of the API; goes with the old layout path.
+  /// The glyphs, positions and clusters the line of `text` draws, as JSON
+  /// (skia-c skiac_debug_text_line). Not part of the API; for the shaper's
+  /// tests.
   #[napi(js_name = "__debugTextLine")]
   pub fn debug_text_line(&mut self, text: String) -> Result<String> {
     Ok(self.context.debug_text_line(&text)?)

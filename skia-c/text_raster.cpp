@@ -1,7 +1,7 @@
 // Canvas text rasterization. By default every OS draws the same way:
 //
 //              draw font                              text gamma / contrast
-//   default    skparagraph's font                      Skia's defaults
+//   default    the shaping font                        Skia's defaults
 //
 // After setTextRenderer('system'), like each OS's Chrome:
 //
@@ -12,14 +12,12 @@
 //   Linux      AA edging, slight hinting (none +       1.2 / 0.2
 //              linear metrics for geometricPrecision),
 //              subpixel, embedded bitmaps
-//   others     skparagraph's font                      Skia's defaults
+//   others     the shaping font                        Skia's defaults
 //
 // The scalers themselves (CoreText, Fontations, FreeType) are picked where
 // typefaces are made (font_scalers.cpp). Any new per-OS text branch must
 // also check SystemFontRenderer().
 
-// CoreText's headers declare a global TextRange, which skia_c.hpp's
-// `using namespace skia::textlayout` would make ambiguous.
 #if defined(__APPLE__)
 #include <include/ports/SkTypeface_mac.h>
 #endif
@@ -44,23 +42,6 @@ constexpr int kGeometricPrecision = 3;
 // SkScalerContext.cpp too_big_for_lcd (SK_MAX_SIZE_FOR_LCDTEXT).
 constexpr float kMaxSizeForLcdText = 48;
 #endif
-
-// SkShaper_harfbuzz.cpp skhb_position.
-int32_t RoundedHarfBuzzPosition(SkScalar value) {
-  return SkScalarRoundToInt(value * (1 << 16));
-}
-
-// skia_text_metrics.cc SkiaScalarToHarfBuzzPosition: ClampTo<int>.
-int32_t TruncatedHarfBuzzPosition(SkScalar value) {
-  const float scaled = value * (1 << 16);
-  if (!(scaled > static_cast<float>(std::numeric_limits<int32_t>::min()))) {
-    return std::numeric_limits<int32_t>::min();
-  }
-  if (!(scaled < static_cast<float>(std::numeric_limits<int32_t>::max()))) {
-    return std::numeric_limits<int32_t>::max();
-  }
-  return static_cast<int32_t>(scaled);
-}
 
 }  // namespace
 
@@ -97,7 +78,7 @@ SkFont MetricsFont(sk_sp<SkTypeface> typeface, float size) {
     return font;
   }
 #endif
-  // skparagraph's shaping font (TextStyle defaults) with subpixel
+  // The shaping font's flags (ApplyShapingFlags' defaults) with subpixel
   // positioning, which Chrome Linux forces on for the canvas.
   font.setEdging(SkFont::Edging::kAntiAlias);
   font.setHinting(SkFontHinting::kSlight);
@@ -113,18 +94,17 @@ TextRasterPolicy::TextRasterPolicy(const skiac_text_request& request)
 #endif
 }
 
-void TextRasterPolicy::ApplyToTextStyle(TextStyle* style) const {
+void TextRasterPolicy::ApplyShapingFlags(SkFont* font) const {
+  // skparagraph's TextStyle defaults, which OneLineShaper gave the font.
+  font->setEdging(SkFont::Edging::kAntiAlias);
+  font->setHinting(SkFontHinting::kSlight);
+  font->setSubpixel(true);
   if (!system_) {
     return;
   }
 #if defined(__APPLE__)
-  style->setFontEdging(SkFont::Edging::kSubpixelAntiAlias);
-  style->setFontHinting(SkFontHinting::kNormal);
-  style->setSubpixel(true);
-#elif defined(__linux__) && !defined(__ANDROID__)
-  style->setFontEdging(SkFont::Edging::kAntiAlias);
-  style->setFontHinting(SkFontHinting::kSlight);
-  style->setSubpixel(true);
+  font->setEdging(SkFont::Edging::kSubpixelAntiAlias);
+  font->setHinting(SkFontHinting::kNormal);
 #endif
 }
 
@@ -259,86 +239,6 @@ void TextRasterPolicy::GlyphBounds(const SkFont& draw_font,
 #endif
 }
 
-BlinkLine CollectBlinkLine(ParagraphImpl* paragraph,
-                           const TextRasterPolicy& policy,
-                           bool rtl) {
-  BlinkLine line;
-  // The width HarfBuzz got from skshaper, minus Blink's: skshaper shaped
-  // with the run's font before the synthetic styles (text.cpp sets them
-  // after layout), Blink with its draw font.
-  auto difference = [&policy](const SkFont& run_font, const SkGlyphID* glyphs,
-                              size_t count, float* out) {
-    SkFont shaped = run_font;
-    shaped.setEmbolden(false);
-    shaped.setSkewX(0);
-    const SkFont blink = policy.DrawFont(run_font, nullptr);
-    std::vector<SkScalar> shaped_widths(count);
-    std::vector<SkScalar> blink_widths(count);
-    shaped.getWidths({glyphs, count}, shaped_widths);
-    blink.getWidths({glyphs, count}, blink_widths);
-    for (size_t i = 0; i < count; ++i) {
-      out[i] =
-          static_cast<float>(
-              static_cast<int64_t>(RoundedHarfBuzzPosition(shaped_widths[i])) -
-              TruncatedHarfBuzzPosition(blink_widths[i])) /
-          (1 << 16);
-    }
-  };
-  line.run_shifts.reserve(paragraph->runs().size());
-  for (const Run& run : paragraph->runs()) {
-    const auto glyphs = run.glyphs();
-    std::vector<float> d(glyphs.size());
-    difference(run.font(), glyphs.data(), glyphs.size(), d.data());
-    float run_shift = 0;
-    for (float v : d) {
-      run_shift += v;
-    }
-    line.run_shifts.push_back(run_shift);
-    line.shift += run_shift;
-  }
-
-  float visited_shift = 0;
-  paragraph->visit([&](int line_number, const Paragraph::VisitorInfo* info) {
-    if (!info || line_number != 0 || info->count == 0) {
-      return;
-    }
-    BlinkRun run;
-    run.font = info->font;
-    run.origin = info->origin;
-    run.glyphs.assign(info->glyphs, info->glyphs + info->count);
-    run.positions.assign(info->positions, info->positions + info->count);
-    run.clusters.assign(info->utf8Starts, info->utf8Starts + info->count);
-    std::vector<float> d(info->count);
-    difference(info->font, info->glyphs, info->count, d.data());
-    for (int i = 0; i < info->count; ++i) {
-      run.positions[i].fX -= visited_shift;
-      visited_shift += d[i];
-    }
-    line.runs.push_back(std::move(run));
-  });
-  // TextLine puts a run after a piece narrower than nothing as if that piece
-  // were 0 wide; Blink adds the advances as they are (LineRunShifts, in the
-  // order visit() gives the runs, one per text blob). Chrome draws the
-  // glyphs unclipped, as here.
-  const std::vector<float> run_origins = LineRunShifts(paragraph);
-  if (run_origins.size() == line.runs.size()) {
-    for (size_t i = 0; i < run_origins.size(); ++i) {
-      line.runs[i].origin.fX += run_origins[i];
-    }
-  }
-  // The glyphs visit() skips are the trailing spaces, which sit at the end of
-  // the line in the paragraph's direction: left of every other glyph in RTL.
-  if (rtl) {
-    const float skipped = line.shift - visited_shift;
-    for (BlinkRun& run : line.runs) {
-      for (SkPoint& position : run.positions) {
-        position.fX -= skipped;
-      }
-    }
-  }
-  return line;
-}
-
 namespace {
 
 // size_f.h SizeF::clamp and SetToNextWidth / SetToNextHeight.
@@ -437,26 +337,15 @@ struct GlyphBoundsAccumulator {
   }
 };
 
-struct InkGlyph {
-  size_t word;
-  size_t run;
-  float x;
-  float y;
-  SkRect bounds;
-};
-
 }  // namespace
 
-namespace {
-
-// TextMetrics::MeasureRuns for a line of the Blink shaper: each item's
-// ShapeResult::ComputeInkBounds (PlainTextNode::Shape: outset to the left
-// when the item is narrower than nothing), offset to the float sum of the
-// widths of the items before it, united item by item in visual order.
-BlinkRectF MeasureItemInk(const BlinkLine& line,
-                          const TextRasterPolicy& policy,
-                          float left_edge,
-                          float baseline) {
+// Each item's ShapeResult::ComputeInkBounds (PlainTextNode::Shape: outset
+// to the left when the item is narrower than nothing), offset to the float
+// sum of the widths of the items before it, united item by item in visual
+// order.
+BlinkRectF MeasureBlinkInk(const BlinkLine& line,
+                           const TextRasterPolicy& policy,
+                           float left_edge) {
   // The runs of each item, in visual order (an RTL base's reversed LTR
   // words are drawn from the last item, but measured from the first).
   std::vector<std::vector<size_t>> item_runs(line.item_widths.size());
@@ -477,8 +366,7 @@ BlinkRectF MeasureItemInk(const BlinkLine& line,
         // SkFontGetBoundsForGlyphs rounds out without subpixel positioning.
         const SkRect box =
             font.isSubpixel() ? bounds[i] : SkRect::Make(bounds[i].roundOut());
-        accumulator.Unite(SkRectToRectF(box), run.ink_x[i],
-                          {run.offsets[i].fX, run.offsets[i].fY - baseline});
+        accumulator.Unite(SkRectToRectF(box), run.ink_x[i], run.offsets[i]);
       }
       Union(&item_ink, accumulator.Bounds());
     }
@@ -497,73 +385,6 @@ BlinkRectF MeasureItemInk(const BlinkLine& line,
     item_ink.x += xpos - left_edge;
     Union(&ink, item_ink);
     xpos += width;
-  }
-  return ink;
-}
-
-}  // namespace
-
-BlinkRectF MeasureBlinkInk(const BlinkLine& line,
-                           const TextRasterPolicy& policy,
-                           SkSpan<const std::pair<size_t, size_t>> words,
-                           float left_edge,
-                           float baseline) {
-  if (!line.item_widths.empty()) {
-    return MeasureItemInk(line, policy, left_edge, baseline);
-  }
-  // The glyphs in visual order, with the word each belongs to.
-  std::vector<InkGlyph> glyphs;
-  for (size_t r = 0; r < line.runs.size(); ++r) {
-    const BlinkRun& run = line.runs[r];
-    const SkFont font = policy.DrawFont(run.font, nullptr);
-    std::vector<SkRect> bounds(run.glyphs.size());
-    policy.GlyphBounds(font, run.glyphs, bounds);
-    for (size_t i = 0; i < run.glyphs.size(); ++i) {
-      // SkFontGetBoundsForGlyphs rounds out without subpixel positioning.
-      const SkRect box =
-          font.isSubpixel() ? bounds[i] : SkRect::Make(bounds[i].roundOut());
-      size_t word = run.item;
-      if (!words.empty()) {
-        const uint32_t cluster = run.clusters[i];
-        word =
-            static_cast<size_t>(std::find_if(words.begin(), words.end(),
-                                             [cluster](const auto& range) {
-                                               return cluster >= range.first &&
-                                                      cluster < range.second;
-                                             }) -
-                                words.begin());
-      }
-      glyphs.push_back({word, r,
-                        run.origin.fX + run.positions[i].fX - left_edge,
-                        run.origin.fY + run.positions[i].fY - baseline, box});
-    }
-  }
-
-  BlinkRectF ink;
-  for (size_t start = 0; start < glyphs.size();) {
-    // A word: ShapeResult::ComputeInkBounds in the word's own x, then
-    // offset to where the word starts.
-    size_t end = start;
-    while (end < glyphs.size() && glyphs[end].word == glyphs[start].word) {
-      ++end;
-    }
-    const float word_x = glyphs[start].x;
-    BlinkRectF word_ink;
-    for (size_t run_start = start; run_start < end;) {
-      size_t run_end = run_start;
-      GlyphBoundsAccumulator accumulator;
-      while (run_end < end && glyphs[run_end].run == glyphs[run_start].run) {
-        const InkGlyph& glyph = glyphs[run_end];
-        accumulator.Unite(SkRectToRectF(glyph.bounds), glyph.x - word_x,
-                          {0, glyph.y});
-        ++run_end;
-      }
-      Union(&word_ink, accumulator.Bounds());
-      run_start = run_end;
-    }
-    word_ink.x += word_x;
-    Union(&ink, word_ink);
-    start = end;
   }
   return ink;
 }

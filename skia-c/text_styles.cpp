@@ -369,14 +369,6 @@ UsedSizes ComputeUsedSizes(skiac_font_collection* c_collection,
 
 namespace {
 
-void AddFeature(TextStyle* style, SkFourByteTag tag, uint32_t value) {
-  const char name[4] = {
-      static_cast<char>(tag >> 24), static_cast<char>((tag >> 16) & 0xFF),
-      static_cast<char>((tag >> 8) & 0xFF), static_cast<char>(tag & 0xFF)};
-  // skparagraph turns the value back into a uint32_t (SkToU32).
-  style->addFontFeature(SkString(name, 4), static_cast<int>(value));
-}
-
 // FontDescription::LigaturesState values (font_props.rs LigatureState).
 constexpr uint8_t kLigaturesNormal = 0;
 constexpr uint8_t kLigaturesEnabled = 1;
@@ -384,8 +376,7 @@ constexpr uint8_t kLigaturesDisabled = 2;
 
 }  // namespace
 
-std::vector<hb_feature_t> BlinkFeatures(const skiac_text_request& request,
-                                        bool default_chws) {
+std::vector<hb_feature_t> BlinkFeatures(const skiac_text_request& request) {
   std::vector<hb_feature_t> features;
   auto add = [&features](hb_tag_t tag, uint32_t value) {
     features.push_back(
@@ -451,7 +442,8 @@ std::vector<hb_feature_t> BlinkFeatures(const skiac_text_request& request,
   // font-feature-settings, in computed order. Blink's default chws 1
   // (text-spacing-trim normal: ShouldTrimAdjacent) follows them unless they
   // set chws (any value) or a glyph-width GPOS feature, halt or palt, to a
-  // non-zero value. The old path never pushes it.
+  // non-zero value.
+  bool default_chws = true;
   for (int i = 0; request.features && i < request.features_count; ++i) {
     const hb_tag_t setting = request.features[i].tag;
     const uint32_t value = request.features[i].value;
@@ -471,12 +463,6 @@ std::vector<hb_feature_t> BlinkFeatures(const skiac_text_request& request,
     add(tag("sups"), 1);
   }
   return features;
-}
-
-void AddBlinkFeatures(TextStyle* style, const skiac_text_request& request) {
-  for (const hb_feature_t& feature : BlinkFeatures(request)) {
-    AddFeature(style, feature.tag, feature.value);
-  }
 }
 
 SyntheticStyle SynthesizeStyle(skiac_font_collection* c_collection,

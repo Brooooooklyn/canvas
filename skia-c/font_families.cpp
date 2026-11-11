@@ -361,10 +361,8 @@ class FamilyResolver {
     auto it = matches.find(key);
     if (it == matches.end()) {
       std::string family;
-      // The old path (NAPI_RS_CANVAS_SHAPER=skparagraph) keeps CoreText's own
-      // matching.
       sk_sp<SkFontStyleSet> set =
-          !BlinkShaperOn() || HasInstalledFamily(name)
+          HasInstalledFamily(name)
               ? manager->matchFamily(std::string(name).c_str())
               : nullptr;
       if (sk_sp<SkTypeface> face =
@@ -963,8 +961,7 @@ std::vector<SkString> ResolveFontFamilies(skiac_font_collection* c_collection,
   // cache sees the name. Chrome 157: lang ja "40px Helvetica, -webkit-body"
   // and "40px serif, -webkit-body" "Ag" are Hiragino Kaku Gothic ProN 55.64,
   // no lang "40px Helvetica, -webkit-body" is Times 48.89. Only with the
-  // shaper's locale settings (with the shaper off each family keeps its own
-  // font).
+  // shaper's locale settings.
   std::string body_standard;
   if (locale && description_generic == kWebkitBody) {
     body_standard = locale->standard;

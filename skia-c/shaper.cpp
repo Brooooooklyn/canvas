@@ -1,7 +1,7 @@
-// The Blink-style text shaper (shaper.hpp): the switch, the entry point, the
-// font list and the shaping loop (a port of HarfBuzzShaper::ShapeSegment,
+// The Blink-style text shaper (shaper.hpp): the entry point, the font list
+// and the shaping loop (a port of HarfBuzzShaper::ShapeSegment,
 // ExtractShapeResults and CommitGlyphs, harfbuzz_shaper.cc, with
-// ShapeResult::InsertRun, shape_result.cc), and its counters.
+// ShapeResult::InsertRun, shape_result.cc).
 
 #include "shaper.hpp"
 
@@ -10,7 +10,6 @@
 #include <string.h>
 
 #include <algorithm>
-#include <atomic>
 #include <deque>
 #include <limits>
 #include <optional>
@@ -31,10 +30,6 @@ extern "C" __declspec(dllimport) int __stdcall GetUserDefaultLocaleName(
 #endif
 
 namespace {
-
-std::atomic<uint64_t> g_accepted{0};
-std::atomic<uint64_t> g_text_caches_changes{0};
-std::atomic<uint64_t> g_cache_changes{0};
 
 constexpr const char* kOtShaperList[] = {"ot", nullptr};
 
@@ -94,18 +89,14 @@ class LineFonts {
         request_(request),
         policy_(policy),
         sizes_(sizes),
-        system_renderer_(SystemFontRenderer()) {
-    policy_.ApplyToTextStyle(&flags_);
-  }
+        system_renderer_(SystemFontRenderer()) {}
 
   // Fills `entry`'s fonts: the shaping font OneLineShaper builds, the draw
   // font with the synthetic styles, and the HarfBuzz font. False when the
   // typeface has no data.
   bool Finish(FontEntry* entry) const {
     SkFont font(entry->face, entry->size);
-    font.setEdging(flags_.getFontEdging());
-    font.setHinting(flags_.getFontHinting());
-    font.setSubpixel(flags_.getSubpixel());
+    policy_.ApplyShapingFlags(&font);
     font.setEmbolden(entry->synthetic.bold);
     font.setSkewX(entry->synthetic.italic ? -SK_Scalar1 / 4 : 0);
     entry->shaping_font = font;
@@ -178,8 +169,8 @@ class LineFonts {
 
   // FontCache::GetLastResortFallbackFont through the family matching, found
   // before the layout takes any reference into the caches. Set only with a
-  // system source: without one the old path draws the first font's .notdef
-  // (no font manager gives a fallback, skia_c.hpp), and so does the shaper.
+  // system source: without one the first font's .notdef is drawn (no font
+  // manager gives a fallback, skia_c.hpp).
   void set_last_resort(sk_sp<SkTypeface> face, SkTypeface* base) {
     last_resort_face_ = std::move(face);
     last_resort_base_ = base;
@@ -291,7 +282,6 @@ class LineFonts {
   const TextRasterPolicy& policy_;
   const UsedSizes& sizes_;
   const bool system_renderer_;
-  TextStyle flags_;
   std::deque<FontEntry> families_;
   std::deque<FontEntry> others_;
   // The small caps copies, by the font they copy.
@@ -1041,7 +1031,7 @@ struct FamilyFace {
 // The FontList's family entries (DESIGN-SHAPER 2.8): for each found face k
 // (an index into `base_faces`, not into `families`), the size and opsz
 // ComputeUsedSizes gives its family, and its instance at that opsz from the
-// same findTypefaces call and cloneTypeface cache as the old path (so the
+// same findTypefaces call and cloneTypeface cache as the primary's (so the
 // same SkTypeface). A face of no family in `sizes.faces`, or one whose
 // instance list has another count than `base_faces`, takes the primary's
 // size, opsz and instance. Every font argument list is noted here, before
@@ -1064,7 +1054,7 @@ std::vector<FamilyFace> FamilyFaces(
                       same_count ? base_faces[k].get() : faces[k].get(),
                       sizes.effective, sizes.opsz};
     if (!sizes.faces.empty() && same_count) {
-      // The family of the face, as the old path's family_of finds it.
+      // The family of the face: the entry of `sizes.faces` with its base.
       std::optional<size_t> index;
       for (size_t i = 0; !index && i < sizes.faces.size(); ++i) {
         if (sizes.faces[i]->uniqueID() == base_faces[k]->uniqueID()) {
@@ -1373,13 +1363,7 @@ hb_language_t ShapingLanguage(const std::string& lang) {
 
 FontResolution ResolveFontRequest(skiac_font_collection* c_collection,
                                   const skiac_text_request& request) {
-  const std::string_view lang(request.lang ? request.lang : "",
-                              request.lang ? request.lang_len : 0);
   FontResolution fonts;
-  if (!BlinkShaperOn()) {
-    fonts.lang = std::string(lang);
-    return fonts;
-  }
   fonts.lang = ResolvedLanguage(request);
   // A generic family takes the setting of the locale's script
   // (FontSelector::FamilyNameFromSettings), and the last family is the
@@ -1387,18 +1371,6 @@ FontResolution ResolveFontRequest(skiac_font_collection* c_collection,
   // -webkit-standard).
   fonts.families = LocaleFontFamilies(c_collection, fonts.lang, HostLanguage());
   return fonts;
-}
-
-void NoteTextCachesChange() {
-  g_text_caches_changes.fetch_add(1, std::memory_order_relaxed);
-}
-
-bool BlinkShaperOn() {
-  static const bool on = [] {
-    const char* value = getenv("NAPI_RS_CANVAS_SHAPER");
-    return !value || strcmp(value, "skparagraph") != 0;
-  }();
-  return on;
 }
 
 void LayOutLineBlink(skiac_font_collection* c_collection,
@@ -1450,14 +1422,13 @@ void LayOutLineBlink(skiac_font_collection* c_collection,
       (request.size_adjust_metric >= 0 && !(sizes.effective > 0))) {
     scratch.empty = true;
     *line = std::move(scratch);
-    g_accepted.fetch_add(1, std::memory_order_relaxed);
     return;
   }
   PreparedText prepared = PrepareText(request.text, request.text_len);
   // The system fallback source: CoreText's, with the system renderer and
-  // the installed fonts on (the old path's defaultFallback asks the same
-  // manager). Elsewhere there is none: a character no family has is drawn
-  // with the first family font's .notdef, as the old path draws it.
+  // the installed fonts on (the manager FontCollection::defaultFallback
+  // asks). Elsewhere there is none: a character no family has is drawn with
+  // the first family font's .notdef.
   bool system_source = false;
   sk_sp<SkTypeface> last_resort_face;
   sk_sp<SkTypeface> last_resort_base;
@@ -1488,8 +1459,6 @@ void LayOutLineBlink(skiac_font_collection* c_collection,
 
   // From here the layout holds references into the caches (HarfBuzz fonts,
   // the buffer): none may be dropped before it ends.
-  const uint64_t caches_changes =
-      g_text_caches_changes.load(std::memory_order_relaxed);
   sk_sp<SkUnicode>& unicode = GetTextCaches(c_collection).unicode;
   if (!unicode) {
     // Loads ICU's data on Windows before the first ICU call.
@@ -1523,8 +1492,7 @@ void LayOutLineBlink(skiac_font_collection* c_collection,
       });
   const bool rtl = request.direction == static_cast<int>(TextDirection::kRtl);
   const ItemList items = SegmentText(prepared, rtl, word_by_word);
-  const std::vector<hb_feature_t> features =
-      BlinkFeatures(request, /*default_chws=*/true);
+  const std::vector<hb_feature_t> features = BlinkFeatures(request);
   const hb_language_t language = ShapingLanguage(lang);
   const int han_script = HanScriptForLocale(lang);
   const char* case_map_locale = CaseMapLocale(lang);
@@ -1551,37 +1519,9 @@ void LayOutLineBlink(skiac_font_collection* c_collection,
 
   PlacedLine placed =
       PlaceItems(shaped, prepared, items.contains_rtl, items.rtl_base);
+  // Blink places the glyphs from the left edge.
   scratch.line_width = placed.line_width;
-  // Blink places the glyphs from the left edge: no skparagraph offsets.
-  scratch.paragraph_width = placed.line_width;
-  scratch.layout_width = placed.line_width;
-  scratch.line_baseline = 0;
-  scratch.letter_spacing_offset = 0;
   scratch.last_word_advance = placed.last_item_width;
   scratch.blink = std::move(placed.blink);
-  if (g_text_caches_changes.load(std::memory_order_relaxed) != caches_changes) {
-    g_cache_changes.fetch_add(1, std::memory_order_relaxed);
-  }
   *line = std::move(scratch);
-  g_accepted.fetch_add(1, std::memory_order_relaxed);
 }
-
-extern "C" {
-
-bool skiac_blink_shaper_on() {
-  return BlinkShaperOn();
-}
-
-void skiac_debug_shaper_stats(skiac_shaper_stats* stats, bool reset) {
-  stats->accepted = reset ? g_accepted.exchange(0, std::memory_order_relaxed)
-                          : g_accepted.load(std::memory_order_relaxed);
-  // No request is turned down since stage S9.
-  for (uint64_t& rejected : stats->rejected) {
-    rejected = 0;
-  }
-  stats->cache_changes =
-      reset ? g_cache_changes.exchange(0, std::memory_order_relaxed)
-            : g_cache_changes.load(std::memory_order_relaxed);
-}
-
-}  // extern "C"

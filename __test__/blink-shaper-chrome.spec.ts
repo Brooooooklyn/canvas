@@ -6,9 +6,9 @@
 // stage on; before it, the spec checks that it still differs (like
 // test.failing), so a row that moves is seen.
 //
-// S0a ran on the old path; S1 to S8 put the new path behind
-// NAPI_RS_CANVAS_SHAPER=blink. Since S9 the shaper is the default, so every
-// row whose stage has landed is checked.
+// S0a ran on the old path; S1 to S8 put the new path behind a switch. Since
+// S9 the shaper is the default (S10 removed the old path), so every row
+// whose stage has landed is checked.
 import './use-system-text-renderer'
 
 import { spawn, spawnSync } from 'node:child_process'
@@ -90,13 +90,12 @@ const DARWIN = process.platform === 'darwin'
 const CAPTURE_DARWIN = DARWIN && release().split('.')[0] === FIXTURE.darwin
 
 // The host-language tests run each host in a child process (the shaper reads
-// the host language and NAPI_RS_CANVAS_SHAPER once per process). A child
+// the host language once per process). A child
 // takes well under a second; one that runs longer than CHILD_TIMEOUT is
 // killed and fails its test with its stack (macOS `sample`), so a hang shows
 // where it is and does not stall the run until ava's 3 minute timeout.
 const CHILD_TIMEOUT = 20_000
 const INDEX_JS = JSON.stringify(join(__dirname, '..', 'index.js'))
-const BINDING_JS = JSON.stringify(join(__dirname, '..', 'js-binding.js'))
 const fontPath = (family: string) => join(__dirname, 'fonts', FIXTURE.fonts[family]!)
 
 // The stack of a running process: `sample`, or `sudo -n sample` where the
@@ -156,14 +155,13 @@ function runChild(t: ExecutionContext, script: string, env: Record<string, strin
 
 // The host language from LANGUAGE / LC_ALL / LC_MESSAGES / LANG on every OS
 // (NAPI_RS_CANVAS_TEST_POSIX_LANGUAGE=1), with `host` as the only setting.
-function hostEnv(shaper: string, host: Record<string, string>) {
+function hostEnv(host: Record<string, string>) {
   return {
     LANGUAGE: '',
     LC_ALL: '',
     LC_MESSAGES: '',
     LANG: '',
     ...host,
-    NAPI_RS_CANVAS_SHAPER: shaper,
     NAPI_RS_CANVAS_TEST_POSIX_LANGUAGE: '1',
   }
 }
@@ -554,8 +552,6 @@ test.serial('"inherit" follows the host language like Chrome', async (t) => {
     // Chrome 157 with -AppleLanguages (de): LoclProbe 76.6, DEU).
     [{ LANG: 'de_DE@euro' }, [76.59999084472656, 140, 120, 140, 8.595993041992188, 17.191986083984375]],
   ]
-  // The old path does not read the host language (dflt, no HanKerning).
-  const OLD = [50.69999694824219, 160, 160, 160, 8.595993041992188, 17.191986083984375]
   const fonts = Object.fromEntries(
     ['BSLocl', 'BSHalt', 'BSChws', 'BSLato', 'BSNKo'].map((family) => [family, fontPath(family)]),
   )
@@ -580,11 +576,11 @@ test.serial('"inherit" follows the host language like Chrome', async (t) => {
       })
     }
     console.log(JSON.stringify(out))`
-  const run = async (shaper: string, host: Record<string, string>) =>
-    JSON.parse(await runChild(t, script, hostEnv(shaper, host))) as Record<string, number[]>
+  const run = async (host: Record<string, string>) =>
+    JSON.parse(await runChild(t, script, hostEnv(host))) as Record<string, number[]>
   const close = (a: number[], b: number[]) => a.length === b.length && a.every((v, i) => Math.abs(v - b[i]) <= 1e-3)
   for (const [host, chrome] of HOSTS) {
-    const blink = await run('blink', host)
+    const blink = await run(host)
     for (const renderer of ['system', 'portable']) {
       t.true(
         close(blink[renderer], chrome),
@@ -592,27 +588,23 @@ test.serial('"inherit" follows the host language like Chrome', async (t) => {
       )
     }
   }
-  const old = await run('skparagraph', { LANGUAGE: 'tr' })
-  t.true(close(old.system, OLD), `old path: ${old.system}`)
 })
 
 // A line with a character no family draws (U+E000, with the portable
 // renderer: no system fallback source) keeps the host language the shaper
 // gives "inherit", as an explicit lang does: the rest of the line keeps the
-// host language's glyphs and case map. Before stage P2 the shaper turned
-// such a line down to the old path; now it draws the first font's .notdef
-// itself. [text width, width of U+E000 alone] per lang; the letter is the
-// difference.
+// host language's glyphs and case map: the shaper draws the first font's
+// .notdef for U+E000 (stage P2). [text width, width of U+E000 alone] per
+// lang; the letter is the difference.
 // LoclProbe "a" is 46.2 with tr (TRK locl), 82.1 with en (ENG), 50.7 with
 // none; Turkish small-caps "i" (dotted capital I, from BSNKo as Lato has
 // none) is 9.492, else 8.596 (Chrome 157 with -AppleLanguages (tr),
 // stages/S8/review-ci).
 test.serial('a line with a character no family draws keeps the host language', async (t) => {
-  t.timeout(3 * CHILD_TIMEOUT, 'two child processes')
+  t.timeout(2 * CHILD_TIMEOUT, 'one child process')
   const fonts = Object.fromEntries(['BSLocl', 'BSLato', 'BSNKo'].map((family) => [family, fontPath(family)]))
   const script = `
     const { createCanvas, GlobalFonts, setTextRenderer } = require(${INDEX_JS})
-    const binding = require(${BINDING_JS})
     for (const [family, file] of Object.entries(${JSON.stringify(fonts)})) GlobalFonts.registerFromPath(file, family)
     setTextRenderer('portable')
     const width = (font, text, lang, props) => {
@@ -629,40 +621,28 @@ test.serial('a line with a character no family draws keeps the host language', a
     ]) {
       out[name] = {}
       for (const lang of ['inherit', 'tr', 'en']) {
-        binding.__shaperStats(true)
         const alone = width(font, text, lang, props)
-        const accepted = JSON.parse(binding.__shaperStats(true)).rejected[5] === 0
         const line = width(font, text + '\\uE000', lang, props)
-        const rejected = JSON.parse(binding.__shaperStats(true)).rejected.some((n) => n > 0)
-        out[name][lang] = { alone, letter: line - width(font, '\\uE000', lang, props), accepted, rejected }
+        out[name][lang] = { alone, letter: line - width(font, '\\uE000', lang, props) }
       }
     }
     console.log(JSON.stringify(out))`
-  const run = async (shaper: string) =>
-    JSON.parse(await runChild(t, script, hostEnv(shaper, { LANGUAGE: 'tr' }))) as Record<
-      string,
-      Record<string, { alone: number; letter: number; accepted: boolean; rejected: boolean }>
-    >
+  const blink = JSON.parse(await runChild(t, script, hostEnv({ LANGUAGE: 'tr' }))) as Record<
+    string,
+    Record<string, { alone: number; letter: number }>
+  >
   const near = (a: number, b: number) => Math.abs(a - b) <= 1e-3
-  const EXPECTED: Record<string, { tr: number; en: number; none: number }> = {
-    locl: { tr: 46.19999694824219, en: 82.09999084472656, none: 50.69999694824219 },
-    caps: { tr: 9.491989135742188, en: 8.595993041992188, none: 8.595993041992188 },
+  const EXPECTED: Record<string, { tr: number; en: number }> = {
+    locl: { tr: 46.19999694824219, en: 82.09999084472656 },
+    caps: { tr: 9.491989135742188, en: 8.595993041992188 },
   }
-  const blink = await run('blink')
   for (const [name, expected] of Object.entries(EXPECTED)) {
     for (const lang of ['inherit', 'tr', 'en']) {
       const got = blink[name][lang]
-      t.true(got.accepted && !got.rejected, `${name} ${lang}: the shaper lays out the letter and the line`)
       const want = lang === 'en' ? expected.en : expected.tr
       t.true(near(got.alone, want), `${name} ${lang} alone: ${got.alone} (${want})`)
       t.true(near(got.letter, want), `${name} ${lang} in the line: ${got.letter} (${want})`)
     }
-  }
-  // The old path does not read the host language ("inherit" is no lang).
-  const old = await run('skparagraph')
-  for (const [name, expected] of Object.entries(EXPECTED)) {
-    t.true(near(old[name].inherit.letter, expected.none), `old path ${name}: ${old[name].inherit.letter}`)
-    t.true(near(old[name].tr.letter, expected.tr), `old path ${name} tr: ${old[name].tr.letter}`)
   }
 })
 
@@ -672,15 +652,13 @@ test.serial('a line with a character no family draws keeps the host language', a
 // description's generic family an installed family is the standard font, a
 // generic family sized at its own aspect; a -webkit-body that is not the
 // description's generic family is an installed family at the primary's
-// size. Portable renderer: before stage P2 the shaper turned a line with a
-// character no family has down to the old path; now it lays it out.
+// size. Portable renderer: a character no family has (stage P2).
 // "Times New Roman" (the portable standard font) is registered in case no
 // such font is installed; where one is (macOS, Windows) it takes the name.
 test.serial('a line with a character no family draws keeps the font sizes of the shaper', async (t) => {
   t.timeout(2 * CHILD_TIMEOUT, 'one child process')
   const script = `
     const { createCanvas, GlobalFonts, setTextRenderer } = require(${INDEX_JS})
-    const binding = require(${BINDING_JS})
     GlobalFonts.registerFromPath(${JSON.stringify(fontPath('BSLato'))}, 'BSLato')
     GlobalFonts.registerFromPath(${JSON.stringify(fontPath('BSSerif'))}, 'Times New Roman')
     setTextRenderer('portable')
@@ -691,26 +669,21 @@ test.serial('a line with a character no family draws keeps the font sizes of the
         ctx.font = font
         ctx.fontSizeAdjust = fontSizeAdjust
         const width = (text) => ctx.measureText(text).width
-        binding.__shaperStats(true)
         const alone = width('→')
-        const accepted = JSON.parse(binding.__shaperStats(true)).rejected[5] === 0
         const letter = width('→→') - width('→')
-        const rejected = JSON.parse(binding.__shaperStats(true)).rejected.some((n) => n > 0)
-        out.push({ font, fontSizeAdjust, alone, letter, accepted, rejected })
+        out.push({ font, fontSizeAdjust, alone, letter })
       }
     }
     console.log(JSON.stringify(out))`
-  const rows = JSON.parse(await runChild(t, script, { NAPI_RS_CANVAS_SHAPER: 'blink' })) as {
+  const rows = JSON.parse(await runChild(t, script, {})) as {
     font: string
     fontSizeAdjust: string
     alone: number
     letter: number
-    accepted: boolean
-    rejected: boolean
   }[]
-  for (const { font, fontSizeAdjust, alone, letter, accepted, rejected } of rows) {
+  t.is(rows.length, 6)
+  for (const { font, fontSizeAdjust, alone, letter } of rows) {
     const name = `${font} fontSizeAdjust ${fontSizeAdjust}`
-    t.true(accepted && !rejected, `${name}: the shaper lays out the arrow and the line`)
     t.true(Math.abs(alone - letter) <= 1e-3, `${name}: alone ${alone}, in the line ${letter}`)
   }
 })
@@ -774,7 +747,7 @@ test.serial('filter font units follow the lang like the text', async (t) => {
         ctx.fillRect(0, 0, 20, 20)
         return ctx.getImageData(30, 10, 1, 1).data[0]
       })))`
-    const reds = JSON.parse(await runChild(t, script, hostEnv('blink', host))) as number[]
+    const reds = JSON.parse(await runChild(t, script, hostEnv(host))) as number[]
     rows.forEach(([lang, font, unit, chrome], i) => {
       t.is(reds[i], chrome, `${JSON.stringify(host)} ${lang} ${font} 5${unit}`)
     })
@@ -848,7 +821,7 @@ test.serial('generic families follow the host language like Chrome', async (t) =
         if (lang) ctx.lang = lang
         return ctx.measureText('Ag').width
       })))`
-    const widths = JSON.parse(await runChild(t, script, hostEnv('blink', host))) as number[]
+    const widths = JSON.parse(await runChild(t, script, hostEnv(host))) as number[]
     rows.forEach(([lang, font, chrome], i) => {
       t.true(
         Math.abs(widths[i] - chrome) <= 1e-3,
@@ -886,7 +859,7 @@ test.serial('a registered face keeps a family that is also installed under -webk
     const installed = widths()
     GlobalFonts.registerFromPath(${JSON.stringify(fontPath('BSHan'))}, 'AppleMyungjo')
     console.log(JSON.stringify({ installed, registered: widths() }))`
-  const { installed, registered } = JSON.parse(await runChild(t, script, hostEnv('blink', { LANG: 'C' }))) as Record<
+  const { installed, registered } = JSON.parse(await runChild(t, script, hostEnv({ LANG: 'C' }))) as Record<
     string,
     number[]
   >
@@ -930,7 +903,7 @@ test.serial('a setAlias name keeps its family under -webkit-body', async (t) => 
     GlobalFonts.setAlias('Arial', 'Helvetica')
     const helvetica = width('40px Helvetica, -webkit-body', 'ja')
     console.log(JSON.stringify({ before, brand, helvetica }))`
-  const { before, brand, helvetica } = JSON.parse(await runChild(t, script, hostEnv('', { LANG: 'C' }))) as {
+  const { before, brand, helvetica } = JSON.parse(await runChild(t, script, hostEnv({ LANG: 'C' }))) as {
     before: number
     brand: number[]
     helvetica: number
@@ -969,7 +942,7 @@ test.serial('a setAlias call that adds no face keeps its name under -webkit-body
     const before = width()
     const set = GlobalFonts.setAlias('Arial', 'Arial')
     console.log(JSON.stringify({ before, set, after: width() }))`
-  const { before, set, after } = JSON.parse(await runChild(t, script, hostEnv('', { LANG: 'C' }))) as {
+  const { before, set, after } = JSON.parse(await runChild(t, script, hostEnv({ LANG: 'C' }))) as {
     before: number
     set: boolean
     after: number
@@ -1008,7 +981,7 @@ test.serial('a setAlias family under -webkit-body is sized as a generic family',
     const body = width('40px BSLato, -webkit-body, sans-serif')
     GlobalFonts.setAlias('Arial', 'serif')
     console.log(JSON.stringify({ body, serif: width('40px BSLato, serif, sans-serif') }))`
-  const { body, serif } = JSON.parse(await runChild(t, script, hostEnv('', { LANG: 'C' }))) as Record<string, number>
+  const { body, serif } = JSON.parse(await runChild(t, script, hostEnv({ LANG: 'C' }))) as Record<string, number>
   t.true(serif < 39, `serif: ${serif} (font-size-adjust sizes the alias)`)
   t.true(Math.abs(body - serif) <= 1e-3, `-webkit-body: ${body}, serif: ${serif}`)
 })

@@ -350,7 +350,7 @@ serialTest('stress: failed AVIF decodes do not leak', async (t) => {
 // ============================================================================
 // Text layout: the line cache, the shaper's HarfBuzz fonts and its system
 // fallback cache stay within their budgets
-// Exercises: LayOutLine / LayOutLineBlink (the default since stage S9) with
+// Exercises: LayOutLineBlink (the only text layout since stage S10) with
 // font-variation instances, family fallback and, on macOS, system fallback
 // Risk: a cache that keeps every font or line it saw (DESIGN-SHAPER.md 6.2)
 // ============================================================================

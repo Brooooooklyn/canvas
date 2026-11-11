@@ -470,12 +470,6 @@ jobs:
         env:
           RUN_STRESS_TESTS: 'true'
 
-      # The Blink shaper is the default since stage S9 (the run above). Until
-      # the old path goes (S10), its glyph dumps are compared with the old
-      # path's (NAPI_RS_CANVAS_SHAPER=skparagraph, __test__/shaper-diff.mjs).
-      - name: Compare the Blink shaper with the old path
-        run: yarn test:shaper-diff
-
       - name: Test failed
         if: ${{ failure() }}
         uses: actions/upload-artifact@v7
@@ -529,9 +523,6 @@ jobs:
       - name: Test bindings
         run: yarn test:ci
 
-      - name: Compare the Blink shaper with the old path
-        run: yarn test:shaper-diff
-
       - name: Test failed
         if: ${{ failure() }}
         uses: actions/upload-artifact@v7
@@ -583,9 +574,6 @@ jobs:
       - name: Test bindings
         # Use the checked-in Yarn bundle; newer Node images omit Yarn/Corepack.
         run: docker run --rm -v "$(pwd):/canvas" -w /canvas node:${{ matrix.node }}-slim node .yarn/releases/yarn-*.cjs test:ci
-
-      - name: Compare the Blink shaper with the old path
-        run: docker run --rm -v "$(pwd):/canvas" -w /canvas node:${{ matrix.node }}-slim node .yarn/releases/yarn-*.cjs test:shaper-diff
 
       - name: Test failed
         if: ${{ failure() }}
@@ -641,9 +629,6 @@ jobs:
         # Use the checked-in Yarn bundle; newer Node images omit Yarn/Corepack.
         run: docker run --rm -v "$(pwd):/canvas" -w /canvas node:${{ matrix.node }}-alpine node .yarn/releases/yarn-*.cjs test:ci
 
-      - name: Compare the Blink shaper with the old path
-        run: docker run --rm -v "$(pwd):/canvas" -w /canvas node:${{ matrix.node }}-alpine node .yarn/releases/yarn-*.cjs test:shaper-diff
-
       - name: Test failed
         if: ${{ failure() }}
         uses: actions/upload-artifact@v7
@@ -695,15 +680,6 @@ jobs:
           args: |
             sh -c "set -e && node .yarn/releases/yarn-*.cjs test:ci && ls -la"
 
-      - name: Compare the Blink shaper with the old path
-        uses: tj-actions/docker-run@v2
-        with:
-          image: node:${{ matrix.node }}-slim
-          name: test-aarch64-blink-${{ matrix.node }}
-          options: '--platform linux/arm64 -v ${{ github.workspace }}:/skia -w /skia'
-          args: |
-            sh -c "set -e && node .yarn/releases/yarn-*.cjs test:shaper-diff"
-
       - name: Test failed
         if: ${{ failure() }}
         uses: actions/upload-artifact@v7
@@ -754,15 +730,6 @@ jobs:
           options: '--platform linux/arm64 -v ${{ github.workspace }}:/skia -w /skia'
           args: |
             sh -c "set -e && node .yarn/releases/yarn-*.cjs test:ci"
-
-      - name: Compare the Blink shaper with the old path
-        uses: tj-actions/docker-run@v2
-        with:
-          image: node:lts-alpine
-          name: test-alpine-musl-blink
-          options: '--platform linux/arm64 -v ${{ github.workspace }}:/skia -w /skia'
-          args: |
-            sh -c "set -e && node .yarn/releases/yarn-*.cjs test:shaper-diff"
 
       - name: Test failed
         if: ${{ failure() }}
@@ -826,13 +793,6 @@ jobs:
 
       - name: Test bindings in Electron
         run: yarn e2e:electron
-
-      # The Blink shaper is the default since stage S9; the old path runs
-      # too until it goes (S10).
-      - name: Test bindings in Electron with the old text path
-        run: yarn e2e:electron
-        env:
-          NAPI_RS_CANVAS_SHAPER: skparagraph
 
   rust-test:
     name: stable - macOS - cargo - test

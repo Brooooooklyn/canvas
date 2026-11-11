@@ -50,11 +50,7 @@
 #include <include/utils/SkParsePath.h>
 #include <modules/skottie/include/Skottie.h>
 #include <modules/skparagraph/include/FontCollection.h>
-#include <modules/skparagraph/include/Paragraph.h>
-#include <modules/skparagraph/include/ParagraphBuilder.h>
 #include <modules/skparagraph/include/TypefaceFontProvider.h>
-#include <modules/skparagraph/src/ParagraphBuilderImpl.h>
-#include <modules/skparagraph/src/ParagraphImpl.h>
 #include <modules/skresources/include/SkResources.h>
 #include <modules/skunicode/include/SkUnicode_icu.h>
 #include <modules/svg/include/SkSVGDOM.h>
@@ -746,9 +742,8 @@ struct skiac_font_collection {
   std::set<uint32_t> system_font_ids;
   std::set<SkTypefaceID> system_typeface_ids;
   // text_words.cpp CanShapeWordByWord: whether a face's GPOS / GSUB lookups
-  // touch the space glyph, per typeface (cleared with the match caches).
-  std::map<SkTypefaceID, uint8_t> space_in_lookups;
-  // The same with the Blink shaper's space glyph (text_words.cpp).
+  // touch the space glyph (HarfBuzz's cmap), per typeface (cleared with the
+  // match caches).
   std::map<SkTypefaceID, uint8_t> hb_space_in_lookups;
   // text_metrics.cpp IsSystemTypeface: the answer per typeface. A typeface
   // ID is never reused, and the answer only changes with the system and
@@ -822,11 +817,8 @@ struct skiac_font_collection {
     collection->setAssetFontManager(font_mgr);
     collection->setDynamicFontManager(assets);
     collection->enableFontFallback();
-    // text.cpp keeps the laid out lines (TextCaches::lines), so a paragraph
-    // is only built for a line it does not have. skparagraph's own cache
-    // would keep up to 128 more paragraphs, each several times the bytes of
-    // a kept line (up to about 25x with fallback runs), and takes sizes and
-    // spacings within 1/4096 px for equal.
+    // text.cpp keeps the laid out lines (TextCaches::lines) and builds no
+    // paragraph: skparagraph's own cache stays off.
     collection->getParagraphCache()->turnOn(false);
 #if defined(__APPLE__)
     portable_font_mgr = font_mgr;
@@ -958,7 +950,6 @@ struct skiac_font_collection {
     prepareLookup();
     if (caches_dirty) {
       collection->clearCaches();
-      space_in_lookups.clear();
       hb_space_in_lookups.clear();
       system_typefaces.clear();
       caps_features.clear();
@@ -985,7 +976,6 @@ struct skiac_font_collection {
   void dropCachesIfOverBudget() {
     if (caches_over_budget) {
       collection->clearCaches();
-      space_in_lookups.clear();
       hb_space_in_lookups.clear();
       system_typefaces.clear();
       caps_features.clear();
@@ -1015,7 +1005,6 @@ struct skiac_font_collection {
 
     // Clear caches before swap
     collection->clearCaches();
-    space_in_lookups.clear();
     hb_space_in_lookups.clear();
     system_typefaces.clear();
     caps_features.clear();

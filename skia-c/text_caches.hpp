@@ -46,17 +46,10 @@ struct TextCaches {
     bool empty = false;
     // The width of Blink's advances.
     float line_width = 0;
-    // skparagraph's width, from which it places RTL text.
-    float paragraph_width = 0;
-    float layout_width = 0;
-    float line_baseline = 0;
-    float letter_spacing_offset = 0;
-    // The advance of the visually last word, for text without ink.
+    // The width of the visually last item (skiac_debug_text_line).
     float last_word_advance = 0;
-    // The glyphs where Blink puts them (text_raster.cpp CollectBlinkLine).
+    // The glyphs where Blink puts them (shaper.cpp LayOutLineBlink).
     BlinkLine blink;
-    // The words, byte ranges of the shaped text (MeasureBlinkInk).
-    std::vector<std::pair<size_t, size_t>> words;
     // MeasureBlinkInk's result by the left edge's float bits; the edge
     // depends on textAlign only through float rounding, so a line has one
     // or two.
@@ -89,7 +82,7 @@ struct TextCaches {
   // MeasurePrimaryFont by typeface, base typeface and the size's bits.
   std::map<std::tuple<SkTypefaceID, SkTypefaceID, uint32_t>, PrimaryFontMetrics>
       metrics;
-  // The SkUnicode every paragraph shares; skparagraph keeps no state in it.
+  // Made once before the first ICU call (it loads ICU's data on Windows).
   sk_sp<SkUnicode> unicode;
   // Kept within a budget of lines and about `line_bytes` bytes, in place of
   // skparagraph's ParagraphCache (turned off in skiac_font_collection).
@@ -118,10 +111,5 @@ PrimaryFontMetrics CachedPrimaryFont(skiac_font_collection* c_collection,
                                      SkTypeface* typeface,
                                      SkTypeface* base_typeface,
                                      float size);
-
-// Counts each drop of a TextCaches and each clear of one of its maps, which
-// end the references a layout holds into them (shaper.cpp checks that none
-// happens during a Blink layout).
-void NoteTextCachesChange();
 
 #endif  // SKIA_C_TEXT_CACHES_H

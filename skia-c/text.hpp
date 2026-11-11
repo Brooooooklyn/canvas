@@ -13,7 +13,7 @@
 #include "hb_api.h"
 #include "skia_c.hpp"
 
-// The families skparagraph should use for `request`, like Blink's
+// The families the shaper uses for `request`, like Blink's
 // FontFallbackList: each family of the font resolved to the spelling the
 // collection knows (case-insensitive, generic families through the platform
 // defaults) and, last, the standard font. Families that resolve to nothing
@@ -130,36 +130,16 @@ void FillFontMetrics(const PrimaryFontMetrics& metrics,
 // destroys it.
 hb_face_t* CreateHbFace(SkTypeface* typeface);
 
-// The canvas text preparation (PlainTextNode::NormalizeSpacesAndMaybeBidi
-// for a canvas): U+0009 to U+000D are spaces, U+2028 and U+2029 draw as
-// spaces and U+FFFC as a zero width space. Returns `text` itself, or the
-// prepared copy in `storage`.
-std::string_view PrepareCanvasText(std::string_view text, std::string* storage);
-
-// Blink's PlainTextNode::SegmentWord: the [start, end) byte ranges of the
-// words HarfBuzz shapes one by one (text_words.cpp).
-std::vector<std::pair<size_t, size_t>> SplitWords(std::string_view text);
-
-// The [start, end) byte ranges of `text` (UTF-8) whose characters Blink
-// gives no letter spacing (ShapeResultSpacing skips
-// Character::TreatAsZeroWidthSpace: the default ignorable code points, form
-// feed, carriage return and U+FFFC), in order, adjacent ones merged.
-// `piece_starts` are the byte starts of the pieces shaped on their own, in
-// order: a tag or variation selector above U+FFFF that starts one is spaced.
-std::vector<std::pair<size_t, size_t>> NoLetterSpacingRanges(
-    std::string_view text,
-    const std::vector<size_t>& piece_starts);
-
 // FontFallbackList::CanShapeWordByWord: false when the request turns on
 // kerning or ligatures and the first family with a space glyph has the
 // space in a GPOS (kerning) or GSUB (ligatures) lookup. `faces` are the
 // request's families' faces, in order. `space_glyph` looks the space up
-// (the Blink shaper: HarfBuzz's cmap); null for SkTypeface::unicharToGlyph.
+// (HarfBuzz's cmap).
 bool CanShapeWordByWord(skiac_font_collection* c_collection,
                         const std::vector<sk_sp<SkTypeface>>& faces,
                         const skiac_text_request& request,
                         SkGlyphID (*space_glyph)(skiac_font_collection*,
-                                                 SkTypeface*) = nullptr);
+                                                 SkTypeface*));
 
 // plain_text_node.cc NextWordEndIndex on the normalized UTF-16 text: the end
 // of the word that starts at `start`. `is_8bit`: the text is Blink's 8-bit
@@ -226,24 +206,6 @@ SyntheticStyle SynthesizeStyle(skiac_font_collection* c_collection,
                                SkTypeface* base,
                                const skiac_text_request& request);
 
-// A piece of a word skparagraph shapes on its own for font-variant-caps:
-// its text (case mapped for synthesized small caps), the variant caps whose
-// OpenType features it turns on, and whether it is drawn at the small caps
-// size (text_caps.cpp).
-struct CapsPiece {
-  std::string text;
-  int caps;
-  bool small;
-};
-
-// The pieces of `word` (UTF-8) for request.variant_caps, with `face` the
-// primary font: the word itself with the requested features when the face
-// has them, else its case runs.
-std::vector<CapsPiece> SplitCaps(skiac_font_collection* c_collection,
-                                 SkTypeface* face,
-                                 std::string_view word,
-                                 const skiac_text_request& request);
-
 // font-variant-caps per font, for the Blink shaper (text_caps.cpp): Blink's
 // OpenTypeCapsSupport of one font for request.variant_caps and a script.
 struct CapsSupport {
@@ -286,39 +248,22 @@ uint32_t NextCaseRun(const char16_t* text, uint32_t length, CaseRun* run);
 // CapsFeatureSettingsScopedOverlay: the OpenType features of a variant caps
 // value, put before `features` in Blink's order.
 void PrependCapsFeatures(std::vector<hb_feature_t>* features, int caps);
-// CaseMap::Locale of request.lang: "tr", "el", "lt", "nl", or root ("").
-const char* CaseMapLocale(const skiac_text_request& request);
-// CaseMap::Locale of a language tag (the shaper's LocaleOrDefault).
+// CaseMap::Locale of a language tag (the shaper's LocaleOrDefault): "tr",
+// "el", "lt", "nl", or root ("").
 const char* CaseMapLocale(std::string_view lang);
 // `text` upper or lower cased with ICU for `locale`.
 std::u16string MapCase(CaseMapIntend intend,
                        const char* locale,
                        const std::u16string& text);
 
-// How far each text blob of `paragraph`'s first line moves right to sit
-// where Blink draws it, in the order visit() and paint() give the blobs;
-// empty when none moves (text.cpp). TextLine puts each run after the runs
-// before it, counting a run whose clusters advance less than nothing
-// (negative letter or word spacing past their advances) as 0 wide; Blink
-// adds the advances as they are.
-std::vector<float> LineRunShifts(ParagraphImpl* paragraph);
-
-// Turns on the OpenType features of a variant caps value.
-void AddCapsFeatures(TextStyle* style, int caps);
-
-// Adds the OpenType features of `request` after the caps ones, in Blink's
-// order (FontFeatureRange::FromFontDescription): kern 0 for fontKerning
-// none, the font-variant-ligatures / textRendering / letterSpacing ligature
-// rules, font-variant-numeric, font-feature-settings, then
-// font-variant-position (text_styles.cpp).
-void AddBlinkFeatures(TextStyle* style, const skiac_text_request& request);
-
-// The same features as HarfBuzz features over the whole buffer, in the same
-// order (the Blink shaper's). With `default_chws` (the Blink shaper), Blink's
-// default `chws 1` after font-feature-settings unless they set `chws` or a
-// non-zero `halt` / `palt` (text-spacing-trim normal, font_features.cc).
-std::vector<hb_feature_t> BlinkFeatures(const skiac_text_request& request,
-                                        bool default_chws = false);
+// The OpenType features of `request` as HarfBuzz features over the whole
+// buffer, after the caps ones, in Blink's order
+// (FontFeatureRange::FromFontDescription): kern 0 for fontKerning none, the
+// font-variant-ligatures / textRendering / letterSpacing ligature rules,
+// font-variant-numeric, font-feature-settings, Blink's default `chws 1`
+// unless they set `chws` or a non-zero `halt` / `palt` (text-spacing-trim
+// normal, font_features.cc), then font-variant-position (text_styles.cpp).
+std::vector<hb_feature_t> BlinkFeatures(const skiac_text_request& request);
 
 // The synthesized small caps font size for a font of `size` px.
 float SmallCapsSize(float size);
