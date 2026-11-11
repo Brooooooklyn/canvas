@@ -93,11 +93,16 @@ test('convertSVGTextToPath keeps references past the SVG image cycle check budge
 // SVG2 <use href>.
 const XLINK = 'xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink"'
 function fanOut(k: number) {
-  let defs = '<g id="l0"/>'
+  return `${fanOutDefs(k)}<use href="#l${k}"/>`
+}
+
+// The <g> elements of fanOut, not drawn.
+function fanOutDefs(k: number, id = 'l') {
+  let defs = `<g id="${id}0"/>`
   for (let i = 1; i <= k; i++) {
-    defs += `<g id="l${i}">${`<use href="#l${i - 1}"/>`.repeat(8)}</g>`
+    defs += `<g id="${id}${i}">${`<use href="#${id}${i - 1}"/>`.repeat(8)}</g>`
   }
-  return `<defs>${defs}</defs><use href="#l${k}"/>`
+  return `<defs>${defs}</defs>`
 }
 
 // In a child process, killed after 20 s.
@@ -172,6 +177,28 @@ test('convertSVGTextToPath past the budget: an SVG2 href fan-out too big for SkS
   t.is(child.signal, null, 'timed out')
   t.is(child.status, 0, child.stderr)
   t.is(child.stdout, convertSVGTextToPath(`<svg ${XLINK} width="10" height="10">${body}</svg>`).toString())
+})
+
+// The work guard reads fill, stroke and clip-path values as SkSVG does: one
+// it does not parse keeps url(#p) or url(#big), which draw an 8^10 fan-out
+// through SVG2 href, so the renames are not made and the fan-out stays unread.
+test('convertSVGTextToPath past the budget: a value SkSVG does not parse keeps the reference before it', (t) => {
+  const defs =
+    fanOutDefs(10, 'm') +
+    '<defs><pattern id="p" width="1" height="1"><use href="#m10"/></pattern>' +
+    '<clipPath id="big"><use href="#m10"/></clipPath><clipPath id="small"><rect width="1" height="1"/></clipPath></defs>'
+  for (const attrs of [
+    'fill="url(#p)" style="fill:#invalid"',
+    'fill="url(#p)" style="fill:rgb(nope)"',
+    'fill="url(#p)" style="fill:url(#small) junk"',
+    'clip-path="url(#big)" style="clip-path:url(#small) x"',
+  ]) {
+    const child = convertInChild(
+      `<svg ${XLINK} width="10" height="10">${defs}<rect width="5" height="5" ${attrs}/>${fanOut(6)}</svg>`,
+    )
+    t.is(child.signal, null, `timed out: ${attrs}`)
+    t.is(child.status, 0, child.stderr)
+  }
 })
 
 // convertSVGTextToPath keeps the root's size, coordinates and transform:

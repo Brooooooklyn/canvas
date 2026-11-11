@@ -14,7 +14,9 @@
 //!   `xlink:href`, and any other `xlink:href` there is blanked. Main ignored
 //!   those references, so SkSVG may now draw much more (a `<use href>`
 //!   fan-out): the renames are made only when SkSVG's work and stack depth
-//!   stay bounded (`Cost`), else none is.
+//!   stay bounded (`Cost`), else none is. Fill, stroke, clip-path, mask and
+//!   filter values are read as SkSVGAttributeParser reads them; a fill or
+//!   stroke this cannot read makes the work unknown.
 //! - `<!ATTLIST>` declarations are blanked: expat applies their defaults,
 //!   roxmltree (so svg_doc) does not.
 //!
@@ -115,11 +117,22 @@ enum Paint {
 }
 
 /// A paint or reference as written, before ids are known.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 enum RawRef {
   Unset,
   Plain,
-  Url(String),
+  /// `url()`: its local id, None for another IRI.
+  Url(Option<String>),
+}
+
+/// What SkSVG makes of a fill or stroke value.
+#[derive(Debug, PartialEq, Eq)]
+enum PaintValue {
+  Set(RawRef),
+  /// Not parsed: the last value stays.
+  Kept,
+  /// A `url()` with a fallback colour this cannot read: set or kept.
+  Either(Option<String>),
 }
 
 /// An element SkSVG builds.
@@ -153,6 +166,8 @@ struct Model<'t> {
   els: Vec<El>,
   /// The elements a fill or stroke names, in any declaration.
   painted: Vec<u32>,
+  /// A fill or stroke this cannot tell is set: its cost is not known.
+  unknown: bool,
 }
 
 /// The QName at `range` in the text, when it spells `local` (unprefixed or
@@ -178,44 +193,293 @@ fn local_iri(value: &str) -> Option<&str> {
   (!id.is_empty()).then_some(id)
 }
 
-/// `url(#id)` as SkSVGAttributeParser::parseFuncIRI reads it.
-fn func_iri(value: &str) -> Option<&str> {
-  let ws = |c: char| c.is_ascii_whitespace();
-  let rest = value
-    .trim_start_matches(ws)
-    .strip_prefix("url")?
-    .trim_start_matches(ws)
-    .strip_prefix('(')?;
-  rest.contains(')').then_some(())?;
-  local_iri(rest)
+/// SkParseColor.cpp gColorNames, matched case sensitively.
+const COLOR_NAMES: &str = "aliceblue antiquewhite aqua aquamarine azure beige bisque black \
+  blanchedalmond blue blueviolet brown burlywood cadetblue chartreuse chocolate coral \
+  cornflowerblue cornsilk crimson cyan darkblue darkcyan darkgoldenrod darkgray darkgreen \
+  darkkhaki darkmagenta darkolivegreen darkorange darkorchid darkred darksalmon darkseagreen \
+  darkslateblue darkslategray darkturquoise darkviolet deeppink deepskyblue dimgray dodgerblue \
+  firebrick floralwhite forestgreen fuchsia gainsboro ghostwhite gold goldenrod gray green \
+  greenyellow honeydew hotpink indianred indigo ivory khaki lavender lavenderblush lawngreen \
+  lemonchiffon lightblue lightcoral lightcyan lightgoldenrodyellow lightgreen lightgrey \
+  lightpink lightsalmon lightseagreen lightskyblue lightslategray lightsteelblue lightyellow \
+  lime limegreen linen magenta maroon mediumaquamarine mediumblue mediumorchid mediumpurple \
+  mediumseagreen mediumslateblue mediumspringgreen mediumturquoise mediumvioletred \
+  midnightblue mintcream mistyrose moccasin navajowhite navy oldlace olive olivedrab orange \
+  orangered orchid palegoldenrod palegreen paleturquoise palevioletred papayawhip peachpuff \
+  peru pink plum powderblue purple red rosybrown royalblue saddlebrown salmon sandybrown \
+  seagreen seashell sienna silver skyblue slateblue slategray snow springgreen steelblue tan \
+  teal thistle tomato turquoise violet wheat white whitesmoke yellow yellowgreen";
+
+/// SkSVGAttributeParser's whitespace.
+fn is_ws(c: u8) -> bool {
+  (1..=32).contains(&c)
 }
 
-/// A fill or stroke value; None when SkSVG would not parse it (it keeps
-/// the value it had). A colour keyword not checked here counts as not
-/// parsed, so the element keeps inheriting: that only overcounts.
-fn paint(value: &str) -> Option<RawRef> {
-  let v = trim(value);
-  if v == "inherit" {
+/// A value read as SkSVGAttributeParser reads it. `Err` is a form this does
+/// not read (CSS escapes, `var()`, numbers strtod reads past a decimal).
+struct Parser<'v> {
+  s: &'v str,
+  at: usize,
+}
+
+type Known = Result<bool, ()>;
+
+impl Parser<'_> {
+  fn byte(&self, i: usize) -> Option<u8> {
+    self.s.as_bytes().get(i).copied()
+  }
+
+  fn skip_ws(&self, mut i: usize) -> usize {
+    while self.byte(i).is_some_and(is_ws) {
+      i += 1;
+    }
+    i
+  }
+
+  fn ws(&mut self) {
+    self.at = self.skip_ws(self.at);
+  }
+
+  /// parseSepToken.
+  fn sep(&mut self) -> bool {
+    let start = self.at;
+    while self
+      .byte(self.at)
+      .is_some_and(|c| is_ws(c) || c == b',' || c == b';')
+    {
+      self.at += 1;
+    }
+    self.at != start
+  }
+
+  fn token(&mut self, t: &str) -> bool {
+    let found = self.s[self.at..].starts_with(t);
+    if found {
+      self.at += t.len();
+    }
+    found
+  }
+
+  fn eos(&self) -> bool {
+    self.at == self.s.len()
+  }
+
+  fn digits(&self, i: usize) -> usize {
+    self.s.as_bytes()[i.min(self.s.len())..]
+      .iter()
+      .take_while(|c| c.is_ascii_digit())
+      .count()
+  }
+
+  /// SkParse::FindS32: where the int32 after whitespace ends.
+  fn find_s32(&self) -> Option<usize> {
+    let mut i = self.skip_ws(self.at);
+    let neg = self.byte(i) == Some(b'-');
+    i += neg as usize;
+    let n = self.digits(i);
+    let max = if neg { 1i64 << 31 } else { (1i64 << 31) - 1 };
+    let fits = self.s[i..i + n]
+      .bytes()
+      .try_fold(0i64, |v, c| {
+        Some(v * 10 + (c - b'0') as i64).filter(|&v| v <= max)
+      })
+      .is_some();
+    (n > 0 && fits).then_some(i + n)
+  }
+
+  /// SkParse::FindScalar (strtod): where the number after whitespace ends.
+  fn find_scalar(&self) -> Result<Option<usize>, ()> {
+    let mut i = self.skip_ws(self.at);
+    if matches!(self.byte(i), Some(b'+' | b'-')) {
+      i += 1;
+    }
+    let hex = self.byte(i) == Some(b'0') && matches!(self.byte(i + 1), Some(b'x' | b'X'));
+    if hex || matches!(self.byte(i), Some(b'i' | b'I' | b'n' | b'N')) {
+      return Err(());
+    }
+    let int = self.digits(i);
+    let frac = if self.byte(i + int) == Some(b'.') {
+      self.digits(i + int + 1)
+    } else {
+      0
+    };
+    if int + frac == 0 {
+      return Ok(None);
+    }
+    i += int
+      + if self.byte(i + int) == Some(b'.') {
+        1 + frac
+      } else {
+        0
+      };
+    if matches!(self.byte(i), Some(b'e' | b'E')) {
+      let sign = matches!(self.byte(i + 1), Some(b'+' | b'-')) as usize;
+      let e = self.digits(i + 1 + sign);
+      if e > 0 {
+        i += 1 + sign + e;
+      }
+    }
+    Ok(Some(i))
+  }
+
+  /// parseParenthesized: `prefix ( f )`, whitespace around each; the
+  /// position is kept only on a match.
+  fn parenthesized(&mut self, prefix: &str, f: impl FnOnce(&mut Self) -> Known) -> Known {
+    let start = self.at;
+    self.ws();
+    let mut found = self.token(prefix) && {
+      self.ws();
+      self.token("(")
+    };
+    if found {
+      self.ws();
+      found = f(self)? && {
+        self.ws();
+        self.token(")")
+      };
+    }
+    if !found {
+      self.at = start;
+    }
+    Ok(found)
+  }
+
+  /// parseColorComponentToken.
+  fn component(&mut self) -> Known {
+    if let Some(end) = self.find_s32()
+      && self.byte(end) != Some(b'.')
+    {
+      self.at = end + (self.byte(end) == Some(b'%')) as usize;
+      return Ok(true);
+    }
+    match self.find_scalar()? {
+      Some(end) if self.byte(end) == Some(b'%') => {
+        self.at = end + 1;
+        Ok(true)
+      }
+      _ => Ok(false),
+    }
+  }
+
+  /// The inside of rgb() (3) or rgba() (4).
+  fn components(&mut self, n: usize) -> Known {
+    for k in 0..n {
+      if k > 0 && !self.sep() {
+        return Ok(false);
+      }
+      let read = if k == 3 {
+        match self.find_scalar()? {
+          Some(end) => {
+            self.at = end;
+            true
+          }
+          None => false,
+        }
+      } else {
+        self.component()?
+      };
+      if !read {
+        return Ok(false);
+      }
+    }
+    Ok(true)
+  }
+
+  /// parseSVGColor: a hex or named colour, rgba(), rgb(), currentColor or
+  /// var().
+  fn color(&mut self) -> Known {
+    let rest = &self.s.as_bytes()[self.at..];
+    if rest.first() == Some(&b'#') {
+      let n = rest[1..]
+        .iter()
+        .take_while(|c| c.is_ascii_hexdigit())
+        .count();
+      if n == 3 || n == 6 {
+        self.at += 1 + n;
+        return Ok(true);
+      }
+    }
+    // A name is an ident token; no colour name has an escape, `-` or digit.
+    let ident = rest
+      .iter()
+      .take_while(|&&c| c.is_ascii_alphanumeric() || matches!(c, b'_' | b'-' | b'\\') || c >= 0x80)
+      .count();
+    if rest[..ident].contains(&b'\\') {
+      return Err(());
+    }
+    if COLOR_NAMES
+      .split_ascii_whitespace()
+      .any(|n| n.as_bytes() == &rest[..ident])
+    {
+      self.at += ident;
+      return Ok(true);
+    }
+    let read = self.parenthesized("rgba", |p| p.components(4))?
+      || self.parenthesized("rgb", |p| p.components(3))?
+      || self.token("currentColor")
+      || self.parenthesized("var", |_| Err(()))?;
+    Ok(read)
+  }
+
+  /// parseFuncIRI: `url(#id)`'s id, None for another IRI.
+  fn func_iri(&mut self) -> Option<Option<String>> {
+    let mut iri = None;
+    let found = self.parenthesized("url", |p| {
+      p.ws();
+      let local = p.token("#");
+      let start = p.at;
+      p.at += p.s[start..].find(')').unwrap_or(p.s.len() - start);
+      let read = p.at != start;
+      if read {
+        iri = Some(local.then(|| p.s[start..p.at].to_owned()));
+      }
+      Ok(read)
+    });
+    if found == Ok(true) { iri } else { None }
+  }
+}
+
+/// A fill or stroke value, as SkSVG's parse<SkSVGPaint> reads it.
+fn paint(value: &str) -> PaintValue {
+  if value == "inherit" {
+    return PaintValue::Set(RawRef::Unset);
+  }
+  let mut p = Parser { s: value, at: 0 };
+  p.ws();
+  let v = match p.color() {
+    Ok(true) => RawRef::Plain,
+    Ok(false) if p.token("none") => RawRef::Plain,
+    Ok(false) => {
+      let Some(iri) = p.func_iri() else {
+        return PaintValue::Kept;
+      };
+      p.ws();
+      if p.color().is_err() {
+        return PaintValue::Either(iri);
+      }
+      RawRef::Url(iri)
+    }
+    // A colour or nothing: keeping the last value costs as much or more.
+    Err(()) => return PaintValue::Kept,
+  };
+  p.ws();
+  if p.eos() {
+    PaintValue::Set(v)
+  } else {
+    PaintValue::Kept
+  }
+}
+
+/// clip-path, mask, filter, as parse<SkSVGFuncIRI> reads them; None when it
+/// does not (the last value stays).
+fn reference(value: &str) -> Option<RawRef> {
+  if value == "inherit" || value == "none" {
     return Some(RawRef::Unset);
   }
-  if v.starts_with("url") {
-    return func_iri(v).map(|id| RawRef::Url(id.to_owned()));
-  }
-  let plain = v == "none"
-    || v == "currentColor"
-    || v.starts_with('#')
-    || v.starts_with("rgb(")
-    || v.starts_with("rgba(");
-  plain.then_some(RawRef::Plain)
-}
-
-/// clip-path, mask, filter.
-fn reference(value: &str) -> Option<RawRef> {
-  let v = trim(value);
-  match v {
-    "inherit" | "none" => Some(RawRef::Unset),
-    _ => func_iri(v).map(|id| RawRef::Url(id.to_owned())),
-  }
+  let mut p = Parser { s: value, at: 0 };
+  let iri = p.func_iri()?;
+  p.eos().then_some(RawRef::Url(iri))
 }
 
 #[derive(Default)]
@@ -227,35 +491,45 @@ struct Refs {
   mask: Option<RawRef>,
   filter: Option<RawRef>,
   href: [Option<String>; 2],
-  /// Every `url(#id)` of a fill or stroke, also one a later one replaces.
+  /// Every `url(#id)` of a fill or stroke SkSVG may take, also one a later
+  /// one replaces.
   paints: Vec<String>,
+  /// A fill or stroke this cannot tell is set.
+  unknown: bool,
 }
 
 impl Refs {
   /// One attribute or style="" declaration, as SkSVG sets it: a value it
   /// does not parse keeps the last one.
   fn set(&mut self, name: &str, value: &str) {
-    let slot = match name {
+    let (slot, v) = match name {
       "fill" | "stroke" => {
-        let p = paint(value);
-        if let Some(RawRef::Url(id)) = &p {
-          self.paints.push(id.clone());
+        let slot = if name == "fill" {
+          &mut self.fill
+        } else {
+          &mut self.stroke
+        };
+        match paint(value) {
+          PaintValue::Set(v) => {
+            if let RawRef::Url(Some(id)) = &v {
+              self.paints.push(id.clone());
+            }
+            (slot, Some(v))
+          }
+          PaintValue::Kept => return,
+          PaintValue::Either(iri) => {
+            self.paints.extend(iri);
+            self.unknown = true;
+            return;
+          }
         }
-        (
-          if name == "fill" {
-            &mut self.fill
-          } else {
-            &mut self.stroke
-          },
-          p,
-        )
       }
       "clip-path" => (&mut self.clip, reference(value)),
       "mask" => (&mut self.mask, reference(value)),
       "filter" => (&mut self.filter, reference(value)),
       _ => return,
     };
-    if let (slot, Some(v)) = slot {
+    if let Some(v) = v {
       *slot = Some(v);
     }
   }
@@ -305,7 +579,7 @@ impl<'t> Model<'t> {
               if n.is_empty() {
                 break;
               }
-              r.set(n, v);
+              r.set(n, trim(v));
             }
           }
           "d" | "points" if tag == Tag::Shape => own = a.value.len() as u64,
@@ -370,15 +644,16 @@ impl<'t> Model<'t> {
     }
     let find = |id: &str| ids.get(id).copied();
     let target = |r: &Option<RawRef>| match r {
-      Some(RawRef::Url(id)) => find(id),
+      Some(RawRef::Url(id)) => id.as_deref().and_then(find),
       _ => None,
     };
     let paint = |r: &Option<RawRef>| match r {
       None | Some(RawRef::Unset) => Paint::Inherit,
       Some(RawRef::Plain) => Paint::Plain,
-      Some(RawRef::Url(id)) => Paint::Url(find(id)),
+      Some(RawRef::Url(id)) => Paint::Url(id.as_deref().and_then(find)),
     };
     let mut painted = Vec::new();
+    let unknown = refs.iter().any(|r| r.unknown);
     for (e, r) in els.iter_mut().zip(&refs) {
       e.fill = paint(&r.fill);
       e.stroke = paint(&r.stroke);
@@ -388,7 +663,12 @@ impl<'t> Model<'t> {
       e.href = [0, 1].map(|v| r.href[v].as_deref().and_then(find));
       painted.extend(r.paints.iter().filter_map(|id| find(id)));
     }
-    Model { text, els, painted }
+    Model {
+      text,
+      els,
+      painted,
+      unknown,
+    }
   }
 
   fn tag(&self, i: u32) -> Tag {
@@ -955,7 +1235,7 @@ pub(crate) fn clean(doc: &Doc, text: &str) -> Result<Option<Vec<u8>>, ()> {
     }
     b
   };
-  let renames = m.els.iter().any(|e| e.chosen != e.xlink);
+  let renames = !m.unknown && m.els.iter().any(|e| e.chosen != e.xlink);
   let mut edits = None;
   if renames {
     let new_breaks = broken(1);
@@ -1154,6 +1434,98 @@ mod tests {
     // A reference cycle the renames make: not renamed.
     let body = r##"<g id="g"><rect width="2" height="2"/><use href="#g"/></g>"##;
     assert_eq!(cleaned(body), body);
+  }
+
+  #[test]
+  fn paints_are_read_as_sksvg_reads_them() {
+    use PaintValue::{Either, Kept, Set};
+    let url = |id: &str| Set(RawRef::Url(Some(id.to_owned())));
+    for v in [
+      "red",
+      " #abc ",
+      "#a0b1c2",
+      "none",
+      "currentColor",
+      "rgb(1, 2,3)",
+      "rgb( 10% ,20.5% 300 )",
+      "rgba(1,2,3,.5)",
+    ] {
+      assert_eq!(paint(v), Set(RawRef::Plain), "{v}");
+    }
+    for v in [
+      "#invalid",
+      "#abcd",
+      "rgb(nope)",
+      "rgb(1.5,2,3)",
+      "Red",
+      "red blue",
+      "url(#p) junk",
+      "url(#p",
+      "url(#)",
+      "",
+      " inherit",
+      // Escapes and var(): a colour or nothing.
+      "r\\65 d",
+      "var(--c)",
+      "rgb(0x1,0,0)",
+    ] {
+      assert_eq!(paint(v), Kept, "{v}");
+    }
+    assert_eq!(paint("inherit"), Set(RawRef::Unset));
+    assert_eq!(paint("url(#p)"), url("p"));
+    assert_eq!(paint(" url ( #p) red "), url("p"));
+    assert_eq!(paint("url(#p) rgba(1,2,3,1e-1)"), url("p"));
+    assert_eq!(paint("url(#p )"), url("p "));
+    assert_eq!(paint("url(p.svg#q)"), Set(RawRef::Url(None)));
+    assert_eq!(paint("url(#p) var(--c)"), Either(Some("p".to_owned())));
+    assert_eq!(
+      reference("url(#c)"),
+      Some(RawRef::Url(Some("c".to_owned())))
+    );
+    assert_eq!(
+      reference(" url(#c)"),
+      Some(RawRef::Url(Some("c".to_owned())))
+    );
+    assert_eq!(reference("none"), Some(RawRef::Unset));
+    assert_eq!(reference("url(#c) "), None);
+    assert_eq!(reference("url(#c) x"), None);
+    assert_eq!(reference(" none"), None);
+  }
+
+  #[test]
+  fn a_value_sksvg_does_not_parse_keeps_the_last_in_the_work() {
+    // p paints an 8^10 fan-out; SkSVG keeps url(#p) past each of these.
+    let defs = format!(
+      r##"<defs>{}<pattern id="p" width="1" height="1"><use href="#m10"/></pattern><pattern id="q" width="1" height="1"><rect width="1" height="1"/></pattern><clipPath id="big"><use href="#m10"/></clipPath><clipPath id="small"><rect/></clipPath></defs>"##,
+      fan_out(8, 10)
+        .replace("l", "m")
+        .trim_start_matches("<defs>")
+        .split("</defs>")
+        .next()
+        .unwrap()
+    );
+    let tail = r##"<rect id="r"/><use href="#r"/>"##;
+    for rect in [
+      r#"fill="url(#p)" style="fill:#invalid""#,
+      r#"fill="url(#p)" style="fill:rgb(nope)""#,
+      r#"fill="url(#p)" style="fill:url(#q) junk""#,
+      r##"style="stroke:url(#p)" stroke="#abcd""##,
+      r#"clip-path="url(#big)" style="clip-path:url(#small) x""#,
+      // url(#q) or url(#p): not known.
+      r#"fill="url(#p)" style="fill:url(#q) var(--c)""#,
+    ] {
+      let body = format!("{defs}<rect width=\"5\" height=\"5\" {rect}/>{tail}");
+      assert_eq!(cleaned(&body), body, "{rect}");
+    }
+    // A value SkSVG takes replaces url(#p): renamed.
+    for rect in [
+      r#"fill="url(#p)" style="fill:red""#,
+      r#"fill="url(#p)" style="fill:url(#q) red""#,
+      r#"clip-path="url(#big)" style="clip-path:url(#small)""#,
+    ] {
+      let body = format!("{defs}<rect width=\"5\" height=\"5\" {rect}/>{tail}");
+      assert!(!cleaned(&body).contains(" href="), "{rect}");
+    }
   }
 
   #[test]
