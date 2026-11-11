@@ -59,6 +59,7 @@
 #include <modules/svg/include/SkSVGSVG.h>
 #include <src/core/SkFontDescriptor.h>
 #include <src/core/SkRectPriv.h>
+#include <src/core/SkStrikeCache.h>
 #include <src/ports/SkFontMgr_custom.h>
 #include <src/shaders/SkShaderBase.h>
 #include <src/text/GlyphRun.h>
@@ -217,8 +218,7 @@ struct RegisteredFont {
   // the next rebuild tries again.
   sk_sp<SkTypeface> typeface;
   // The face each renderer mode made ([0] portable, [1] system), so a switch
-  // back reuses it: a switch makes no face twice, and the retired providers
-  // hold no more faces than the two modes have.
+  // back reuses it: a switch makes no face twice.
   sk_sp<SkTypeface> mode_typefaces[2];
   std::vector<std::string> aliases;  // All aliases for this font
   // When each alias was registered (parallel to aliases). A rebuild
@@ -686,8 +686,6 @@ struct skiac_font_collection {
   // Registered fonts are made by MakeCanvasTypeface.
   sk_sp<SkFontMgr> font_mgr;
   sk_sp<TypefaceFontProviderCustom> assets;
-  // Keep old providers alive to avoid destruction issues
-  std::vector<sk_sp<TypefaceFontProviderCustom>> retired_assets;
   // Track setAlias mappings for rebuild, with the registration order of the
   // call: rebuildAssets replays them between the font registrations, so an
   // alias of an alias finds the alias it names, and a font registered under
@@ -801,8 +799,8 @@ struct skiac_font_collection {
   // fonts; FontCollection asks it after them (its test font manager).
   sk_sp<SkFontMgr> system_ui;
   std::set<SkTypefaceID> system_ui_ids;
-  // Each mode's installed font managers, made once: the retired providers
-  // keep the managers they had, so a new one per switch would add up.
+  // Each mode's installed font managers, made once: a new one per switch
+  // would scan the installed fonts again and make new faces for them.
   sk_sp<SkFontMgr> portable_font_mgr;
   sk_sp<SkFontMgr> coretext_font_mgr;
   sk_sp<SkFontMgr> coretext_system_ui;
@@ -988,9 +986,10 @@ struct skiac_font_collection {
     layout_font_arguments.clear();
   }
 
-  // Rebuild the dynamic font provider with only remaining fonts
-  // Since sk_sp is reference-counted, old providers stay alive as long as any
-  // typeface from them is still in use. We can safely clear retired_assets.
+  // Rebuild the dynamic font provider with only remaining fonts. The old
+  // provider is freed at the swap: a face holds no reference to its
+  // provider, and whatever still uses the old provider (an SVG document)
+  // holds its own reference.
   // `relist_installed` (a renderer switch, macOS): the installed fonts of the
   // old mode give their place to the current mode's, registered where the
   // first of the old ones was.
@@ -1144,33 +1143,14 @@ struct skiac_font_collection {
 #endif
     system_font_ids = std::move(kept_system_font_ids);
 
-    // IMPORTANT: Font Provider Lifecycle Management
-    //
-    // Old providers must be kept alive because:
-    // - Skia typefaces hold references to their parent provider
-    // - If provider is destroyed while typefaces are in use, crash occurs
-    // - Typefaces may be held by Paragraphs, Pictures, or cached renders
-    //
-    // Current approach: Fixed-size FIFO buffer of retired providers
-    // - Cap of 1000 handles most real-world scenarios
-    // - Memory impact is minimal (providers contain metadata, not font data)
-    //
-    // LIMITATION: If an application:
-    // 1. Performs 1000+ font removal operations, AND
-    // 2. Keeps references to typefaces from the oldest removals
-    // Then a use-after-free crash can occur.
-    //
-    // This is acceptable for typical usage but may need ref-counting
-    // for heavy font manipulation utilities.
-    static constexpr size_t kMaxRetiredAssets = 1000;
-    if (retired_assets.size() >= kMaxRetiredAssets) {
-      retired_assets.erase(retired_assets.begin());  // Remove oldest
-    }
-    retired_assets.push_back(assets);
-
     // Swap to new provider
     assets = new_assets;
     collection->setDynamicFontManager(assets);
+    // Skia's glyph cache holds the faces of the fonts drawn or measured
+    // (SkStrike -> SkStrikeSpec -> SkTypeface), so a removed font and its
+    // data would stay until 2048 strikes push it out. The text caches were
+    // dropped above; the glyphs go with them.
+    SkStrikeCache::GlobalStrikeCache()->purgeAll();
   }
 
   // setTextRenderer(): every font is made again for the new mode, and

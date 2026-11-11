@@ -4668,7 +4668,7 @@ size_t skiac_font_collection_unregister(
         }
       }
     }
-    // Rebuild provider with remaining fonts (old provider is kept alive)
+    // Rebuild provider with remaining fonts (the old provider is freed)
     c_font_collection->rebuildAssets();
     return 1;
   }
