@@ -20,9 +20,9 @@
 //!   SkSVG may follow, so a value SkSVG parses in a way this module does
 //!   not model cannot hide a reference from it.
 //! - `<!ATTLIST>` declarations are blanked: expat applies their defaults,
-//!   roxmltree (so svg_doc) does not. One that may hide content (display,
-//!   visibility, style) is blanked only when `Graph` bounds the whole
-//!   document; else the document is left as it is.
+//!   roxmltree (so svg_doc) does not. Any default may hide content (display,
+//!   an empty viewBox, a pattern width of 0), so they are blanked only when
+//!   `Graph` bounds the whole document; else the document is left as it is.
 //!
 //! Every other byte is kept. What else svg_doc reads that SkSVG does not
 //! (`<style>`, `<symbol>`, `<switch>`, font-family lists, Blink's rules for
@@ -1590,24 +1590,16 @@ fn attlists(text: &str, end: usize) -> Vec<Edit> {
   edits
 }
 
-/// Whether an `<!ATTLIST>` declaration may hide content (a default
-/// display, visibility or style): blanking it may make SkSVG draw more.
-fn may_hide(decl: &str) -> bool {
-  ["display", "visibility", "style"]
-    .iter()
-    .any(|w| decl.contains(w))
-}
-
 /// The document for SkSVG: `Ok(None)` when it needs no edit, `Err` when a
 /// pattern cycle SkSVG would loop on cannot be broken.
 pub(crate) fn clean(doc: &Doc, text: &str) -> Result<Option<Vec<u8>>, ()> {
   let sk = Sk::read(doc, text);
   let scan = Scan::new(doc);
   let attl = attlists(text, doc.nodes[doc.root].start);
-  let hides = attl.iter().any(|e| may_hide(&text[e.range.clone()]));
+  // Blanking an ATTLIST may make SkSVG draw content it skipped.
+  let hides = !attl.is_empty();
   // Whether SkSVG's added work and depth stay within the limits: what the
-  // renames add (`renames`), and the whole document when an ATTLIST that
-  // may hide content goes.
+  // renames add (`renames`), and the whole document when an ATTLIST goes.
   let bounded = |variant: usize, cut: &[bool], renames: bool| {
     if scan.unknown {
       return false;
@@ -2035,17 +2027,42 @@ mod tests {
   }
 
   #[test]
-  fn an_attlist_that_may_hide_content_goes_only_when_bounded() {
-    let decl = r#"<!ATTLIST g display CDATA "none">"#;
-    let text = |body: &str| format!(r#"<!DOCTYPE svg [{decl}]><svg {X}>{body}</svg>"#);
-    let small = text(r#"<g><rect/></g>"#);
-    let doc = Doc::parse(&small).unwrap();
-    let out = String::from_utf8(clean(&doc, &small).unwrap().unwrap()).unwrap();
-    assert_eq!(out, small.replace(decl, &" ".repeat(decl.len())));
-    // An 8^10 fan-out it hides: left as it is.
-    let big = text(&fan_out(8, 10).replace(" href=", " xlink:href="));
-    let doc = Doc::parse(&big).unwrap();
-    assert_eq!(clean(&doc, &big), Ok(None));
+  fn an_attlist_goes_only_when_the_document_is_bounded() {
+    // Each default hides an 8^10 fan-out from SkSVG: display, an empty
+    // viewBox (SkSVGSVG::onPrepareToRender), a pattern width of 0
+    // that stops p from taking q's (SkSVGPattern::onAsPaint) (Codex round
+    // 3).
+    let fan = fan_out(8, 10).replace(" href=", " xlink:href=");
+    let pattern = format!(
+      r##"<defs><pattern id="q" width="1" height="1"/><pattern id="p" xlink:href="#q">{fan}</pattern></defs><rect fill="url(#p)"/>"##
+    );
+    for (decl, small, big) in [
+      (
+        r#"<!ATTLIST g display CDATA "none">"#,
+        r#"<g><rect/></g>"#.to_owned(),
+        fan.clone(),
+      ),
+      (
+        r#"<!ATTLIST svg viewBox CDATA "0 0 0 0">"#,
+        r#"<svg><rect/></svg>"#.to_owned(),
+        format!("<svg>{fan}</svg>"),
+      ),
+      (
+        r#"<!ATTLIST pattern width CDATA "0">"#,
+        r##"<pattern id="q" width="1" height="1"/><pattern id="p" xlink:href="#q"><rect/></pattern><rect fill="url(#p)"/>"##.to_owned(),
+        pattern,
+      ),
+    ] {
+      let text = |body: &str| format!(r#"<!DOCTYPE svg [{decl}]><svg {X}>{body}</svg>"#);
+      let small = text(&small);
+      let doc = Doc::parse(&small).unwrap();
+      let out = String::from_utf8(clean(&doc, &small).unwrap().unwrap()).unwrap();
+      assert_eq!(out, small.replace(decl, &" ".repeat(decl.len())), "{decl}");
+      // Left as it is.
+      let big = text(&big);
+      let doc = Doc::parse(&big).unwrap();
+      assert_eq!(clean(&doc, &big), Ok(None), "{decl}");
+    }
   }
 
   #[test]

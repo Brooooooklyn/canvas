@@ -281,6 +281,30 @@ test('convertSVGTextToPath past the budget: <use href> markers in a clipped grou
   t.is(child.stdout, convertInChild(svg(dots.replaceAll(' href=', ' xlink:href='))).stdout)
 })
 
+// expat applies <!ATTLIST> defaults, svg_doc does not, so they are blanked.
+// A default may hide content from SkSVG (an empty viewBox, a pattern width
+// of 0 that stops p from taking q's): blanked, SkSVG would draw the 8^10
+// xlink:href fan-out they hide.
+// Kept, as the whole document is too big for SkSVG.
+test('convertSVGTextToPath past the budget: an ATTLIST default that hides a fan-out is kept', (t) => {
+  const fan = `${fanOutDefs(10, 'm')}<use href="#m10"/>`.replaceAll(' href=', ' xlink:href=')
+  for (const [decl, body] of [
+    ['<!ATTLIST svg viewBox CDATA "0 0 0 0">', `<svg>${fan}</svg>`],
+    [
+      '<!ATTLIST pattern width CDATA "0">',
+      `<defs><pattern id="q" width="1" height="1"/><pattern id="p" xlink:href="#q">${fan}</pattern></defs>` +
+        '<rect width="5" height="5" fill="url(#p)"/>',
+    ],
+  ]) {
+    const child = convertInChild(
+      `<!DOCTYPE svg [${decl}]><svg ${XLINK} width="10" height="10" viewBox="0 0 10 10">${body}${fanOut(6)}</svg>`,
+    )
+    t.is(child.signal, null, `timed out: ${decl}`)
+    t.is(child.status, 0, child.stderr)
+    t.true(child.stdout.includes('<svg'))
+  }
+})
+
 // SkSVG reads a nested style="style:fill:url(#c)": the pattern c it paints
 // runs into the cycle a -> a, which is broken.
 test('convertSVGTextToPath past the budget: a pattern a nested style paints is walked', (t) => {
