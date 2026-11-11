@@ -19,10 +19,15 @@
 // defaults) and, last, the standard font. Families that resolve to nothing
 // are left out. `generic`, when given, gets for each resolved family whether
 // it came through the font selector as a generic family (the standard font
-// too) rather than by name.
-std::vector<SkString> ResolveFontFamilies(skiac_font_collection* c_collection,
-                                          const skiac_text_request& request,
-                                          std::vector<bool>* generic = nullptr);
+// too) rather than by name. `locale`, when given, holds the font settings
+// of the locale's script to use in place of the common ones
+// (LocaleFontFamilies).
+struct LocaleFamilies;
+std::vector<SkString> ResolveFontFamilies(
+    skiac_font_collection* c_collection,
+    const skiac_text_request& request,
+    std::vector<bool>* generic = nullptr,
+    const LocaleFamilies* locale = nullptr);
 
 // FontCache::GetLastResortFallbackFont's family for `request`: on macOS with
 // the system renderer Times (else Lucida Grande); empty when none resolves
@@ -30,16 +35,40 @@ std::vector<SkString> ResolveFontFamilies(skiac_font_collection* c_collection,
 std::string LastResortFamily(skiac_font_collection* c_collection,
                              const skiac_text_request& request);
 
-// The standard font of the request's language, where it is not the common
-// one: FontFallbackList::GetFontData's -webkit-standard, which
-// FontSelector::FamilyNameFromSettings takes from the settings for
-// LocaleOrDefault's script (GenericFontFamilySettings::Standard). On macOS
-// with the system renderer, for a lang whose script is Japanese, Korean,
-// Simplified or Traditional Han, or Devanagari; else empty, also for none or
-// "inherit" (font_families.cpp). ResolveFontFamilies does not use it yet: its
-// standard font is the common one (stage S8).
+// The standard font of a locale (`lang`, a language tag; the shaper passes
+// LocaleOrDefault's), where it is not the common one:
+// FontFallbackList::GetFontData's -webkit-standard, which
+// FontSelector::FamilyNameFromSettings takes from the settings for the
+// locale's script (GenericFontFamilySettings::Standard). On macOS with the
+// system renderer, for a locale whose script is Japanese, Korean, Simplified
+// or Traditional Han, or Devanagari, and is not the script of the host's UI
+// language `host_language` (Chrome has no per-script default for that one);
+// else empty (font_families.cpp).
 std::string LocaleStandardFamily(skiac_font_collection* c_collection,
-                                 const skiac_text_request& request);
+                                 std::string_view lang,
+                                 std::string_view host_language);
+
+// The generic font family settings of a locale's script
+// (GenericFontFamilySettings: FontSelector::FamilyNameFromSettings takes
+// Serif(script), SansSerif(script), ... for a generic family, and
+// Standard(script) for the description's -webkit-body): the script's own
+// default where Chrome has one, else the common entry of the host's UI
+// language `host_language` (its locale_settings_mac_<ui>.xtb, macOS); an
+// empty entry is the en common setting. The same scripts and host rule as
+// LocaleStandardFamily (font_families.cpp).
+struct LocaleFamilies {
+  // Standard(script), already resolved: LocaleStandardFamily, else the
+  // host's common standard font; empty for the en one.
+  std::string standard;
+  // By skiac_font_family::generic (1 serif ... 8 math): the settings family
+  // name, looked up like the common one (SettingsFamily). For -webkit-body
+  // (as a family that is not the description's generic family) the common
+  // standard font of the host.
+  std::string generic[9];
+};
+LocaleFamilies LocaleFontFamilies(skiac_font_collection* c_collection,
+                                  std::string_view lang,
+                                  std::string_view host_language);
 
 // LayoutLocale::GetScriptForHan of `lang` (a UScriptCode: Katakana or
 // Hiragana, Hangul, Simplified or Traditional Han), on every OS.
@@ -176,10 +205,13 @@ struct UsedSizes {
 };
 
 // `base_faces` are the request's families' faces before font arguments
-// (FontCollection::findTypefaces of `families`).
+// (FontCollection::findTypefaces of `families`); `locale`, when given, is the
+// locale's font settings those families were resolved with
+// (ResolveFontFamilies).
 UsedSizes ComputeUsedSizes(skiac_font_collection* c_collection,
                            const std::vector<sk_sp<SkTypeface>>& base_faces,
-                           const skiac_text_request& request);
+                           const skiac_text_request& request,
+                           const LocaleFamilies* locale = nullptr);
 
 // FontPlatformData's synthetic bold (SkFont embolden) and italic (skew).
 struct SyntheticStyle {
@@ -256,6 +288,8 @@ uint32_t NextCaseRun(const char16_t* text, uint32_t length, CaseRun* run);
 void PrependCapsFeatures(std::vector<hb_feature_t>* features, int caps);
 // CaseMap::Locale of request.lang: "tr", "el", "lt", "nl", or root ("").
 const char* CaseMapLocale(const skiac_text_request& request);
+// CaseMap::Locale of a language tag (the shaper's LocaleOrDefault).
+const char* CaseMapLocale(std::string_view lang);
 // `text` upper or lower cased with ICU for `locale`.
 std::u16string MapCase(CaseMapIntend intend,
                        const char* locale,

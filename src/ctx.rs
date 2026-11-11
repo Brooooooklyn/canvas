@@ -2523,7 +2523,17 @@ impl Context {
   /// font without one gives None.
   fn filter_font_units(&mut self, reads: FontReads) -> FontUnits {
     // The canvas font (family, size, weight, slope, stretch, variations)
-    // with no text styling.
+    // with no text styling. With the Blink shaper on, also its ctx.lang:
+    // the filter's font is the canvas state's font (SetFontForFilter), whose
+    // locale picks the generic and standard families like the text's
+    // (skia-c ResolveFontRequest). Chrome 157 OffscreenCanvas, lang ja
+    // "40px serif" (Hiragino Mincho ProN): 1ic 40px, 1ex 21.6px; no lang,
+    // Times: 16px and 18px. With it off, no lang, as before.
+    let lang = if unsafe { crate::sk::ffi::skiac_blink_shaper_on() } {
+      self.state.lang.clone()
+    } else {
+      String::new()
+    };
     let settings = TextSettings {
       baseline: crate::sk::TextBaseline::Alphabetic,
       align: crate::sk::TextAlign::Left,
@@ -2532,7 +2542,7 @@ impl Context {
       word_spacing: 0.0,
       kerning: crate::sk::FontKerning::Auto,
       variant_caps: FontVariantCaps::Normal,
-      lang: String::new(),
+      lang,
       text_rendering: crate::sk::TextRendering::Auto,
       // Blink's ch is the unshaped "0" and ex/cap/ic come from the primary
       // font: no OpenType features. Size-adjust and optical sizing stay, as

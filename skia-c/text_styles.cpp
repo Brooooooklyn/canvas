@@ -253,7 +253,8 @@ float EffectiveSize(float size) {
 
 UsedSizes ComputeUsedSizes(skiac_font_collection* c_collection,
                            const std::vector<sk_sp<SkTypeface>>& base_faces,
-                           const skiac_text_request& request) {
+                           const skiac_text_request& request,
+                           const LocaleFamilies* locale) {
   const float computed = request.size;
   // opsz (font-optical-sizing: auto) follows the specified size, not floored
   // (FontPlatformData's opsz is the specified size).
@@ -319,7 +320,7 @@ UsedSizes ComputeUsedSizes(skiac_font_collection* c_collection,
   // take the primary's size.
   std::vector<bool> generic;
   const std::vector<SkString> families =
-      ResolveFontFamilies(c_collection, request, &generic);
+      ResolveFontFamilies(c_collection, request, &generic, locale);
   const SkFontStyle style(static_cast<int>(roundf(request.weight)),
                           request.stretch,
                           static_cast<SkFontStyle::Slant>(request.style));

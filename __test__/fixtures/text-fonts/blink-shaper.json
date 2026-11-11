@@ -13896,6 +13896,6502 @@
       "text": "水、（水）",
       "system": true,
       "chrome": [200, -1.3600001335144043, 174.8800048828125, 31.079999923706055, 6.760000228881836]
+    },
+    "cjk-punct: fallback BSLato ja 「（水）」": {
+      "group": "cjk-punct",
+      "font": "40px BSLato",
+      "text": "「（水）」",
+      "ctx": {
+        "lang": "ja"
+      },
+      "system": true,
+      "chrome": [160, -27.520000457763672, 132.47999572753906, 33.63999938964844, 3.2400054931640625],
+      "flip": "S8"
+    },
+    "cjk-punct: fallback BSLato zh-CN 「（水）」": {
+      "group": "cjk-punct",
+      "font": "40px BSLato",
+      "text": "「（水）」",
+      "ctx": {
+        "lang": "zh-CN"
+      },
+      "system": true,
+      "chrome": [160, -26, 134, 33.08000183105469, 4.280002593994141],
+      "flip": "S8"
+    },
+    "cjk-punct: fallback BSLato ja 水「（水）」": {
+      "group": "cjk-punct",
+      "font": "40px BSLato",
+      "text": "水「（水）」",
+      "ctx": {
+        "lang": "ja"
+      },
+      "system": true,
+      "chrome": [200, -1.6799999475479126, 172.48001098632812, 33.63999938964844, 3.2400054931640625],
+      "flip": "S8"
+    },
+    "cjk-punct: fallback BSLato zh-CN 水「（水）」": {
+      "group": "cjk-punct",
+      "font": "40px BSLato",
+      "text": "水「（水）」",
+      "ctx": {
+        "lang": "zh-CN"
+      },
+      "system": true,
+      "chrome": [200, -1.5600000619888306, 174, 33.08000183105469, 4.280002593994141],
+      "flip": "S8"
+    },
+    "cjk-punct: fallback BSLato ja （水）。": {
+      "group": "cjk-punct",
+      "font": "40px BSLato",
+      "text": "（水）。",
+      "ctx": {
+        "lang": "ja"
+      },
+      "system": true,
+      "chrome": [140, -27.439998626708984, 114.19999694824219, 33.63999938964844, 3.2400054931640625],
+      "flip": "S8"
+    },
+    "cjk-punct: fallback BSLato zh-CN （水）。": {
+      "group": "cjk-punct",
+      "font": "40px BSLato",
+      "text": "（水）。",
+      "ctx": {
+        "lang": "zh-CN"
+      },
+      "system": true,
+      "chrome": [140, -28.1200008392334, 115.20000457763672, 33.08000183105469, 4.3600006103515625],
+      "flip": "S8"
+    },
+    "cjk-punct: fallback BSLato ja 水（水）。": {
+      "group": "cjk-punct",
+      "font": "40px BSLato",
+      "text": "水（水）。",
+      "ctx": {
+        "lang": "ja"
+      },
+      "system": true,
+      "chrome": [180, -1.6799999475479126, 154.1999969482422, 33.63999938964844, 3.2400054931640625],
+      "flip": "S8"
+    },
+    "cjk-punct: fallback BSLato zh-CN 水（水）。": {
+      "group": "cjk-punct",
+      "font": "40px BSLato",
+      "text": "水（水）。",
+      "ctx": {
+        "lang": "zh-CN"
+      },
+      "system": true,
+      "chrome": [180, -1.5600000619888306, 155.20001220703125, 33.08000183105469, 4.3600006103515625],
+      "flip": "S8"
+    },
+    "cjk-punct: fallback BSLato ja 水。、水": {
+      "group": "cjk-punct",
+      "font": "40px BSLato",
+      "text": "水。、水",
+      "ctx": {
+        "lang": "ja"
+      },
+      "system": true,
+      "chrome": [140, -1.6799999475479126, 138.44000244140625, 32.84000015258789, 2.640003204345703],
+      "flip": "S8"
+    },
+    "cjk-punct: fallback BSLato zh-CN 水。、水": {
+      "group": "cjk-punct",
+      "font": "40px BSLato",
+      "text": "水。、水",
+      "ctx": {
+        "lang": "zh-CN"
+      },
+      "system": true,
+      "chrome": [140, -1.5600000619888306, 138.47999572753906, 32.84000015258789, 4.3600006103515625],
+      "flip": "S8"
+    },
+    "cjk-punct: fallback BSLato ja 水水。、水": {
+      "group": "cjk-punct",
+      "font": "40px BSLato",
+      "text": "水水。、水",
+      "ctx": {
+        "lang": "ja"
+      },
+      "system": true,
+      "chrome": [180, -1.6799999475479126, 178.44000244140625, 32.84000015258789, 2.640003204345703],
+      "flip": "S8"
+    },
+    "cjk-punct: fallback BSLato zh-CN 水水。、水": {
+      "group": "cjk-punct",
+      "font": "40px BSLato",
+      "text": "水水。、水",
+      "ctx": {
+        "lang": "zh-CN"
+      },
+      "system": true,
+      "chrome": [180, -1.5600000619888306, 178.47999572753906, 32.84000015258789, 4.3600006103515625],
+      "flip": "S8"
+    },
+    "cjk-punct: fallback BSLato ja 水（（水": {
+      "group": "cjk-punct",
+      "font": "40px BSLato",
+      "text": "水（（水",
+      "ctx": {
+        "lang": "ja"
+      },
+      "system": true,
+      "chrome": [140, -1.6799999475479126, 138.44000244140625, 33.63999938964844, 3.2400054931640625],
+      "flip": "S8"
+    },
+    "cjk-punct: fallback BSLato zh-CN 水（（水": {
+      "group": "cjk-punct",
+      "font": "40px BSLato",
+      "text": "水（（水",
+      "ctx": {
+        "lang": "zh-CN"
+      },
+      "system": true,
+      "chrome": [140, -1.5600000619888306, 138.47999572753906, 33.08000183105469, 4.280002593994141],
+      "flip": "S8"
+    },
+    "cjk-punct: fallback BSLato ja 水水（（水": {
+      "group": "cjk-punct",
+      "font": "40px BSLato",
+      "text": "水水（（水",
+      "ctx": {
+        "lang": "ja"
+      },
+      "system": true,
+      "chrome": [180, -1.6799999475479126, 178.44000244140625, 33.63999938964844, 3.2400054931640625],
+      "flip": "S8"
+    },
+    "cjk-punct: fallback BSLato zh-CN 水水（（水": {
+      "group": "cjk-punct",
+      "font": "40px BSLato",
+      "text": "水水（（水",
+      "ctx": {
+        "lang": "zh-CN"
+      },
+      "system": true,
+      "chrome": [180, -1.5600000619888306, 178.47999572753906, 33.08000183105469, 4.280002593994141],
+      "flip": "S8"
+    },
+    "cjk-punct: fallback BSLato ja 水」「水": {
+      "group": "cjk-punct",
+      "font": "40px BSLato",
+      "text": "水」「水",
+      "ctx": {
+        "lang": "ja"
+      },
+      "system": true,
+      "chrome": [140, -1.6799999475479126, 138.44000244140625, 33.63999938964844, 3.240001678466797],
+      "flip": "S8"
+    },
+    "cjk-punct: fallback BSLato zh-CN 水」「水": {
+      "group": "cjk-punct",
+      "font": "40px BSLato",
+      "text": "水」「水",
+      "ctx": {
+        "lang": "zh-CN"
+      },
+      "system": true,
+      "chrome": [140, -1.5600000619888306, 138.47999572753906, 33.08000183105469, 4.280002593994141],
+      "flip": "S8"
+    },
+    "cjk-punct: fallback BSLato ja 水水」「水": {
+      "group": "cjk-punct",
+      "font": "40px BSLato",
+      "text": "水水」「水",
+      "ctx": {
+        "lang": "ja"
+      },
+      "system": true,
+      "chrome": [180, -1.6799999475479126, 178.44000244140625, 33.63999938964844, 3.240001678466797],
+      "flip": "S8"
+    },
+    "cjk-punct: fallback BSLato zh-CN 水水」「水": {
+      "group": "cjk-punct",
+      "font": "40px BSLato",
+      "text": "水水」「水",
+      "ctx": {
+        "lang": "zh-CN"
+      },
+      "system": true,
+      "chrome": [180, -1.5600000619888306, 178.47999572753906, 33.08000183105469, 4.280002593994141],
+      "flip": "S8"
+    },
+    "cjk-punct: fallback BSLato ja 、（水）": {
+      "group": "cjk-punct",
+      "font": "40px BSLato",
+      "text": "、（水）",
+      "ctx": {
+        "lang": "ja"
+      },
+      "system": true,
+      "chrome": [140, -1.840000033378601, 112.55999755859375, 33.63999938964844, 3.2400054931640625],
+      "flip": "S8"
+    },
+    "cjk-punct: fallback BSLato zh-CN 、（水）": {
+      "group": "cjk-punct",
+      "font": "40px BSLato",
+      "text": "、（水）",
+      "ctx": {
+        "lang": "zh-CN"
+      },
+      "system": true,
+      "chrome": [140, -5.12000036239624, 111.87999725341797, 33.08000183105469, 4.280002593994141],
+      "flip": "S8"
+    },
+    "cjk-punct: fallback BSLato ja 水、（水）": {
+      "group": "cjk-punct",
+      "font": "40px BSLato",
+      "text": "水、（水）",
+      "ctx": {
+        "lang": "ja"
+      },
+      "system": true,
+      "chrome": [180, -1.6799999475479126, 152.55999755859375, 33.63999938964844, 3.2400054931640625],
+      "flip": "S8"
+    },
+    "cjk-punct: fallback BSLato zh-CN 水、（水）": {
+      "group": "cjk-punct",
+      "font": "40px BSLato",
+      "text": "水、（水）",
+      "ctx": {
+        "lang": "zh-CN"
+      },
+      "system": true,
+      "chrome": [180, -1.5600000619888306, 151.8800048828125, 33.08000183105469, 4.280002593994141],
+      "flip": "S8"
+    },
+    "lang: en-Hang →": {
+      "group": "lang",
+      "font": "40px BSLato",
+      "text": "→",
+      "ctx": {
+        "lang": "en-Hang"
+      },
+      "system": true,
+      "chrome": [28.199996948242188, 0, 26.35999870300293, 22.639999389648438, -9.639999389648438],
+      "flip": "S8"
+    },
+    "lang: en-Hang 直骨": {
+      "group": "lang",
+      "font": "40px BSLato",
+      "text": "直骨",
+      "ctx": {
+        "lang": "en-Hang"
+      },
+      "system": true,
+      "chrome": [69.19998168945312, -2.879999876022339, 66.67998504638672, 31.35999870300293, 2.400003433227539],
+      "flip": "S8"
+    },
+    "lang: en-Hang ア": {
+      "group": "lang",
+      "font": "40px BSLato",
+      "text": "ア",
+      "ctx": {
+        "lang": "en-Hang"
+      },
+      "system": true,
+      "chrome": [34.59999084472656, -3.440000057220459, 32.15999984741211, 27.119998931884766, 0.1600017547607422],
+      "flip": "S8"
+    },
+    "lang: en-Hang नम": {
+      "group": "lang",
+      "font": "40px BSLato",
+      "text": "नम",
+      "ctx": {
+        "lang": "en-Hang"
+      },
+      "system": true,
+      "chrome": [43.67997741699219, 0.8799999952316284, 44.55998992919922, 25.68000030517578, 0]
+    },
+    "lang: en-Kore →": {
+      "group": "lang",
+      "font": "40px BSLato",
+      "text": "→",
+      "ctx": {
+        "lang": "en-Kore"
+      },
+      "system": true,
+      "chrome": [28.199996948242188, 0, 26.35999870300293, 22.639999389648438, -9.639999389648438],
+      "flip": "S8"
+    },
+    "lang: en-Kore 直骨": {
+      "group": "lang",
+      "font": "40px BSLato",
+      "text": "直骨",
+      "ctx": {
+        "lang": "en-Kore"
+      },
+      "system": true,
+      "chrome": [69.19998168945312, -2.879999876022339, 66.67998504638672, 31.35999870300293, 2.400003433227539],
+      "flip": "S8"
+    },
+    "lang: en-Kore ア": {
+      "group": "lang",
+      "font": "40px BSLato",
+      "text": "ア",
+      "ctx": {
+        "lang": "en-Kore"
+      },
+      "system": true,
+      "chrome": [34.59999084472656, -3.440000057220459, 32.15999984741211, 27.119998931884766, 0.1600017547607422],
+      "flip": "S8"
+    },
+    "lang: en-Kore नम": {
+      "group": "lang",
+      "font": "40px BSLato",
+      "text": "नम",
+      "ctx": {
+        "lang": "en-Kore"
+      },
+      "system": true,
+      "chrome": [43.67997741699219, 0.8799999952316284, 44.55998992919922, 25.68000030517578, 0]
+    },
+    "lang: de-Hira →": {
+      "group": "lang",
+      "font": "40px BSLato",
+      "text": "→",
+      "ctx": {
+        "lang": "de-Hira"
+      },
+      "system": true,
+      "chrome": [40, -2.5199999809265137, 38.47999954223633, 23.399999618530273, -7.039997100830078],
+      "flip": "S8"
+    },
+    "lang: de-Hira 直骨": {
+      "group": "lang",
+      "font": "40px BSLato",
+      "text": "直骨",
+      "ctx": {
+        "lang": "de-Hira"
+      },
+      "system": true,
+      "chrome": [80, -3.1600000858306885, 76.83999633789062, 33.55999755859375, 2.9200057983398438],
+      "flip": "S8"
+    },
+    "lang: de-Hira ア": {
+      "group": "lang",
+      "font": "40px BSLato",
+      "text": "ア",
+      "ctx": {
+        "lang": "de-Hira"
+      },
+      "system": true,
+      "chrome": [40, -4.480000019073486, 36.47999954223633, 29.51999855041504, 1.2400016784667969],
+      "flip": "S8"
+    },
+    "lang: de-Hira नम": {
+      "group": "lang",
+      "font": "40px BSLato",
+      "text": "नम",
+      "ctx": {
+        "lang": "de-Hira"
+      },
+      "system": true,
+      "chrome": [43.67997741699219, 0.8799999952316284, 44.55998992919922, 25.68000030517578, 0]
+    },
+    "lang: fr-Kana →": {
+      "group": "lang",
+      "font": "40px BSLato",
+      "text": "→",
+      "ctx": {
+        "lang": "fr-Kana"
+      },
+      "system": true,
+      "chrome": [40, -2.5199999809265137, 38.47999954223633, 23.399999618530273, -7.039997100830078],
+      "flip": "S8"
+    },
+    "lang: fr-Kana 直骨": {
+      "group": "lang",
+      "font": "40px BSLato",
+      "text": "直骨",
+      "ctx": {
+        "lang": "fr-Kana"
+      },
+      "system": true,
+      "chrome": [80, -3.1600000858306885, 76.83999633789062, 33.55999755859375, 2.9200057983398438],
+      "flip": "S8"
+    },
+    "lang: fr-Kana ア": {
+      "group": "lang",
+      "font": "40px BSLato",
+      "text": "ア",
+      "ctx": {
+        "lang": "fr-Kana"
+      },
+      "system": true,
+      "chrome": [40, -4.480000019073486, 36.47999954223633, 29.51999855041504, 1.2400016784667969],
+      "flip": "S8"
+    },
+    "lang: fr-Kana नम": {
+      "group": "lang",
+      "font": "40px BSLato",
+      "text": "नम",
+      "ctx": {
+        "lang": "fr-Kana"
+      },
+      "system": true,
+      "chrome": [43.67997741699219, 0.8799999952316284, 44.55998992919922, 25.68000030517578, 0]
+    },
+    "lang: en-Hrkt →": {
+      "group": "lang",
+      "font": "40px BSLato",
+      "text": "→",
+      "ctx": {
+        "lang": "en-Hrkt"
+      },
+      "system": true,
+      "chrome": [40, -2.5199999809265137, 38.47999954223633, 23.399999618530273, -7.039997100830078],
+      "flip": "S8"
+    },
+    "lang: en-Hrkt 直骨": {
+      "group": "lang",
+      "font": "40px BSLato",
+      "text": "直骨",
+      "ctx": {
+        "lang": "en-Hrkt"
+      },
+      "system": true,
+      "chrome": [80, -3.1600000858306885, 76.83999633789062, 33.55999755859375, 2.9200057983398438],
+      "flip": "S8"
+    },
+    "lang: en-Hrkt ア": {
+      "group": "lang",
+      "font": "40px BSLato",
+      "text": "ア",
+      "ctx": {
+        "lang": "en-Hrkt"
+      },
+      "system": true,
+      "chrome": [40, -4.480000019073486, 36.47999954223633, 29.51999855041504, 1.2400016784667969],
+      "flip": "S8"
+    },
+    "lang: en-Hrkt नम": {
+      "group": "lang",
+      "font": "40px BSLato",
+      "text": "नम",
+      "ctx": {
+        "lang": "en-Hrkt"
+      },
+      "system": true,
+      "chrome": [43.67997741699219, 0.8799999952316284, 44.55998992919922, 25.68000030517578, 0]
+    },
+    "lang: zh-Latn →": {
+      "group": "lang",
+      "font": "40px BSLato",
+      "text": "→",
+      "ctx": {
+        "lang": "zh-Latn"
+      },
+      "system": true,
+      "chrome": [40, -4.5703125, 35.8984375, 22.890625, -6.015625]
+    },
+    "lang: zh-Latn 直骨": {
+      "group": "lang",
+      "font": "40px BSLato",
+      "text": "直骨",
+      "ctx": {
+        "lang": "zh-Latn"
+      },
+      "system": true,
+      "chrome": [80, -2.2799999713897705, 76.27999877929688, 32.79999923706055, 4]
+    },
+    "lang: zh-Latn ア": {
+      "group": "lang",
+      "font": "40px BSLato",
+      "text": "ア",
+      "ctx": {
+        "lang": "zh-Latn"
+      },
+      "system": true,
+      "chrome": [40, -5.159999847412109, 36.08000183105469, 28.64000129699707, 2.3200016021728516]
+    },
+    "lang: zh-Latn नम": {
+      "group": "lang",
+      "font": "40px BSLato",
+      "text": "नम",
+      "ctx": {
+        "lang": "zh-Latn"
+      },
+      "system": true,
+      "chrome": [43.67997741699219, 0.8799999952316284, 44.55998992919922, 25.68000030517578, 0]
+    },
+    "lang: zh-Latn-TW →": {
+      "group": "lang",
+      "font": "40px BSLato",
+      "text": "→",
+      "ctx": {
+        "lang": "zh-Latn-TW"
+      },
+      "system": true,
+      "chrome": [40, -4.5703125, 35.8984375, 22.890625, -6.015625]
+    },
+    "lang: zh-Latn-TW 直骨": {
+      "group": "lang",
+      "font": "40px BSLato",
+      "text": "直骨",
+      "ctx": {
+        "lang": "zh-Latn-TW"
+      },
+      "system": true,
+      "chrome": [80, -2.2799999713897705, 76.31999969482422, 32.79999923706055, 4.080005645751953]
+    },
+    "lang: zh-Latn-TW ア": {
+      "group": "lang",
+      "font": "40px BSLato",
+      "text": "ア",
+      "ctx": {
+        "lang": "zh-Latn-TW"
+      },
+      "system": true,
+      "chrome": [40, -5.159999847412109, 36.08000183105469, 28.64000129699707, 2.3200016021728516]
+    },
+    "lang: zh-Latn-TW नम": {
+      "group": "lang",
+      "font": "40px BSLato",
+      "text": "नम",
+      "ctx": {
+        "lang": "zh-Latn-TW"
+      },
+      "system": true,
+      "chrome": [43.67997741699219, 0.8799999952316284, 44.55998992919922, 25.68000030517578, 0]
+    },
+    "lang: ja-Latn →": {
+      "group": "lang",
+      "font": "40px BSLato",
+      "text": "→",
+      "ctx": {
+        "lang": "ja-Latn"
+      },
+      "system": true,
+      "chrome": [40, -4.5703125, 35.8984375, 22.890625, -6.015625]
+    },
+    "lang: ja-Latn 直骨": {
+      "group": "lang",
+      "font": "40px BSLato",
+      "text": "直骨",
+      "ctx": {
+        "lang": "ja-Latn"
+      },
+      "system": true,
+      "chrome": [80, -2.2799999713897705, 76.27999877929688, 32.79999923706055, 4],
+      "flip": "S8"
+    },
+    "lang: ja-Latn ア": {
+      "group": "lang",
+      "font": "40px BSLato",
+      "text": "ア",
+      "ctx": {
+        "lang": "ja-Latn"
+      },
+      "system": true,
+      "chrome": [40, -5.159999847412109, 36.08000183105469, 28.64000129699707, 2.3200016021728516],
+      "flip": "S8"
+    },
+    "lang: ja-Latn नम": {
+      "group": "lang",
+      "font": "40px BSLato",
+      "text": "नम",
+      "ctx": {
+        "lang": "ja-Latn"
+      },
+      "system": true,
+      "chrome": [43.67997741699219, 0.8799999952316284, 44.55998992919922, 25.68000030517578, 0]
+    },
+    "lang: ko-Hani →": {
+      "group": "lang",
+      "font": "40px BSLato",
+      "text": "→",
+      "ctx": {
+        "lang": "ko-Hani"
+      },
+      "system": true,
+      "chrome": [40, -4.5703125, 35.8984375, 22.890625, -6.015625]
+    },
+    "lang: ko-Hani 直骨": {
+      "group": "lang",
+      "font": "40px BSLato",
+      "text": "直骨",
+      "ctx": {
+        "lang": "ko-Hani"
+      },
+      "system": true,
+      "chrome": [80, -2.2799999713897705, 76.27999877929688, 32.79999923706055, 4],
+      "flip": "S8"
+    },
+    "lang: ko-Hani ア": {
+      "group": "lang",
+      "font": "40px BSLato",
+      "text": "ア",
+      "ctx": {
+        "lang": "ko-Hani"
+      },
+      "system": true,
+      "chrome": [40, -5.159999847412109, 36.08000183105469, 28.64000129699707, 2.3200016021728516],
+      "flip": "S8"
+    },
+    "lang: ko-Hani नम": {
+      "group": "lang",
+      "font": "40px BSLato",
+      "text": "नम",
+      "ctx": {
+        "lang": "ko-Hani"
+      },
+      "system": true,
+      "chrome": [43.67997741699219, 0.8799999952316284, 44.55998992919922, 25.68000030517578, 0]
+    },
+    "lang: en-Deva →": {
+      "group": "lang",
+      "font": "40px BSLato",
+      "text": "→",
+      "ctx": {
+        "lang": "en-Deva"
+      },
+      "system": true,
+      "chrome": [40, -4.5703125, 35.8984375, 22.890625, -6.015625]
+    },
+    "lang: en-Deva 直骨": {
+      "group": "lang",
+      "font": "40px BSLato",
+      "text": "直骨",
+      "ctx": {
+        "lang": "en-Deva"
+      },
+      "system": true,
+      "chrome": [80, -2.2799999713897705, 76.27999877929688, 32.79999923706055, 4]
+    },
+    "lang: en-Deva ア": {
+      "group": "lang",
+      "font": "40px BSLato",
+      "text": "ア",
+      "ctx": {
+        "lang": "en-Deva"
+      },
+      "system": true,
+      "chrome": [40, -5.159999847412109, 36.08000183105469, 28.64000129699707, 2.3200016021728516]
+    },
+    "lang: en-Deva नम": {
+      "group": "lang",
+      "font": "40px BSLato",
+      "text": "नम",
+      "ctx": {
+        "lang": "en-Deva"
+      },
+      "system": true,
+      "chrome": [48.7109375, 0.05859375, 49.21875, 24.3359375, 0.6640625],
+      "flip": "S8"
+    },
+    "lang: en-Zzzz-JP →": {
+      "group": "lang",
+      "font": "40px BSLato",
+      "text": "→",
+      "ctx": {
+        "lang": "en-Zzzz-JP"
+      },
+      "system": true,
+      "chrome": [40, -4.5703125, 35.8984375, 22.890625, -6.015625]
+    },
+    "lang: en-Zzzz-JP 直骨": {
+      "group": "lang",
+      "font": "40px BSLato",
+      "text": "直骨",
+      "ctx": {
+        "lang": "en-Zzzz-JP"
+      },
+      "system": true,
+      "chrome": [80, -2.2799999713897705, 76.27999877929688, 32.79999923706055, 4]
+    },
+    "lang: en-Zzzz-JP ア": {
+      "group": "lang",
+      "font": "40px BSLato",
+      "text": "ア",
+      "ctx": {
+        "lang": "en-Zzzz-JP"
+      },
+      "system": true,
+      "chrome": [40, -5.159999847412109, 36.08000183105469, 28.64000129699707, 2.3200016021728516]
+    },
+    "lang: en-Zzzz-JP नम": {
+      "group": "lang",
+      "font": "40px BSLato",
+      "text": "नम",
+      "ctx": {
+        "lang": "en-Zzzz-JP"
+      },
+      "system": true,
+      "chrome": [43.67997741699219, 0.8799999952316284, 44.55998992919922, 25.68000030517578, 0]
+    },
+    "lang: ja-Zzzz →": {
+      "group": "lang",
+      "font": "40px BSLato",
+      "text": "→",
+      "ctx": {
+        "lang": "ja-Zzzz"
+      },
+      "system": true,
+      "chrome": [40, -2.5199999809265137, 38.47999954223633, 23.399999618530273, -7.039997100830078],
+      "flip": "S8"
+    },
+    "lang: ja-Zzzz 直骨": {
+      "group": "lang",
+      "font": "40px BSLato",
+      "text": "直骨",
+      "ctx": {
+        "lang": "ja-Zzzz"
+      },
+      "system": true,
+      "chrome": [80, -3.1600000858306885, 76.83999633789062, 33.55999755859375, 2.9200057983398438]
+    },
+    "lang: ja-Zzzz ア": {
+      "group": "lang",
+      "font": "40px BSLato",
+      "text": "ア",
+      "ctx": {
+        "lang": "ja-Zzzz"
+      },
+      "system": true,
+      "chrome": [40, -4.480000019073486, 36.47999954223633, 29.51999855041504, 1.2400016784667969]
+    },
+    "lang: ja-Zzzz नम": {
+      "group": "lang",
+      "font": "40px BSLato",
+      "text": "नम",
+      "ctx": {
+        "lang": "ja-Zzzz"
+      },
+      "system": true,
+      "chrome": [43.67997741699219, 0.8799999952316284, 44.55998992919922, 25.68000030517578, 0]
+    },
+    "lang: und-Hans →": {
+      "group": "lang",
+      "font": "40px BSLato",
+      "text": "→",
+      "ctx": {
+        "lang": "und-Hans"
+      },
+      "system": true,
+      "chrome": [40, -0.8799999952316284, 39.119998931884766, 23.03999900817871, -5.759998321533203],
+      "flip": "S8"
+    },
+    "lang: und-Hans 直骨": {
+      "group": "lang",
+      "font": "40px BSLato",
+      "text": "直骨",
+      "ctx": {
+        "lang": "und-Hans"
+      },
+      "system": true,
+      "chrome": [80, -2.2799999713897705, 76.27999877929688, 32.79999923706055, 4]
+    },
+    "lang: und-Hans ア": {
+      "group": "lang",
+      "font": "40px BSLato",
+      "text": "ア",
+      "ctx": {
+        "lang": "und-Hans"
+      },
+      "system": true,
+      "chrome": [40, -5.159999847412109, 36.08000183105469, 28.64000129699707, 2.3200016021728516]
+    },
+    "lang: und-Hans नम": {
+      "group": "lang",
+      "font": "40px BSLato",
+      "text": "नम",
+      "ctx": {
+        "lang": "und-Hans"
+      },
+      "system": true,
+      "chrome": [43.67997741699219, 0.8799999952316284, 44.55998992919922, 25.68000030517578, 0]
+    },
+    "lang: und-Hant →": {
+      "group": "lang",
+      "font": "40px BSLato",
+      "text": "→",
+      "ctx": {
+        "lang": "und-Hant"
+      },
+      "system": true,
+      "chrome": [40, -0.8799999952316284, 39.119998931884766, 23.03999900817871, -5.759998321533203],
+      "flip": "S8"
+    },
+    "lang: und-Hant 直骨": {
+      "group": "lang",
+      "font": "40px BSLato",
+      "text": "直骨",
+      "ctx": {
+        "lang": "und-Hant"
+      },
+      "system": true,
+      "chrome": [80, -2.2799999713897705, 76.31999969482422, 32.79999923706055, 4.080005645751953],
+      "flip": "S8"
+    },
+    "lang: und-Hant ア": {
+      "group": "lang",
+      "font": "40px BSLato",
+      "text": "ア",
+      "ctx": {
+        "lang": "und-Hant"
+      },
+      "system": true,
+      "chrome": [40, -5.159999847412109, 36.08000183105469, 28.64000129699707, 2.3200016021728516]
+    },
+    "lang: und-Hant नम": {
+      "group": "lang",
+      "font": "40px BSLato",
+      "text": "नम",
+      "ctx": {
+        "lang": "und-Hant"
+      },
+      "system": true,
+      "chrome": [43.67997741699219, 0.8799999952316284, 44.55998992919922, 25.68000030517578, 0]
+    },
+    "lang: ja 40px NoSuchFamily Ag直": {
+      "group": "lang",
+      "font": "40px NoSuchFamily",
+      "text": "Ag直",
+      "ctx": {
+        "lang": "ja"
+      },
+      "system": true,
+      "chrome": [95.63999938964844, -0.5600000023841858, 93.44000244140625, 33.55999755859375, 8.360000610351562],
+      "flip": "S8"
+    },
+    "lang: ja 40px Times 直骨": {
+      "group": "lang",
+      "font": "40px Times",
+      "text": "直骨",
+      "ctx": {
+        "lang": "ja"
+      },
+      "system": true,
+      "chrome": [80, -3.1600000858306885, 76.83999633789062, 33.55999755859375, 2.9200057983398438],
+      "flip": "S8"
+    },
+    "lang: ja 40px BSLato, Times →直": {
+      "group": "lang",
+      "font": "40px BSLato, Times",
+      "text": "→直",
+      "ctx": {
+        "lang": "ja"
+      },
+      "system": true,
+      "chrome": [80, -2.5199999809265137, 77.80000305175781, 33.55999755859375, 2.7200050354003906],
+      "flip": "S8"
+    },
+    "lang: ja 40px sans-serif →": {
+      "group": "lang",
+      "font": "40px sans-serif",
+      "text": "→",
+      "ctx": {
+        "lang": "ja"
+      },
+      "system": true,
+      "chrome": [40, -2.5199999809265137, 38.47999954223633, 23.399999618530273, -7.039997100830078],
+      "flip": "S8"
+    },
+    "lang: ko 40px NoSuchFamily Ag直": {
+      "group": "lang",
+      "font": "40px NoSuchFamily",
+      "text": "Ag直",
+      "ctx": {
+        "lang": "ko"
+      },
+      "system": true,
+      "chrome": [79.03997802734375, -0.7599999904632568, 76.59999084472656, 31.35999870300293, 4.200002670288086],
+      "flip": "S8"
+    },
+    "lang: ko 40px Times 直骨": {
+      "group": "lang",
+      "font": "40px Times",
+      "text": "直骨",
+      "ctx": {
+        "lang": "ko"
+      },
+      "system": true,
+      "chrome": [69.19998168945312, -2.879999876022339, 66.67998504638672, 31.35999870300293, 2.400003433227539],
+      "flip": "S8"
+    },
+    "lang: ko 40px BSLato, Times →直": {
+      "group": "lang",
+      "font": "40px BSLato, Times",
+      "text": "→直",
+      "ctx": {
+        "lang": "ko"
+      },
+      "system": true,
+      "chrome": [62.79998779296875, 0, 60.3599967956543, 31.35999870300293, 2.400003433227539],
+      "flip": "S8"
+    },
+    "lang: ko 40px sans-serif →": {
+      "group": "lang",
+      "font": "40px sans-serif",
+      "text": "→",
+      "ctx": {
+        "lang": "ko"
+      },
+      "system": true,
+      "chrome": [28.199996948242188, 0, 26.35999870300293, 22.639999389648438, -9.639999389648438],
+      "flip": "S8"
+    },
+    "lang: zh-CN 40px NoSuchFamily Ag直": {
+      "group": "lang",
+      "font": "40px NoSuchFamily",
+      "text": "Ag直",
+      "ctx": {
+        "lang": "zh-CN"
+      },
+      "system": true,
+      "chrome": [89.91999816894531, 0, 87.68000030517578, 32.79999923706055, 8.480003356933594],
+      "flip": "S8"
+    },
+    "lang: zh-CN 40px Times 直骨": {
+      "group": "lang",
+      "font": "40px Times",
+      "text": "直骨",
+      "ctx": {
+        "lang": "zh-CN"
+      },
+      "system": true,
+      "chrome": [80, -2.2799999713897705, 76.27999877929688, 32.79999923706055, 4],
+      "flip": "S8"
+    },
+    "lang: zh-CN 40px BSLato, Times →直": {
+      "group": "lang",
+      "font": "40px BSLato, Times",
+      "text": "→直",
+      "ctx": {
+        "lang": "zh-CN"
+      },
+      "system": true,
+      "chrome": [80, -0.8799999952316284, 77.76000213623047, 32.79999923706055, 3.0800018310546875],
+      "flip": "S8"
+    },
+    "lang: zh-CN 40px sans-serif →": {
+      "group": "lang",
+      "font": "40px sans-serif",
+      "text": "→",
+      "ctx": {
+        "lang": "zh-CN"
+      },
+      "system": true,
+      "chrome": [40, -0.8799999952316284, 39.119998931884766, 23.03999900817871, -5.759998321533203],
+      "flip": "S8"
+    },
+    "lang: zh-TW 40px NoSuchFamily Ag直": {
+      "group": "lang",
+      "font": "40px NoSuchFamily",
+      "text": "Ag直",
+      "ctx": {
+        "lang": "zh-TW"
+      },
+      "system": true,
+      "chrome": [89.91999816894531, 0, 87.68000030517578, 32.79999923706055, 8.480003356933594],
+      "flip": "S8"
+    },
+    "lang: zh-TW 40px Times 直骨": {
+      "group": "lang",
+      "font": "40px Times",
+      "text": "直骨",
+      "ctx": {
+        "lang": "zh-TW"
+      },
+      "system": true,
+      "chrome": [80, -2.2799999713897705, 76.31999969482422, 32.79999923706055, 4.080005645751953],
+      "flip": "S8"
+    },
+    "lang: zh-TW 40px BSLato, Times →直": {
+      "group": "lang",
+      "font": "40px BSLato, Times",
+      "text": "→直",
+      "ctx": {
+        "lang": "zh-TW"
+      },
+      "system": true,
+      "chrome": [80, -0.8799999952316284, 77.76000213623047, 32.79999923706055, 3.0800018310546875],
+      "flip": "S8"
+    },
+    "lang: zh-TW 40px sans-serif →": {
+      "group": "lang",
+      "font": "40px sans-serif",
+      "text": "→",
+      "ctx": {
+        "lang": "zh-TW"
+      },
+      "system": true,
+      "chrome": [40, -0.8799999952316284, 39.119998931884766, 23.03999900817871, -5.759998321533203],
+      "flip": "S8"
+    },
+    "lang: hi 40px NoSuchFamily Ag直": {
+      "group": "lang",
+      "font": "40px NoSuchFamily",
+      "text": "Ag直",
+      "ctx": {
+        "lang": "hi"
+      },
+      "system": true,
+      "chrome": [88.88671875, -0.3125, 87.36671447753906, 30.520000457763672, 8.6328125],
+      "flip": "S8"
+    },
+    "lang: hi 40px Times 直骨": {
+      "group": "lang",
+      "font": "40px Times",
+      "text": "直骨",
+      "ctx": {
+        "lang": "hi"
+      },
+      "system": true,
+      "chrome": [80, -1.5199999809265137, 78.19999694824219, 30.520000457763672, 6.560005187988281]
+    },
+    "lang: hi 40px BSLato, Times →直": {
+      "group": "lang",
+      "font": "40px BSLato, Times",
+      "text": "→直",
+      "ctx": {
+        "lang": "hi"
+      },
+      "system": true,
+      "chrome": [80, -4.5703125, 77.76000213623047, 32.79999923706055, 3.0800018310546875]
+    },
+    "lang: hi 40px serif 直骨": {
+      "group": "lang",
+      "font": "40px serif",
+      "text": "直骨",
+      "ctx": {
+        "lang": "hi"
+      },
+      "system": true,
+      "chrome": [80, -1.5199999809265137, 78.19999694824219, 30.520000457763672, 6.560005187988281]
+    },
+    "lang: hi 40px sans-serif →": {
+      "group": "lang",
+      "font": "40px sans-serif",
+      "text": "→",
+      "ctx": {
+        "lang": "hi"
+      },
+      "system": true,
+      "chrome": [40, -4.5703125, 35.8984375, 22.890625, -6.015625]
+    },
+    "lang: ja 40px BSLato small-caps İstanbul ılık şğü": {
+      "group": "lang",
+      "font": "40px BSLato",
+      "text": "İstanbul ılık şğü",
+      "ctx": {
+        "lang": "ja",
+        "fontVariantCaps": "small-caps"
+      },
+      "system": true,
+      "chrome": [259.0038757324219, -3.0799999237060547, 256.77789306640625, 30.639999389648438, 6.3280029296875],
+      "flip": "S8"
+    },
+    "lang: ja 40px BSLato İstanbul ılık şğü": {
+      "group": "lang",
+      "font": "40px BSLato",
+      "text": "İstanbul ılık şğü",
+      "ctx": {
+        "lang": "ja"
+      },
+      "system": true,
+      "chrome": [276.07989501953125, -3.0799999237060547, 273.139892578125, 30.639999389648438, 8.640003204345703],
+      "flip": "S8"
+    },
+    "lang: ja 40px BSLato, BSSerif small-caps İstanbul ılık şğü": {
+      "group": "lang",
+      "font": "40px BSLato, BSSerif",
+      "text": "İstanbul ılık şğü",
+      "ctx": {
+        "lang": "ja",
+        "fontVariantCaps": "small-caps"
+      },
+      "system": true,
+      "chrome": [268.0798645019531, -1.7599999904632568, 265.8538818359375, 34.560001373291016, 8.800003051757812],
+      "flip": "S8"
+    },
+    "lang: ja 40px BSLato, BSSerif İstanbul ılık şğü": {
+      "group": "lang",
+      "font": "40px BSLato, BSSerif",
+      "text": "İstanbul ılık şğü",
+      "ctx": {
+        "lang": "ja"
+      },
+      "system": true,
+      "chrome": [271.91986083984375, -1.7599999904632568, 268.9798889160156, 34.560001373291016, 9.560001373291016]
+    },
+    "lang: tr 40px BSLato small-caps İstanbul ılık şğü": {
+      "group": "lang",
+      "font": "40px BSLato",
+      "text": "İstanbul ılık şğü",
+      "ctx": {
+        "lang": "tr",
+        "fontVariantCaps": "small-caps"
+      },
+      "system": true,
+      "chrome": [258.31317138671875, -0.64453125, 256.0871887207031, 33.046875, 6.0703125]
+    },
+    "lang: tr 40px BSLato İstanbul ılık şğü": {
+      "group": "lang",
+      "font": "40px BSLato",
+      "text": "İstanbul ılık şğü",
+      "ctx": {
+        "lang": "tr"
+      },
+      "system": true,
+      "chrome": [267.8865966796875, -0.64453125, 264.9466247558594, 33.046875, 8.710941314697266]
+    },
+    "lang: tr 40px BSLato, BSSerif small-caps İstanbul ılık şğü": {
+      "group": "lang",
+      "font": "40px BSLato, BSSerif",
+      "text": "İstanbul ılık şğü",
+      "ctx": {
+        "lang": "tr",
+        "fontVariantCaps": "small-caps"
+      },
+      "system": true,
+      "chrome": [268.0798645019531, -1.7599999904632568, 265.8538818359375, 34.560001373291016, 8.800003051757812],
+      "flip": "S8"
+    },
+    "lang: tr 40px BSLato, BSSerif İstanbul ılık şğü": {
+      "group": "lang",
+      "font": "40px BSLato, BSSerif",
+      "text": "İstanbul ılık şğü",
+      "ctx": {
+        "lang": "tr"
+      },
+      "system": true,
+      "chrome": [271.91986083984375, -1.7599999904632568, 268.9798889160156, 34.560001373291016, 9.560001373291016]
+    },
+    "lang: az 40px BSLato small-caps İstanbul ılık şğü": {
+      "group": "lang",
+      "font": "40px BSLato",
+      "text": "İstanbul ılık şğü",
+      "ctx": {
+        "lang": "az",
+        "fontVariantCaps": "small-caps"
+      },
+      "system": true,
+      "chrome": [258.31317138671875, -0.64453125, 256.0871887207031, 33.046875, 6.0703125]
+    },
+    "lang: az 40px BSLato İstanbul ılık şğü": {
+      "group": "lang",
+      "font": "40px BSLato",
+      "text": "İstanbul ılık şğü",
+      "ctx": {
+        "lang": "az"
+      },
+      "system": true,
+      "chrome": [267.8865966796875, -0.64453125, 264.9466247558594, 33.046875, 8.710941314697266]
+    },
+    "lang: az 40px BSLato, BSSerif small-caps İstanbul ılık şğü": {
+      "group": "lang",
+      "font": "40px BSLato, BSSerif",
+      "text": "İstanbul ılık şğü",
+      "ctx": {
+        "lang": "az",
+        "fontVariantCaps": "small-caps"
+      },
+      "system": true,
+      "chrome": [268.0798645019531, -1.7599999904632568, 265.8538818359375, 34.560001373291016, 8.800003051757812],
+      "flip": "S8"
+    },
+    "lang: az 40px BSLato, BSSerif İstanbul ılık şğü": {
+      "group": "lang",
+      "font": "40px BSLato, BSSerif",
+      "text": "İstanbul ılık şğü",
+      "ctx": {
+        "lang": "az"
+      },
+      "system": true,
+      "chrome": [271.91986083984375, -1.7599999904632568, 268.9798889160156, 34.560001373291016, 9.560001373291016]
+    },
+    "lang: zh-CN 40px BSLato small-caps İstanbul ılık şğü": {
+      "group": "lang",
+      "font": "40px BSLato",
+      "text": "İstanbul ılık şğü",
+      "ctx": {
+        "lang": "zh-CN",
+        "fontVariantCaps": "small-caps"
+      },
+      "system": true,
+      "chrome": [257.31988525390625, -3.120000123977661, 255.09388732910156, 28.559999465942383, 5.936002731323242],
+      "flip": "S8"
+    },
+    "lang: zh-CN 40px BSLato İstanbul ılık şğü": {
+      "group": "lang",
+      "font": "40px BSLato",
+      "text": "İstanbul ılık şğü",
+      "ctx": {
+        "lang": "zh-CN"
+      },
+      "system": true,
+      "chrome": [272.31988525390625, -3.120000123977661, 269.3798828125, 29.46000099182129, 8.480001449584961],
+      "flip": "S8"
+    },
+    "lang: zh-CN 40px BSLato, BSSerif small-caps İstanbul ılık şğü": {
+      "group": "lang",
+      "font": "40px BSLato, BSSerif",
+      "text": "İstanbul ılık şğü",
+      "ctx": {
+        "lang": "zh-CN",
+        "fontVariantCaps": "small-caps"
+      },
+      "system": true,
+      "chrome": [268.0798645019531, -1.7599999904632568, 265.8538818359375, 34.560001373291016, 8.800003051757812],
+      "flip": "S8"
+    },
+    "lang: zh-CN 40px BSLato, BSSerif İstanbul ılık şğü": {
+      "group": "lang",
+      "font": "40px BSLato, BSSerif",
+      "text": "İstanbul ılık şğü",
+      "ctx": {
+        "lang": "zh-CN"
+      },
+      "system": true,
+      "chrome": [271.91986083984375, -1.7599999904632568, 268.9798889160156, 34.560001373291016, 9.560001373291016]
+    },
+    "lang: ja 40px BSLato font-size-adjust 0.5 あ": {
+      "group": "lang",
+      "font": "40px BSLato",
+      "text": "あ",
+      "ctx": {
+        "lang": "ja"
+      },
+      "css": {
+        "fontSizeAdjust": "0.5"
+      },
+      "system": true,
+      "chrome": [36.68998718261719, -3.9992096424102783, 32.544029235839844, 29.828969955444336, 1.5042915344238281],
+      "flip": "S8"
+    },
+    "lang: ja 40px BSLato font-size-adjust 0.5 a→": {
+      "group": "lang",
+      "font": "40px BSLato",
+      "text": "a→",
+      "ctx": {
+        "lang": "ja"
+      },
+      "css": {
+        "fontSizeAdjust": "0.5"
+      },
+      "system": true,
+      "chrome": [56.70634460449219, -1.8160799741744995, 55.312137603759766, 21.463647842407227, 0.3158416748046875],
+      "flip": "S8"
+    },
+    "lang: ko 40px BSLato font-size-adjust 0.5 한": {
+      "group": "lang",
+      "font": "40px BSLato",
+      "text": "한",
+      "ctx": {
+        "lang": "ko"
+      },
+      "css": {
+        "fontSizeAdjust": "0.5"
+      },
+      "system": true,
+      "chrome": [32.15203857421875, -1.2637799978256226, 31.334308624267578, 29.884679794311523, 1.5611419677734375],
+      "flip": "S8"
+    },
+    "lang: zh-CN 40px BSLato font-size-adjust 0.5 水": {
+      "group": "lang",
+      "font": "40px BSLato",
+      "text": "水",
+      "ctx": {
+        "lang": "zh-CN"
+      },
+      "css": {
+        "fontSizeAdjust": "0.5"
+      },
+      "system": true,
+      "chrome": [38.67999267578125, -1.5085200071334839, 37.21015930175781, 31.75627899169922, 3.7132835388183594],
+      "flip": "S8"
+    },
+    "lang: hi 40px BSLato font-size-adjust 0.5 नम": {
+      "group": "lang",
+      "font": "40px BSLato",
+      "text": "नम",
+      "ctx": {
+        "lang": "hi"
+      },
+      "css": {
+        "fontSizeAdjust": "0.5"
+      },
+      "system": true,
+      "chrome": [48.7109375, 0.05859375, 49.21875, 24.3359375, 0.6640625],
+      "flip": "S8"
+    },
+    "lang: ja-y qa a→": {
+      "group": "lang",
+      "font": "40px BSLato",
+      "text": "a→",
+      "ctx": {
+        "lang": "ja-y qa"
+      },
+      "system": true,
+      "chrome": [60.279998779296875, -1.840000033378601, 58.7599983215332, 23.399999618530273, 0.32000160217285156],
+      "flip": "S8"
+    },
+    "lang: ja-y qa 水。、水": {
+      "group": "lang",
+      "font": "40px BSLato",
+      "text": "水。、水",
+      "ctx": {
+        "lang": "ja-y qa"
+      },
+      "system": true,
+      "chrome": [140, -1.6799999475479126, 138.44000244140625, 32.84000015258789, 2.640003204345703],
+      "flip": "S8"
+    },
+    "lang: unset 40px serif Ag": {
+      "group": "lang",
+      "font": "40px serif",
+      "text": "Ag",
+      "system": true,
+      "chrome": [48.88671875, -0.5859375, 47.67578125, 26.93359375, 8.7109375]
+    },
+    "lang: unset 40px serif 直骨": {
+      "group": "lang",
+      "font": "40px serif",
+      "text": "直骨",
+      "system": true,
+      "chrome": [80, -1.5199999809265137, 78.19999694824219, 30.520000457763672, 6.560005187988281]
+    },
+    "lang: unset 40px serif あ": {
+      "group": "lang",
+      "font": "40px serif",
+      "text": "あ",
+      "system": true,
+      "chrome": [40, -5.599999904632568, 34.560001373291016, 28.360000610351562, 5.360004425048828]
+    },
+    "lang: unset 40px sans-serif Ag": {
+      "group": "lang",
+      "font": "40px sans-serif",
+      "text": "Ag",
+      "system": true,
+      "chrome": [48.92578125, -0.5859375, 46.2109375, 28.69140625, 8.84765625]
+    },
+    "lang: unset 40px sans-serif 直骨": {
+      "group": "lang",
+      "font": "40px sans-serif",
+      "text": "直骨",
+      "system": true,
+      "chrome": [80, -2.2799999713897705, 76.27999877929688, 32.79999923706055, 4]
+    },
+    "lang: unset 40px sans-serif あ": {
+      "group": "lang",
+      "font": "40px sans-serif",
+      "text": "あ",
+      "system": true,
+      "chrome": [40, -3.7599997520446777, 36.279998779296875, 32.23999786376953, 2.400005340576172]
+    },
+    "lang: unset 40px monospace 直骨": {
+      "group": "lang",
+      "font": "40px monospace",
+      "text": "直骨",
+      "system": true,
+      "chrome": [80, -2.2799999713897705, 76.27999877929688, 32.79999923706055, 4]
+    },
+    "lang: unset 40px monospace あ": {
+      "group": "lang",
+      "font": "40px monospace",
+      "text": "あ",
+      "system": true,
+      "chrome": [40, -3.7599997520446777, 36.279998779296875, 32.23999786376953, 2.400005340576172]
+    },
+    "lang: unset 40px cursive Ag": {
+      "group": "lang",
+      "font": "40px cursive",
+      "text": "Ag",
+      "system": true,
+      "chrome": [47.34375, -2.36328125, 46.9921875, 26.5234375, 16.34765625]
+    },
+    "lang: unset 40px cursive 直骨": {
+      "group": "lang",
+      "font": "40px cursive",
+      "text": "直骨",
+      "system": true,
+      "chrome": [80, -3.799999952316284, 77.04000091552734, 30.03999900817871, 6.480005264282227]
+    },
+    "lang: unset 40px cursive あ": {
+      "group": "lang",
+      "font": "40px cursive",
+      "text": "あ",
+      "system": true,
+      "chrome": [40, -5.720000267028809, 34.439998626708984, 28.19999885559082, 5.239999771118164]
+    },
+    "lang: unset 40px fantasy Ag": {
+      "group": "lang",
+      "font": "40px fantasy",
+      "text": "Ag",
+      "system": true,
+      "chrome": [50.95703125, 0.234375, 53.515625, 27.16796875, 15.234375]
+    },
+    "lang: unset 40px fantasy 直骨": {
+      "group": "lang",
+      "font": "40px fantasy",
+      "text": "直骨",
+      "system": true,
+      "chrome": [80, -2.2799999713897705, 76.27999877929688, 32.79999923706055, 4]
+    },
+    "lang: unset 40px fantasy あ": {
+      "group": "lang",
+      "font": "40px fantasy",
+      "text": "あ",
+      "system": true,
+      "chrome": [40, -3.7599997520446777, 36.279998779296875, 32.23999786376953, 2.400005340576172]
+    },
+    "lang: unset 40px -webkit-body Ag": {
+      "group": "lang",
+      "font": "40px -webkit-body",
+      "text": "Ag",
+      "system": true,
+      "chrome": [48.88671875, -0.5859375, 47.67578125, 26.93359375, 8.7109375]
+    },
+    "lang: unset 40px -webkit-body 直骨": {
+      "group": "lang",
+      "font": "40px -webkit-body",
+      "text": "直骨",
+      "system": true,
+      "chrome": [80, -1.5199999809265137, 78.19999694824219, 30.520000457763672, 6.560005187988281]
+    },
+    "lang: unset 40px -webkit-body あ": {
+      "group": "lang",
+      "font": "40px -webkit-body",
+      "text": "あ",
+      "system": true,
+      "chrome": [40, -5.599999904632568, 34.560001373291016, 28.360000610351562, 5.360004425048828]
+    },
+    "lang: unset 40px -webkit-standard Ag": {
+      "group": "lang",
+      "font": "40px -webkit-standard",
+      "text": "Ag",
+      "system": true,
+      "chrome": [48.88671875, -0.5859375, 47.67578125, 26.93359375, 8.7109375]
+    },
+    "lang: unset 40px -webkit-standard 直骨": {
+      "group": "lang",
+      "font": "40px -webkit-standard",
+      "text": "直骨",
+      "system": true,
+      "chrome": [80, -1.5199999809265137, 78.19999694824219, 30.520000457763672, 6.560005187988281]
+    },
+    "lang: unset 40px -webkit-standard あ": {
+      "group": "lang",
+      "font": "40px -webkit-standard",
+      "text": "あ",
+      "system": true,
+      "chrome": [40, -5.599999904632568, 34.560001373291016, 28.360000610351562, 5.360004425048828]
+    },
+    "lang: unset 40px math Ag": {
+      "group": "lang",
+      "font": "40px math",
+      "text": "Ag",
+      "system": true,
+      "chrome": [48.079986572265625, -0.12000000476837158, 47.5999870300293, 26.479999542236328, 9.39999771118164]
+    },
+    "lang: unset 40px math 直骨": {
+      "group": "lang",
+      "font": "40px math",
+      "text": "直骨",
+      "system": true,
+      "chrome": [80, -1.5199999809265137, 78.19999694824219, 30.520000457763672, 6.560005187988281]
+    },
+    "lang: unset 40px math あ": {
+      "group": "lang",
+      "font": "40px math",
+      "text": "あ",
+      "system": true,
+      "chrome": [40, -5.599999904632568, 34.560001373291016, 28.360000610351562, 5.360004425048828]
+    },
+    "lang: unset 40px BSLato, serif Agあ": {
+      "group": "lang",
+      "font": "40px BSLato, serif",
+      "text": "Agあ",
+      "system": true,
+      "chrome": [87.63998413085938, -0.19999998807907104, 83.91998291015625, 32.23999786376953, 7.299999237060547]
+    },
+    "lang: unset 40px BSLato, serif →": {
+      "group": "lang",
+      "font": "40px BSLato, serif",
+      "text": "→",
+      "system": true,
+      "chrome": [40, -4.5703125, 35.8984375, 22.890625, -6.015625]
+    },
+    "lang: unset 40px BSLato, sans-serif Agあ": {
+      "group": "lang",
+      "font": "40px BSLato, sans-serif",
+      "text": "Agあ",
+      "system": true,
+      "chrome": [87.63998413085938, -0.19999998807907104, 83.91998291015625, 32.23999786376953, 7.299999237060547]
+    },
+    "lang: unset 40px BSLato, sans-serif →": {
+      "group": "lang",
+      "font": "40px BSLato, sans-serif",
+      "text": "→",
+      "system": true,
+      "chrome": [40, -4.5703125, 35.8984375, 22.890625, -6.015625]
+    },
+    "lang: unset 40px BSLato, monospace Agあ": {
+      "group": "lang",
+      "font": "40px BSLato, monospace",
+      "text": "Agあ",
+      "system": true,
+      "chrome": [87.63998413085938, -0.19999998807907104, 83.91998291015625, 32.23999786376953, 7.299999237060547]
+    },
+    "lang: unset 40px serif, sans-serif Agあ": {
+      "group": "lang",
+      "font": "40px serif, sans-serif",
+      "text": "Agあ",
+      "system": true,
+      "chrome": [88.88671875, -0.5859375, 83.44671630859375, 28.360000610351562, 8.7109375]
+    },
+    "lang: unset 40px serif, sans-serif →": {
+      "group": "lang",
+      "font": "40px serif, sans-serif",
+      "text": "→",
+      "system": true,
+      "chrome": [40, -1.54296875, 38.4375, 17.109375, -3.06640625]
+    },
+    "lang: unset 40px NoSuchFamily, cursive Agあ": {
+      "group": "lang",
+      "font": "40px NoSuchFamily, cursive",
+      "text": "Agあ",
+      "system": true,
+      "chrome": [87.34375, -2.36328125, 81.78375244140625, 28.19999885559082, 16.347658157348633]
+    },
+    "lang: unset 40px NoSuchFamily, cursive →": {
+      "group": "lang",
+      "font": "40px NoSuchFamily, cursive",
+      "text": "→",
+      "system": true,
+      "chrome": [40, -2, 38.119998931884766, 18.040000915527344, -5.479999542236328]
+    },
+    "lang: ja 40px serif Ag": {
+      "group": "lang",
+      "font": "40px serif",
+      "text": "Ag",
+      "ctx": {
+        "lang": "ja"
+      },
+      "system": true,
+      "chrome": [50.83998107910156, -0.35999998450279236, 50.079986572265625, 30.599998474121094, 7.280002593994141],
+      "flip": "S8"
+    },
+    "lang: ja 40px serif 直骨": {
+      "group": "lang",
+      "font": "40px serif",
+      "text": "直骨",
+      "ctx": {
+        "lang": "ja"
+      },
+      "system": true,
+      "chrome": [80, -2.319999933242798, 79, 33.47999954223633, 3.2000045776367188]
+    },
+    "lang: ja 40px serif あア": {
+      "group": "lang",
+      "font": "40px serif",
+      "text": "あア",
+      "ctx": {
+        "lang": "ja"
+      },
+      "system": true,
+      "chrome": [80, -5.360000133514404, 75.31999969482422, 32.439998626708984, 1.9200057983398438]
+    },
+    "lang: ja 40px sans-serif Ag": {
+      "group": "lang",
+      "font": "40px sans-serif",
+      "text": "Ag",
+      "ctx": {
+        "lang": "ja"
+      },
+      "system": true,
+      "chrome": [55.63999938964844, -0.5600000023841858, 52.76000213623047, 30.639999389648438, 8.360000610351562],
+      "flip": "S8"
+    },
+    "lang: ja 40px sans-serif 直骨": {
+      "group": "lang",
+      "font": "40px sans-serif",
+      "text": "直骨",
+      "ctx": {
+        "lang": "ja"
+      },
+      "system": true,
+      "chrome": [80, -3.1600000858306885, 76.83999633789062, 33.55999755859375, 2.9200057983398438]
+    },
+    "lang: ja 40px sans-serif あア": {
+      "group": "lang",
+      "font": "40px sans-serif",
+      "text": "あア",
+      "ctx": {
+        "lang": "ja"
+      },
+      "system": true,
+      "chrome": [80, -4.359999656677246, 76.47999572753906, 32.52000045776367, 1.6400032043457031]
+    },
+    "lang: ja 40px cursive Ag": {
+      "group": "lang",
+      "font": "40px cursive",
+      "text": "Ag",
+      "ctx": {
+        "lang": "ja"
+      },
+      "system": true,
+      "chrome": [47.34375, -2.36328125, 46.9921875, 26.5234375, 16.34765625]
+    },
+    "lang: ja 40px cursive 直骨": {
+      "group": "lang",
+      "font": "40px cursive",
+      "text": "直骨",
+      "ctx": {
+        "lang": "ja"
+      },
+      "system": true,
+      "chrome": [80, -3.1600000858306885, 76.83999633789062, 33.55999755859375, 2.9200057983398438],
+      "flip": "S8"
+    },
+    "lang: ja 40px cursive あア": {
+      "group": "lang",
+      "font": "40px cursive",
+      "text": "あア",
+      "ctx": {
+        "lang": "ja"
+      },
+      "system": true,
+      "chrome": [80, -4.359999656677246, 76.47999572753906, 32.52000045776367, 1.6400032043457031],
+      "flip": "S8"
+    },
+    "lang: ja 40px fantasy Ag": {
+      "group": "lang",
+      "font": "40px fantasy",
+      "text": "Ag",
+      "ctx": {
+        "lang": "ja"
+      },
+      "system": true,
+      "chrome": [50.95703125, 0.234375, 53.515625, 27.16796875, 15.234375]
+    },
+    "lang: ja 40px fantasy 直骨": {
+      "group": "lang",
+      "font": "40px fantasy",
+      "text": "直骨",
+      "ctx": {
+        "lang": "ja"
+      },
+      "system": true,
+      "chrome": [80, -3.1600000858306885, 76.83999633789062, 33.55999755859375, 2.9200057983398438]
+    },
+    "lang: ja 40px fantasy あア": {
+      "group": "lang",
+      "font": "40px fantasy",
+      "text": "あア",
+      "ctx": {
+        "lang": "ja"
+      },
+      "system": true,
+      "chrome": [80, -4.359999656677246, 76.47999572753906, 32.52000045776367, 1.6400032043457031]
+    },
+    "lang: ja 40px -webkit-body Ag": {
+      "group": "lang",
+      "font": "40px -webkit-body",
+      "text": "Ag",
+      "ctx": {
+        "lang": "ja"
+      },
+      "system": true,
+      "chrome": [55.63999938964844, -0.5600000023841858, 52.76000213623047, 30.639999389648438, 8.360000610351562],
+      "flip": "S8"
+    },
+    "lang: ja 40px -webkit-body 直骨": {
+      "group": "lang",
+      "font": "40px -webkit-body",
+      "text": "直骨",
+      "ctx": {
+        "lang": "ja"
+      },
+      "system": true,
+      "chrome": [80, -3.1600000858306885, 76.83999633789062, 33.55999755859375, 2.9200057983398438],
+      "flip": "S8"
+    },
+    "lang: ja 40px -webkit-body あア": {
+      "group": "lang",
+      "font": "40px -webkit-body",
+      "text": "あア",
+      "ctx": {
+        "lang": "ja"
+      },
+      "system": true,
+      "chrome": [80, -4.359999656677246, 76.47999572753906, 32.52000045776367, 1.6400032043457031],
+      "flip": "S8"
+    },
+    "lang: ja 40px -webkit-standard Ag": {
+      "group": "lang",
+      "font": "40px -webkit-standard",
+      "text": "Ag",
+      "ctx": {
+        "lang": "ja"
+      },
+      "system": true,
+      "chrome": [55.63999938964844, -0.5600000023841858, 52.76000213623047, 30.639999389648438, 8.360000610351562],
+      "flip": "S8"
+    },
+    "lang: ja 40px -webkit-standard 直骨": {
+      "group": "lang",
+      "font": "40px -webkit-standard",
+      "text": "直骨",
+      "ctx": {
+        "lang": "ja"
+      },
+      "system": true,
+      "chrome": [80, -3.1600000858306885, 76.83999633789062, 33.55999755859375, 2.9200057983398438],
+      "flip": "S8"
+    },
+    "lang: ja 40px -webkit-standard あア": {
+      "group": "lang",
+      "font": "40px -webkit-standard",
+      "text": "あア",
+      "ctx": {
+        "lang": "ja"
+      },
+      "system": true,
+      "chrome": [80, -4.359999656677246, 76.47999572753906, 32.52000045776367, 1.6400032043457031],
+      "flip": "S8"
+    },
+    "lang: ja 40px math Ag": {
+      "group": "lang",
+      "font": "40px math",
+      "text": "Ag",
+      "ctx": {
+        "lang": "ja"
+      },
+      "system": true,
+      "chrome": [48.079986572265625, -0.12000000476837158, 47.5999870300293, 26.479999542236328, 9.39999771118164]
+    },
+    "lang: ja 40px math 直骨": {
+      "group": "lang",
+      "font": "40px math",
+      "text": "直骨",
+      "ctx": {
+        "lang": "ja"
+      },
+      "system": true,
+      "chrome": [80, -3.1600000858306885, 76.83999633789062, 33.55999755859375, 2.9200057983398438],
+      "flip": "S8"
+    },
+    "lang: ja 40px math あア": {
+      "group": "lang",
+      "font": "40px math",
+      "text": "あア",
+      "ctx": {
+        "lang": "ja"
+      },
+      "system": true,
+      "chrome": [80, -4.359999656677246, 76.47999572753906, 32.52000045776367, 1.6400032043457031],
+      "flip": "S8"
+    },
+    "lang: ja 40px BSLato, serif Agあア": {
+      "group": "lang",
+      "font": "40px BSLato, serif",
+      "text": "Agあア",
+      "ctx": {
+        "lang": "ja"
+      },
+      "system": true,
+      "chrome": [127.63998413085938, -0.19999998807907104, 122.95999145507812, 32.439998626708984, 7.299999237060547],
+      "flip": "S8"
+    },
+    "lang: ja 40px BSLato, serif →": {
+      "group": "lang",
+      "font": "40px BSLato, serif",
+      "text": "→",
+      "ctx": {
+        "lang": "ja"
+      },
+      "system": true,
+      "chrome": [40, -2.5199999809265137, 38.47999954223633, 23.399999618530273, -7.039997100830078],
+      "flip": "S8"
+    },
+    "lang: ja 40px BSLato, sans-serif Agあア": {
+      "group": "lang",
+      "font": "40px BSLato, sans-serif",
+      "text": "Agあア",
+      "ctx": {
+        "lang": "ja"
+      },
+      "system": true,
+      "chrome": [127.63998413085938, -0.19999998807907104, 124.11998748779297, 32.52000045776367, 7.299999237060547]
+    },
+    "lang: ja 40px BSLato, sans-serif →": {
+      "group": "lang",
+      "font": "40px BSLato, sans-serif",
+      "text": "→",
+      "ctx": {
+        "lang": "ja"
+      },
+      "system": true,
+      "chrome": [40, -2.5199999809265137, 38.47999954223633, 23.399999618530273, -7.039997100830078],
+      "flip": "S8"
+    },
+    "lang: ja 40px serif, sans-serif Agあア": {
+      "group": "lang",
+      "font": "40px serif, sans-serif",
+      "text": "Agあア",
+      "ctx": {
+        "lang": "ja"
+      },
+      "system": true,
+      "chrome": [130.83998107910156, -0.35999998450279236, 126.15998840332031, 32.439998626708984, 7.280002593994141],
+      "flip": "S8"
+    },
+    "lang: ja 40px serif, sans-serif →": {
+      "group": "lang",
+      "font": "40px serif, sans-serif",
+      "text": "→",
+      "ctx": {
+        "lang": "ja"
+      },
+      "system": true,
+      "chrome": [40, -2.5199999809265137, 38.47999954223633, 23.399999618530273, -7.039997100830078],
+      "flip": "S8"
+    },
+    "lang: ja 40px NoSuchFamily, cursive Agあア": {
+      "group": "lang",
+      "font": "40px NoSuchFamily, cursive",
+      "text": "Agあア",
+      "ctx": {
+        "lang": "ja"
+      },
+      "system": true,
+      "chrome": [127.34375, -2.36328125, 123.8237533569336, 32.52000045776367, 16.34765625],
+      "flip": "S8"
+    },
+    "lang: ja 40px NoSuchFamily, cursive →": {
+      "group": "lang",
+      "font": "40px NoSuchFamily, cursive",
+      "text": "→",
+      "ctx": {
+        "lang": "ja"
+      },
+      "system": true,
+      "chrome": [40, -2.5199999809265137, 38.47999954223633, 23.399999618530273, -7.039997100830078]
+    },
+    "lang: zh-CN 40px serif Ag": {
+      "group": "lang",
+      "font": "40px serif",
+      "text": "Ag",
+      "ctx": {
+        "lang": "zh-CN"
+      },
+      "system": true,
+      "chrome": [45.91998291015625, 0.1600000113248825, 43.679988861083984, 28.80000114440918, 3.9200000762939453],
+      "flip": "S8"
+    },
+    "lang: zh-CN 40px serif 直骨": {
+      "group": "lang",
+      "font": "40px serif",
+      "text": "直骨",
+      "ctx": {
+        "lang": "zh-CN"
+      },
+      "system": true,
+      "chrome": [80, -1.5199999809265137, 78.19999694824219, 30.520000457763672, 6.560005187988281]
+    },
+    "lang: zh-CN 40px serif 水说": {
+      "group": "lang",
+      "font": "40px serif",
+      "text": "水说",
+      "ctx": {
+        "lang": "zh-CN"
+      },
+      "system": true,
+      "chrome": [80, -1.3600001335144043, 78.5999984741211, 31.079999923706055, 6.760007858276367]
+    },
+    "lang: zh-CN 40px sans-serif Ag": {
+      "group": "lang",
+      "font": "40px sans-serif",
+      "text": "Ag",
+      "ctx": {
+        "lang": "zh-CN"
+      },
+      "system": true,
+      "chrome": [49.91999816894531, 0, 47.439998626708984, 28.559999465942383, 8.480001449584961],
+      "flip": "S8"
+    },
+    "lang: zh-CN 40px sans-serif 直骨": {
+      "group": "lang",
+      "font": "40px sans-serif",
+      "text": "直骨",
+      "ctx": {
+        "lang": "zh-CN"
+      },
+      "system": true,
+      "chrome": [80, -2.2799999713897705, 76.27999877929688, 32.79999923706055, 4]
+    },
+    "lang: zh-CN 40px sans-serif 水说": {
+      "group": "lang",
+      "font": "40px sans-serif",
+      "text": "水说",
+      "ctx": {
+        "lang": "zh-CN"
+      },
+      "system": true,
+      "chrome": [80, -1.5600000619888306, 78.72000122070312, 33.040000915527344, 4.040004730224609]
+    },
+    "lang: zh-CN 40px monospace 直骨": {
+      "group": "lang",
+      "font": "40px monospace",
+      "text": "直骨",
+      "ctx": {
+        "lang": "zh-CN"
+      },
+      "system": true,
+      "chrome": [80, -2.2799999713897705, 76.27999877929688, 32.79999923706055, 4]
+    },
+    "lang: zh-CN 40px monospace 水说": {
+      "group": "lang",
+      "font": "40px monospace",
+      "text": "水说",
+      "ctx": {
+        "lang": "zh-CN"
+      },
+      "system": true,
+      "chrome": [80, -1.5600000619888306, 78.72000122070312, 33.040000915527344, 4.040004730224609]
+    },
+    "lang: zh-CN 40px cursive Ag": {
+      "group": "lang",
+      "font": "40px cursive",
+      "text": "Ag",
+      "ctx": {
+        "lang": "zh-CN"
+      },
+      "system": true,
+      "chrome": [47.15998840332031, -0.24000000953674316, 44.87998962402344, 28.80000114440918, 3.9200000762939453],
+      "flip": "S8"
+    },
+    "lang: zh-CN 40px cursive 直骨": {
+      "group": "lang",
+      "font": "40px cursive",
+      "text": "直骨",
+      "ctx": {
+        "lang": "zh-CN"
+      },
+      "system": true,
+      "chrome": [80, -3.799999952316284, 77.04000091552734, 30.03999900817871, 6.480005264282227]
+    },
+    "lang: zh-CN 40px cursive 水说": {
+      "group": "lang",
+      "font": "40px cursive",
+      "text": "水说",
+      "ctx": {
+        "lang": "zh-CN"
+      },
+      "system": true,
+      "chrome": [80, -4.679999828338623, 79.83999633789062, 29.079999923706055, 4.320005416870117]
+    },
+    "lang: zh-CN 40px fantasy Ag": {
+      "group": "lang",
+      "font": "40px fantasy",
+      "text": "Ag",
+      "ctx": {
+        "lang": "zh-CN"
+      },
+      "system": true,
+      "chrome": [50.95703125, 0.234375, 53.515625, 27.16796875, 15.234375]
+    },
+    "lang: zh-CN 40px fantasy 直骨": {
+      "group": "lang",
+      "font": "40px fantasy",
+      "text": "直骨",
+      "ctx": {
+        "lang": "zh-CN"
+      },
+      "system": true,
+      "chrome": [80, -2.2799999713897705, 76.27999877929688, 32.79999923706055, 4]
+    },
+    "lang: zh-CN 40px fantasy 水说": {
+      "group": "lang",
+      "font": "40px fantasy",
+      "text": "水说",
+      "ctx": {
+        "lang": "zh-CN"
+      },
+      "system": true,
+      "chrome": [80, -1.5600000619888306, 78.72000122070312, 33.040000915527344, 4.040004730224609]
+    },
+    "lang: zh-CN 40px -webkit-body Ag": {
+      "group": "lang",
+      "font": "40px -webkit-body",
+      "text": "Ag",
+      "ctx": {
+        "lang": "zh-CN"
+      },
+      "system": true,
+      "chrome": [49.91999816894531, 0, 47.439998626708984, 28.559999465942383, 8.480001449584961],
+      "flip": "S8"
+    },
+    "lang: zh-CN 40px -webkit-body 直骨": {
+      "group": "lang",
+      "font": "40px -webkit-body",
+      "text": "直骨",
+      "ctx": {
+        "lang": "zh-CN"
+      },
+      "system": true,
+      "chrome": [80, -2.2799999713897705, 76.27999877929688, 32.79999923706055, 4],
+      "flip": "S8"
+    },
+    "lang: zh-CN 40px -webkit-body 水说": {
+      "group": "lang",
+      "font": "40px -webkit-body",
+      "text": "水说",
+      "ctx": {
+        "lang": "zh-CN"
+      },
+      "system": true,
+      "chrome": [80, -1.5600000619888306, 78.72000122070312, 33.040000915527344, 4.040004730224609],
+      "flip": "S8"
+    },
+    "lang: zh-CN 40px -webkit-standard Ag": {
+      "group": "lang",
+      "font": "40px -webkit-standard",
+      "text": "Ag",
+      "ctx": {
+        "lang": "zh-CN"
+      },
+      "system": true,
+      "chrome": [49.91999816894531, 0, 47.439998626708984, 28.559999465942383, 8.480001449584961],
+      "flip": "S8"
+    },
+    "lang: zh-CN 40px -webkit-standard 直骨": {
+      "group": "lang",
+      "font": "40px -webkit-standard",
+      "text": "直骨",
+      "ctx": {
+        "lang": "zh-CN"
+      },
+      "system": true,
+      "chrome": [80, -2.2799999713897705, 76.27999877929688, 32.79999923706055, 4],
+      "flip": "S8"
+    },
+    "lang: zh-CN 40px -webkit-standard 水说": {
+      "group": "lang",
+      "font": "40px -webkit-standard",
+      "text": "水说",
+      "ctx": {
+        "lang": "zh-CN"
+      },
+      "system": true,
+      "chrome": [80, -1.5600000619888306, 78.72000122070312, 33.040000915527344, 4.040004730224609],
+      "flip": "S8"
+    },
+    "lang: zh-CN 40px math Ag": {
+      "group": "lang",
+      "font": "40px math",
+      "text": "Ag",
+      "ctx": {
+        "lang": "zh-CN"
+      },
+      "system": true,
+      "chrome": [48.079986572265625, -0.12000000476837158, 47.5999870300293, 26.479999542236328, 9.39999771118164]
+    },
+    "lang: zh-CN 40px math 直骨": {
+      "group": "lang",
+      "font": "40px math",
+      "text": "直骨",
+      "ctx": {
+        "lang": "zh-CN"
+      },
+      "system": true,
+      "chrome": [80, -2.2799999713897705, 76.27999877929688, 32.79999923706055, 4],
+      "flip": "S8"
+    },
+    "lang: zh-CN 40px math 水说": {
+      "group": "lang",
+      "font": "40px math",
+      "text": "水说",
+      "ctx": {
+        "lang": "zh-CN"
+      },
+      "system": true,
+      "chrome": [80, -1.5600000619888306, 78.72000122070312, 33.040000915527344, 4.040004730224609],
+      "flip": "S8"
+    },
+    "lang: zh-CN 40px BSLato, serif Ag水说": {
+      "group": "lang",
+      "font": "40px BSLato, serif",
+      "text": "Ag水说",
+      "ctx": {
+        "lang": "zh-CN"
+      },
+      "system": true,
+      "chrome": [127.63998413085938, -0.19999998807907104, 126.23998260498047, 31.079999923706055, 7.30000114440918],
+      "flip": "S8"
+    },
+    "lang: zh-CN 40px BSLato, serif →": {
+      "group": "lang",
+      "font": "40px BSLato, serif",
+      "text": "→",
+      "ctx": {
+        "lang": "zh-CN"
+      },
+      "system": true,
+      "chrome": [40, -2.0399999618530273, 38.20000076293945, 18.15999984741211, -5.399998664855957],
+      "flip": "S8"
+    },
+    "lang: zh-CN 40px BSLato, sans-serif Ag水说": {
+      "group": "lang",
+      "font": "40px BSLato, sans-serif",
+      "text": "Ag水说",
+      "ctx": {
+        "lang": "zh-CN"
+      },
+      "system": true,
+      "chrome": [127.63998413085938, -0.19999998807907104, 126.3599853515625, 33.040000915527344, 7.299999237060547]
+    },
+    "lang: zh-CN 40px BSLato, sans-serif →": {
+      "group": "lang",
+      "font": "40px BSLato, sans-serif",
+      "text": "→",
+      "ctx": {
+        "lang": "zh-CN"
+      },
+      "system": true,
+      "chrome": [40, -0.8799999952316284, 39.119998931884766, 23.03999900817871, -5.759998321533203],
+      "flip": "S8"
+    },
+    "lang: zh-CN 40px BSLato, monospace Ag水说": {
+      "group": "lang",
+      "font": "40px BSLato, monospace",
+      "text": "Ag水说",
+      "ctx": {
+        "lang": "zh-CN"
+      },
+      "system": true,
+      "chrome": [127.63998413085938, -0.19999998807907104, 126.3599853515625, 33.040000915527344, 7.299999237060547]
+    },
+    "lang: zh-CN 40px serif, sans-serif Ag水说": {
+      "group": "lang",
+      "font": "40px serif, sans-serif",
+      "text": "Ag水说",
+      "ctx": {
+        "lang": "zh-CN"
+      },
+      "system": true,
+      "chrome": [125.91998291015625, 0.1600000113248825, 124.51998138427734, 31.079999923706055, 6.760007858276367],
+      "flip": "S8"
+    },
+    "lang: zh-CN 40px serif, sans-serif →": {
+      "group": "lang",
+      "font": "40px serif, sans-serif",
+      "text": "→",
+      "ctx": {
+        "lang": "zh-CN"
+      },
+      "system": true,
+      "chrome": [40, -2.0399999618530273, 38.20000076293945, 18.15999984741211, -5.399998664855957],
+      "flip": "S8"
+    },
+    "lang: zh-CN 40px NoSuchFamily, cursive Ag水说": {
+      "group": "lang",
+      "font": "40px NoSuchFamily, cursive",
+      "text": "Ag水说",
+      "ctx": {
+        "lang": "zh-CN"
+      },
+      "system": true,
+      "chrome": [127.15998840332031, -0.24000000953674316, 126.99998474121094, 29.079999923706055, 4.320005416870117],
+      "flip": "S8"
+    },
+    "lang: zh-CN 40px NoSuchFamily, cursive →": {
+      "group": "lang",
+      "font": "40px NoSuchFamily, cursive",
+      "text": "→",
+      "ctx": {
+        "lang": "zh-CN"
+      },
+      "system": true,
+      "chrome": [40, -2, 38.119998931884766, 18.040000915527344, -5.479999542236328]
+    },
+    "lang: zh-TW 40px serif Ag": {
+      "group": "lang",
+      "font": "40px serif",
+      "text": "Ag",
+      "ctx": {
+        "lang": "zh-TW"
+      },
+      "system": true,
+      "chrome": [45.91998291015625, 0.1600000113248825, 43.679988861083984, 28.80000114440918, 3.9200000762939453],
+      "flip": "S8"
+    },
+    "lang: zh-TW 40px serif 直骨": {
+      "group": "lang",
+      "font": "40px serif",
+      "text": "直骨",
+      "ctx": {
+        "lang": "zh-TW"
+      },
+      "system": true,
+      "chrome": [80, -1.5199999809265137, 78, 30.520000457763672, 6.920001983642578]
+    },
+    "lang: zh-TW 40px serif 水說": {
+      "group": "lang",
+      "font": "40px serif",
+      "text": "水說",
+      "ctx": {
+        "lang": "zh-TW"
+      },
+      "system": true,
+      "chrome": [80, -1.3600001335144043, 78.8800048828125, 31.079999923706055, 6.760000228881836]
+    },
+    "lang: zh-TW 40px sans-serif Ag": {
+      "group": "lang",
+      "font": "40px sans-serif",
+      "text": "Ag",
+      "ctx": {
+        "lang": "zh-TW"
+      },
+      "system": true,
+      "chrome": [49.91999816894531, 0, 47.439998626708984, 28.559999465942383, 8.480001449584961],
+      "flip": "S8"
+    },
+    "lang: zh-TW 40px sans-serif 直骨": {
+      "group": "lang",
+      "font": "40px sans-serif",
+      "text": "直骨",
+      "ctx": {
+        "lang": "zh-TW"
+      },
+      "system": true,
+      "chrome": [80, -2.2799999713897705, 76.31999969482422, 32.79999923706055, 4.080005645751953]
+    },
+    "lang: zh-TW 40px sans-serif 水說": {
+      "group": "lang",
+      "font": "40px sans-serif",
+      "text": "水說",
+      "ctx": {
+        "lang": "zh-TW"
+      },
+      "system": true,
+      "chrome": [80, -1.5600000619888306, 78.47999572753906, 32.84000015258789, 4.040004730224609]
+    },
+    "lang: zh-TW 40px monospace 直骨": {
+      "group": "lang",
+      "font": "40px monospace",
+      "text": "直骨",
+      "ctx": {
+        "lang": "zh-TW"
+      },
+      "system": true,
+      "chrome": [80, -2.2799999713897705, 76.31999969482422, 32.79999923706055, 4.080005645751953]
+    },
+    "lang: zh-TW 40px monospace 水說": {
+      "group": "lang",
+      "font": "40px monospace",
+      "text": "水說",
+      "ctx": {
+        "lang": "zh-TW"
+      },
+      "system": true,
+      "chrome": [80, -1.5600000619888306, 78.47999572753906, 32.84000015258789, 4.040004730224609]
+    },
+    "lang: zh-TW 40px cursive Ag": {
+      "group": "lang",
+      "font": "40px cursive",
+      "text": "Ag",
+      "ctx": {
+        "lang": "zh-TW"
+      },
+      "system": true,
+      "chrome": [47.15998840332031, -0.24000000953674316, 44.87998962402344, 28.80000114440918, 3.9200000762939453],
+      "flip": "S8"
+    },
+    "lang: zh-TW 40px cursive 直骨": {
+      "group": "lang",
+      "font": "40px cursive",
+      "text": "直骨",
+      "ctx": {
+        "lang": "zh-TW"
+      },
+      "system": true,
+      "chrome": [80, -2.879999876022339, 75.55999755859375, 30.15999984741211, 5.240001678466797]
+    },
+    "lang: zh-TW 40px cursive 水說": {
+      "group": "lang",
+      "font": "40px cursive",
+      "text": "水說",
+      "ctx": {
+        "lang": "zh-TW"
+      },
+      "system": true,
+      "chrome": [80, -4.679999828338623, 77.76000213623047, 29.079999923706055, 4.320005416870117]
+    },
+    "lang: zh-TW 40px fantasy Ag": {
+      "group": "lang",
+      "font": "40px fantasy",
+      "text": "Ag",
+      "ctx": {
+        "lang": "zh-TW"
+      },
+      "system": true,
+      "chrome": [50.95703125, 0.234375, 53.515625, 27.16796875, 15.234375]
+    },
+    "lang: zh-TW 40px fantasy 直骨": {
+      "group": "lang",
+      "font": "40px fantasy",
+      "text": "直骨",
+      "ctx": {
+        "lang": "zh-TW"
+      },
+      "system": true,
+      "chrome": [80, -2.2799999713897705, 76.31999969482422, 32.79999923706055, 4.080005645751953]
+    },
+    "lang: zh-TW 40px fantasy 水說": {
+      "group": "lang",
+      "font": "40px fantasy",
+      "text": "水說",
+      "ctx": {
+        "lang": "zh-TW"
+      },
+      "system": true,
+      "chrome": [80, -1.5600000619888306, 78.47999572753906, 32.84000015258789, 4.040004730224609]
+    },
+    "lang: zh-TW 40px -webkit-body Ag": {
+      "group": "lang",
+      "font": "40px -webkit-body",
+      "text": "Ag",
+      "ctx": {
+        "lang": "zh-TW"
+      },
+      "system": true,
+      "chrome": [49.91999816894531, 0, 47.439998626708984, 28.559999465942383, 8.480001449584961],
+      "flip": "S8"
+    },
+    "lang: zh-TW 40px -webkit-body 直骨": {
+      "group": "lang",
+      "font": "40px -webkit-body",
+      "text": "直骨",
+      "ctx": {
+        "lang": "zh-TW"
+      },
+      "system": true,
+      "chrome": [80, -2.2799999713897705, 76.31999969482422, 32.79999923706055, 4.080005645751953],
+      "flip": "S8"
+    },
+    "lang: zh-TW 40px -webkit-body 水說": {
+      "group": "lang",
+      "font": "40px -webkit-body",
+      "text": "水說",
+      "ctx": {
+        "lang": "zh-TW"
+      },
+      "system": true,
+      "chrome": [80, -1.5600000619888306, 78.47999572753906, 32.84000015258789, 4.040004730224609],
+      "flip": "S8"
+    },
+    "lang: zh-TW 40px -webkit-standard Ag": {
+      "group": "lang",
+      "font": "40px -webkit-standard",
+      "text": "Ag",
+      "ctx": {
+        "lang": "zh-TW"
+      },
+      "system": true,
+      "chrome": [49.91999816894531, 0, 47.439998626708984, 28.559999465942383, 8.480001449584961],
+      "flip": "S8"
+    },
+    "lang: zh-TW 40px -webkit-standard 直骨": {
+      "group": "lang",
+      "font": "40px -webkit-standard",
+      "text": "直骨",
+      "ctx": {
+        "lang": "zh-TW"
+      },
+      "system": true,
+      "chrome": [80, -2.2799999713897705, 76.31999969482422, 32.79999923706055, 4.080005645751953],
+      "flip": "S8"
+    },
+    "lang: zh-TW 40px -webkit-standard 水說": {
+      "group": "lang",
+      "font": "40px -webkit-standard",
+      "text": "水說",
+      "ctx": {
+        "lang": "zh-TW"
+      },
+      "system": true,
+      "chrome": [80, -1.5600000619888306, 78.47999572753906, 32.84000015258789, 4.040004730224609],
+      "flip": "S8"
+    },
+    "lang: zh-TW 40px math Ag": {
+      "group": "lang",
+      "font": "40px math",
+      "text": "Ag",
+      "ctx": {
+        "lang": "zh-TW"
+      },
+      "system": true,
+      "chrome": [48.079986572265625, -0.12000000476837158, 47.5999870300293, 26.479999542236328, 9.39999771118164]
+    },
+    "lang: zh-TW 40px math 直骨": {
+      "group": "lang",
+      "font": "40px math",
+      "text": "直骨",
+      "ctx": {
+        "lang": "zh-TW"
+      },
+      "system": true,
+      "chrome": [80, -2.2799999713897705, 76.31999969482422, 32.79999923706055, 4.080005645751953],
+      "flip": "S8"
+    },
+    "lang: zh-TW 40px math 水說": {
+      "group": "lang",
+      "font": "40px math",
+      "text": "水說",
+      "ctx": {
+        "lang": "zh-TW"
+      },
+      "system": true,
+      "chrome": [80, -1.5600000619888306, 78.47999572753906, 32.84000015258789, 4.040004730224609],
+      "flip": "S8"
+    },
+    "lang: zh-TW 40px BSLato, serif Ag水說": {
+      "group": "lang",
+      "font": "40px BSLato, serif",
+      "text": "Ag水說",
+      "ctx": {
+        "lang": "zh-TW"
+      },
+      "system": true,
+      "chrome": [127.63998413085938, -0.19999998807907104, 126.51998901367188, 31.079999923706055, 7.30000114440918],
+      "flip": "S8"
+    },
+    "lang: zh-TW 40px BSLato, serif →": {
+      "group": "lang",
+      "font": "40px BSLato, serif",
+      "text": "→",
+      "ctx": {
+        "lang": "zh-TW"
+      },
+      "system": true,
+      "chrome": [40, -2.0399999618530273, 38.20000076293945, 18.15999984741211, -5.399998664855957],
+      "flip": "S8"
+    },
+    "lang: zh-TW 40px BSLato, sans-serif Ag水說": {
+      "group": "lang",
+      "font": "40px BSLato, sans-serif",
+      "text": "Ag水說",
+      "ctx": {
+        "lang": "zh-TW"
+      },
+      "system": true,
+      "chrome": [127.63998413085938, -0.19999998807907104, 126.11997985839844, 32.84000015258789, 7.299999237060547]
+    },
+    "lang: zh-TW 40px BSLato, sans-serif →": {
+      "group": "lang",
+      "font": "40px BSLato, sans-serif",
+      "text": "→",
+      "ctx": {
+        "lang": "zh-TW"
+      },
+      "system": true,
+      "chrome": [40, -0.8799999952316284, 39.119998931884766, 23.03999900817871, -5.759998321533203],
+      "flip": "S8"
+    },
+    "lang: zh-TW 40px BSLato, monospace Ag水說": {
+      "group": "lang",
+      "font": "40px BSLato, monospace",
+      "text": "Ag水說",
+      "ctx": {
+        "lang": "zh-TW"
+      },
+      "system": true,
+      "chrome": [127.63998413085938, -0.19999998807907104, 126.11997985839844, 32.84000015258789, 7.299999237060547]
+    },
+    "lang: zh-TW 40px serif, sans-serif Ag水說": {
+      "group": "lang",
+      "font": "40px serif, sans-serif",
+      "text": "Ag水說",
+      "ctx": {
+        "lang": "zh-TW"
+      },
+      "system": true,
+      "chrome": [125.91998291015625, 0.1600000113248825, 124.79998779296875, 31.079999923706055, 6.760000228881836],
+      "flip": "S8"
+    },
+    "lang: zh-TW 40px serif, sans-serif →": {
+      "group": "lang",
+      "font": "40px serif, sans-serif",
+      "text": "→",
+      "ctx": {
+        "lang": "zh-TW"
+      },
+      "system": true,
+      "chrome": [40, -2.0399999618530273, 38.20000076293945, 18.15999984741211, -5.399998664855957],
+      "flip": "S8"
+    },
+    "lang: zh-TW 40px NoSuchFamily, cursive Ag水說": {
+      "group": "lang",
+      "font": "40px NoSuchFamily, cursive",
+      "text": "Ag水說",
+      "ctx": {
+        "lang": "zh-TW"
+      },
+      "system": true,
+      "chrome": [127.15998840332031, -0.24000000953674316, 124.91999053955078, 29.079999923706055, 4.320005416870117],
+      "flip": "S8"
+    },
+    "lang: zh-TW 40px NoSuchFamily, cursive →": {
+      "group": "lang",
+      "font": "40px NoSuchFamily, cursive",
+      "text": "→",
+      "ctx": {
+        "lang": "zh-TW"
+      },
+      "system": true,
+      "chrome": [40, -2, 38.119998931884766, 18.040000915527344, -5.479999542236328]
+    },
+    "lang: ko 40px serif Ag": {
+      "group": "lang",
+      "font": "40px serif",
+      "text": "Ag",
+      "ctx": {
+        "lang": "ko"
+      },
+      "system": true,
+      "chrome": [48.9755859375, -0.4682926833629608, 50.2243766784668, 29.463415145874023, 7.76585578918457],
+      "flip": "S8"
+    },
+    "lang: ko 40px serif 直骨": {
+      "group": "lang",
+      "font": "40px serif",
+      "text": "直骨",
+      "ctx": {
+        "lang": "ko"
+      },
+      "system": true,
+      "chrome": [79.92193603515625, -2.7317073345184326, 77.6195068359375, 32.780487060546875, 3.31707763671875]
+    },
+    "lang: ko 40px serif 한국": {
+      "group": "lang",
+      "font": "40px serif",
+      "text": "한국",
+      "ctx": {
+        "lang": "ko"
+      },
+      "system": true,
+      "chrome": [79.92193603515625, -3.2390241622924805, 77.6195068359375, 33.248779296875, 3.473175048828125]
+    },
+    "lang: ko 40px sans-serif Ag": {
+      "group": "lang",
+      "font": "40px sans-serif",
+      "text": "Ag",
+      "ctx": {
+        "lang": "ko"
+      },
+      "system": true,
+      "chrome": [44.43998718261719, -0.7599999904632568, 43.679996490478516, 28.520000457763672, 4.200000762939453],
+      "flip": "S8"
+    },
+    "lang: ko 40px sans-serif 直骨": {
+      "group": "lang",
+      "font": "40px sans-serif",
+      "text": "直骨",
+      "ctx": {
+        "lang": "ko"
+      },
+      "system": true,
+      "chrome": [69.19998168945312, -2.879999876022339, 66.67998504638672, 31.35999870300293, 2.400003433227539]
+    },
+    "lang: ko 40px sans-serif 한국": {
+      "group": "lang",
+      "font": "40px sans-serif",
+      "text": "한국",
+      "ctx": {
+        "lang": "ko"
+      },
+      "system": true,
+      "chrome": [69.19998168945312, -1.3600001335144043, 67.67999267578125, 32.15999984741211, 3.0400047302246094]
+    },
+    "lang: ko 40px monospace 直骨": {
+      "group": "lang",
+      "font": "40px monospace",
+      "text": "直骨",
+      "ctx": {
+        "lang": "ko"
+      },
+      "system": true,
+      "chrome": [69.19998168945312, -2.879999876022339, 66.67998504638672, 31.35999870300293, 2.400003433227539]
+    },
+    "lang: ko 40px monospace 한국": {
+      "group": "lang",
+      "font": "40px monospace",
+      "text": "한국",
+      "ctx": {
+        "lang": "ko"
+      },
+      "system": true,
+      "chrome": [69.19998168945312, -1.3600001335144043, 67.67999267578125, 32.15999984741211, 3.0400047302246094]
+    },
+    "lang: ko 40px cursive Ag": {
+      "group": "lang",
+      "font": "40px cursive",
+      "text": "Ag",
+      "ctx": {
+        "lang": "ko"
+      },
+      "system": true,
+      "chrome": [47.34375, -2.36328125, 46.9921875, 26.5234375, 16.34765625]
+    },
+    "lang: ko 40px cursive 直骨": {
+      "group": "lang",
+      "font": "40px cursive",
+      "text": "直骨",
+      "ctx": {
+        "lang": "ko"
+      },
+      "system": true,
+      "chrome": [69.19998168945312, -2.879999876022339, 66.67998504638672, 31.35999870300293, 2.400003433227539],
+      "flip": "S8"
+    },
+    "lang: ko 40px cursive 한국": {
+      "group": "lang",
+      "font": "40px cursive",
+      "text": "한국",
+      "ctx": {
+        "lang": "ko"
+      },
+      "system": true,
+      "chrome": [69.19998168945312, -1.3600001335144043, 67.67999267578125, 32.15999984741211, 3.0400047302246094],
+      "flip": "S8"
+    },
+    "lang: ko 40px fantasy Ag": {
+      "group": "lang",
+      "font": "40px fantasy",
+      "text": "Ag",
+      "ctx": {
+        "lang": "ko"
+      },
+      "system": true,
+      "chrome": [50.95703125, 0.234375, 53.515625, 27.16796875, 15.234375]
+    },
+    "lang: ko 40px fantasy 直骨": {
+      "group": "lang",
+      "font": "40px fantasy",
+      "text": "直骨",
+      "ctx": {
+        "lang": "ko"
+      },
+      "system": true,
+      "chrome": [69.19998168945312, -2.879999876022339, 66.67998504638672, 31.35999870300293, 2.400003433227539]
+    },
+    "lang: ko 40px fantasy 한국": {
+      "group": "lang",
+      "font": "40px fantasy",
+      "text": "한국",
+      "ctx": {
+        "lang": "ko"
+      },
+      "system": true,
+      "chrome": [69.19998168945312, -1.3600001335144043, 67.67999267578125, 32.15999984741211, 3.0400047302246094]
+    },
+    "lang: ko 40px -webkit-body Ag": {
+      "group": "lang",
+      "font": "40px -webkit-body",
+      "text": "Ag",
+      "ctx": {
+        "lang": "ko"
+      },
+      "system": true,
+      "chrome": [44.43998718261719, -0.7599999904632568, 43.679996490478516, 28.520000457763672, 4.200000762939453],
+      "flip": "S8"
+    },
+    "lang: ko 40px -webkit-body 直骨": {
+      "group": "lang",
+      "font": "40px -webkit-body",
+      "text": "直骨",
+      "ctx": {
+        "lang": "ko"
+      },
+      "system": true,
+      "chrome": [69.19998168945312, -2.879999876022339, 66.67998504638672, 31.35999870300293, 2.400003433227539],
+      "flip": "S8"
+    },
+    "lang: ko 40px -webkit-body 한국": {
+      "group": "lang",
+      "font": "40px -webkit-body",
+      "text": "한국",
+      "ctx": {
+        "lang": "ko"
+      },
+      "system": true,
+      "chrome": [69.19998168945312, -1.3600001335144043, 67.67999267578125, 32.15999984741211, 3.0400047302246094],
+      "flip": "S8"
+    },
+    "lang: ko 40px -webkit-standard Ag": {
+      "group": "lang",
+      "font": "40px -webkit-standard",
+      "text": "Ag",
+      "ctx": {
+        "lang": "ko"
+      },
+      "system": true,
+      "chrome": [44.43998718261719, -0.7599999904632568, 43.679996490478516, 28.520000457763672, 4.200000762939453],
+      "flip": "S8"
+    },
+    "lang: ko 40px -webkit-standard 直骨": {
+      "group": "lang",
+      "font": "40px -webkit-standard",
+      "text": "直骨",
+      "ctx": {
+        "lang": "ko"
+      },
+      "system": true,
+      "chrome": [69.19998168945312, -2.879999876022339, 66.67998504638672, 31.35999870300293, 2.400003433227539],
+      "flip": "S8"
+    },
+    "lang: ko 40px -webkit-standard 한국": {
+      "group": "lang",
+      "font": "40px -webkit-standard",
+      "text": "한국",
+      "ctx": {
+        "lang": "ko"
+      },
+      "system": true,
+      "chrome": [69.19998168945312, -1.3600001335144043, 67.67999267578125, 32.15999984741211, 3.0400047302246094],
+      "flip": "S8"
+    },
+    "lang: ko 40px math Ag": {
+      "group": "lang",
+      "font": "40px math",
+      "text": "Ag",
+      "ctx": {
+        "lang": "ko"
+      },
+      "system": true,
+      "chrome": [48.079986572265625, -0.12000000476837158, 47.5999870300293, 26.479999542236328, 9.39999771118164]
+    },
+    "lang: ko 40px math 直骨": {
+      "group": "lang",
+      "font": "40px math",
+      "text": "直骨",
+      "ctx": {
+        "lang": "ko"
+      },
+      "system": true,
+      "chrome": [69.19998168945312, -2.879999876022339, 66.67998504638672, 31.35999870300293, 2.400003433227539],
+      "flip": "S8"
+    },
+    "lang: ko 40px math 한국": {
+      "group": "lang",
+      "font": "40px math",
+      "text": "한국",
+      "ctx": {
+        "lang": "ko"
+      },
+      "system": true,
+      "chrome": [69.19998168945312, -1.3600001335144043, 67.67999267578125, 32.15999984741211, 3.0400047302246094],
+      "flip": "S8"
+    },
+    "lang: ko 40px BSLato, serif Ag한국": {
+      "group": "lang",
+      "font": "40px BSLato, serif",
+      "text": "Ag한국",
+      "ctx": {
+        "lang": "ko"
+      },
+      "system": true,
+      "chrome": [127.56192016601562, -0.19999998807907104, 125.25949096679688, 33.248779296875, 7.299999237060547],
+      "flip": "S8"
+    },
+    "lang: ko 40px BSLato, serif →": {
+      "group": "lang",
+      "font": "40px BSLato, serif",
+      "text": "→",
+      "ctx": {
+        "lang": "ko"
+      },
+      "system": true,
+      "chrome": [39.960968017578125, 0, 39.960975646972656, 21.73658561706543, -7.33658504486084],
+      "flip": "S8"
+    },
+    "lang: ko 40px BSLato, sans-serif Ag한국": {
+      "group": "lang",
+      "font": "40px BSLato, sans-serif",
+      "text": "Ag한국",
+      "ctx": {
+        "lang": "ko"
+      },
+      "system": true,
+      "chrome": [116.8399658203125, -0.19999998807907104, 115.31997680664062, 32.15999984741211, 7.299999237060547]
+    },
+    "lang: ko 40px BSLato, sans-serif →": {
+      "group": "lang",
+      "font": "40px BSLato, sans-serif",
+      "text": "→",
+      "ctx": {
+        "lang": "ko"
+      },
+      "system": true,
+      "chrome": [28.199996948242188, 0, 26.35999870300293, 22.639999389648438, -9.639999389648438],
+      "flip": "S8"
+    },
+    "lang: ko 40px BSLato, monospace Ag한국": {
+      "group": "lang",
+      "font": "40px BSLato, monospace",
+      "text": "Ag한국",
+      "ctx": {
+        "lang": "ko"
+      },
+      "system": true,
+      "chrome": [116.8399658203125, -0.19999998807907104, 115.31997680664062, 32.15999984741211, 7.299999237060547]
+    },
+    "lang: ko 40px serif, sans-serif Ag한국": {
+      "group": "lang",
+      "font": "40px serif, sans-serif",
+      "text": "Ag한국",
+      "ctx": {
+        "lang": "ko"
+      },
+      "system": true,
+      "chrome": [128.89752197265625, -0.4682926833629608, 126.5950927734375, 33.248779296875, 7.765857696533203],
+      "flip": "S8"
+    },
+    "lang: ko 40px serif, sans-serif →": {
+      "group": "lang",
+      "font": "40px serif, sans-serif",
+      "text": "→",
+      "ctx": {
+        "lang": "ko"
+      },
+      "system": true,
+      "chrome": [39.960968017578125, 0, 39.960975646972656, 21.73658561706543, -7.33658504486084],
+      "flip": "S8"
+    },
+    "lang: ko 40px NoSuchFamily, cursive Ag한국": {
+      "group": "lang",
+      "font": "40px NoSuchFamily, cursive",
+      "text": "Ag한국",
+      "ctx": {
+        "lang": "ko"
+      },
+      "system": true,
+      "chrome": [116.54373168945312, -2.36328125, 115.02374267578125, 32.15999984741211, 16.34765625],
+      "flip": "S8"
+    },
+    "lang: ko 40px NoSuchFamily, cursive →": {
+      "group": "lang",
+      "font": "40px NoSuchFamily, cursive",
+      "text": "→",
+      "ctx": {
+        "lang": "ko"
+      },
+      "system": true,
+      "chrome": [28.199996948242188, 0, 26.35999870300293, 22.639999389648438, -9.639999389648438],
+      "flip": "S8"
+    },
+    "lang: hi 40px serif Ag": {
+      "group": "lang",
+      "font": "40px serif",
+      "text": "Ag",
+      "ctx": {
+        "lang": "hi"
+      },
+      "system": true,
+      "chrome": [48.88671875, -0.3125, 48.1640625, 27.08984375, 8.6328125],
+      "flip": "S8"
+    },
+    "lang: hi 40px serif नम": {
+      "group": "lang",
+      "font": "40px serif",
+      "text": "नम",
+      "ctx": {
+        "lang": "hi"
+      },
+      "system": true,
+      "chrome": [48.7109375, 0.05859375, 49.21875, 24.3359375, 0.6640625],
+      "flip": "S8"
+    },
+    "lang: hi 40px sans-serif Ag": {
+      "group": "lang",
+      "font": "40px sans-serif",
+      "text": "Ag",
+      "ctx": {
+        "lang": "hi"
+      },
+      "system": true,
+      "chrome": [46.03999328613281, -0.320000022649765, 42.719993591308594, 28.03999900817871, 8.719999313354492],
+      "flip": "S8"
+    },
+    "lang: hi 40px sans-serif 直骨": {
+      "group": "lang",
+      "font": "40px sans-serif",
+      "text": "直骨",
+      "ctx": {
+        "lang": "hi"
+      },
+      "system": true,
+      "chrome": [80, -2.2799999713897705, 76.27999877929688, 32.79999923706055, 4]
+    },
+    "lang: hi 40px sans-serif नम": {
+      "group": "lang",
+      "font": "40px sans-serif",
+      "text": "नम",
+      "ctx": {
+        "lang": "hi"
+      },
+      "system": true,
+      "chrome": [43.67997741699219, 0.8799999952316284, 44.55998992919922, 25.68000030517578, 0]
+    },
+    "lang: hi 40px monospace Ag": {
+      "group": "lang",
+      "font": "40px monospace",
+      "text": "Ag",
+      "ctx": {
+        "lang": "hi"
+      },
+      "system": true,
+      "chrome": [48.1640625, -0.72265625, 44.43359375, 29.16015625, 8.59375]
+    },
+    "lang: hi 40px monospace 直骨": {
+      "group": "lang",
+      "font": "40px monospace",
+      "text": "直骨",
+      "ctx": {
+        "lang": "hi"
+      },
+      "system": true,
+      "chrome": [80, -2.2799999713897705, 76.27999877929688, 32.79999923706055, 4]
+    },
+    "lang: hi 40px monospace नम": {
+      "group": "lang",
+      "font": "40px monospace",
+      "text": "नम",
+      "ctx": {
+        "lang": "hi"
+      },
+      "system": true,
+      "chrome": [48.7109375, 0.05859375, 49.21875, 24.3359375, 0.6640625],
+      "flip": "S8"
+    },
+    "lang: hi 40px cursive Ag": {
+      "group": "lang",
+      "font": "40px cursive",
+      "text": "Ag",
+      "ctx": {
+        "lang": "hi"
+      },
+      "system": true,
+      "chrome": [47.34375, -2.36328125, 46.9921875, 26.5234375, 16.34765625]
+    },
+    "lang: hi 40px cursive 直骨": {
+      "group": "lang",
+      "font": "40px cursive",
+      "text": "直骨",
+      "ctx": {
+        "lang": "hi"
+      },
+      "system": true,
+      "chrome": [80, -3.799999952316284, 77.04000091552734, 30.03999900817871, 6.480005264282227]
+    },
+    "lang: hi 40px cursive नम": {
+      "group": "lang",
+      "font": "40px cursive",
+      "text": "नम",
+      "ctx": {
+        "lang": "hi"
+      },
+      "system": true,
+      "chrome": [48.7109375, 0.05859375, 49.21875, 24.3359375, 0.6640625],
+      "flip": "S8"
+    },
+    "lang: hi 40px fantasy Ag": {
+      "group": "lang",
+      "font": "40px fantasy",
+      "text": "Ag",
+      "ctx": {
+        "lang": "hi"
+      },
+      "system": true,
+      "chrome": [50.95703125, 0.234375, 53.515625, 27.16796875, 15.234375]
+    },
+    "lang: hi 40px fantasy 直骨": {
+      "group": "lang",
+      "font": "40px fantasy",
+      "text": "直骨",
+      "ctx": {
+        "lang": "hi"
+      },
+      "system": true,
+      "chrome": [80, -2.2799999713897705, 76.27999877929688, 32.79999923706055, 4]
+    },
+    "lang: hi 40px fantasy नम": {
+      "group": "lang",
+      "font": "40px fantasy",
+      "text": "नम",
+      "ctx": {
+        "lang": "hi"
+      },
+      "system": true,
+      "chrome": [48.7109375, 0.05859375, 49.21875, 24.3359375, 0.6640625],
+      "flip": "S8"
+    },
+    "lang: hi 40px -webkit-body Ag": {
+      "group": "lang",
+      "font": "40px -webkit-body",
+      "text": "Ag",
+      "ctx": {
+        "lang": "hi"
+      },
+      "system": true,
+      "chrome": [48.88671875, -0.3125, 48.1640625, 27.08984375, 8.6328125],
+      "flip": "S8"
+    },
+    "lang: hi 40px -webkit-body 直骨": {
+      "group": "lang",
+      "font": "40px -webkit-body",
+      "text": "直骨",
+      "ctx": {
+        "lang": "hi"
+      },
+      "system": true,
+      "chrome": [80, -1.5199999809265137, 78.19999694824219, 30.520000457763672, 6.560005187988281]
+    },
+    "lang: hi 40px -webkit-body नम": {
+      "group": "lang",
+      "font": "40px -webkit-body",
+      "text": "नम",
+      "ctx": {
+        "lang": "hi"
+      },
+      "system": true,
+      "chrome": [48.7109375, 0.05859375, 49.21875, 24.3359375, 0.6640625],
+      "flip": "S8"
+    },
+    "lang: hi 40px -webkit-standard Ag": {
+      "group": "lang",
+      "font": "40px -webkit-standard",
+      "text": "Ag",
+      "ctx": {
+        "lang": "hi"
+      },
+      "system": true,
+      "chrome": [48.88671875, -0.3125, 48.1640625, 27.08984375, 8.6328125],
+      "flip": "S8"
+    },
+    "lang: hi 40px -webkit-standard 直骨": {
+      "group": "lang",
+      "font": "40px -webkit-standard",
+      "text": "直骨",
+      "ctx": {
+        "lang": "hi"
+      },
+      "system": true,
+      "chrome": [80, -1.5199999809265137, 78.19999694824219, 30.520000457763672, 6.560005187988281]
+    },
+    "lang: hi 40px -webkit-standard नम": {
+      "group": "lang",
+      "font": "40px -webkit-standard",
+      "text": "नम",
+      "ctx": {
+        "lang": "hi"
+      },
+      "system": true,
+      "chrome": [48.7109375, 0.05859375, 49.21875, 24.3359375, 0.6640625],
+      "flip": "S8"
+    },
+    "lang: hi 40px math Ag": {
+      "group": "lang",
+      "font": "40px math",
+      "text": "Ag",
+      "ctx": {
+        "lang": "hi"
+      },
+      "system": true,
+      "chrome": [48.079986572265625, -0.12000000476837158, 47.5999870300293, 26.479999542236328, 9.39999771118164]
+    },
+    "lang: hi 40px math 直骨": {
+      "group": "lang",
+      "font": "40px math",
+      "text": "直骨",
+      "ctx": {
+        "lang": "hi"
+      },
+      "system": true,
+      "chrome": [80, -1.5199999809265137, 78.19999694824219, 30.520000457763672, 6.560005187988281]
+    },
+    "lang: hi 40px math नम": {
+      "group": "lang",
+      "font": "40px math",
+      "text": "नम",
+      "ctx": {
+        "lang": "hi"
+      },
+      "system": true,
+      "chrome": [48.7109375, 0.05859375, 49.21875, 24.3359375, 0.6640625],
+      "flip": "S8"
+    },
+    "lang: hi 40px BSLato, serif Agनम": {
+      "group": "lang",
+      "font": "40px BSLato, serif",
+      "text": "Agनम",
+      "ctx": {
+        "lang": "hi"
+      },
+      "system": true,
+      "chrome": [96.35092163085938, -0.19999998807907104, 96.85873413085938, 28.65999984741211, 7.299999237060547],
+      "flip": "S8"
+    },
+    "lang: hi 40px BSLato, serif →": {
+      "group": "lang",
+      "font": "40px BSLato, serif",
+      "text": "→",
+      "ctx": {
+        "lang": "hi"
+      },
+      "system": true,
+      "chrome": [40, -4.5703125, 35.8984375, 22.890625, -6.015625]
+    },
+    "lang: hi 40px BSLato, sans-serif Agनम": {
+      "group": "lang",
+      "font": "40px BSLato, sans-serif",
+      "text": "Agनम",
+      "ctx": {
+        "lang": "hi"
+      },
+      "system": true,
+      "chrome": [91.31996154785156, -0.19999998807907104, 92.1999740600586, 28.65999984741211, 7.299999237060547]
+    },
+    "lang: hi 40px BSLato, sans-serif →": {
+      "group": "lang",
+      "font": "40px BSLato, sans-serif",
+      "text": "→",
+      "ctx": {
+        "lang": "hi"
+      },
+      "system": true,
+      "chrome": [40, -4.5703125, 35.8984375, 22.890625, -6.015625]
+    },
+    "lang: hi 40px BSLato, monospace Agनम": {
+      "group": "lang",
+      "font": "40px BSLato, monospace",
+      "text": "Agनम",
+      "ctx": {
+        "lang": "hi"
+      },
+      "system": true,
+      "chrome": [96.35092163085938, -0.19999998807907104, 96.85873413085938, 28.65999984741211, 7.299999237060547],
+      "flip": "S8"
+    },
+    "lang: hi 40px BSLato, monospace →": {
+      "group": "lang",
+      "font": "40px BSLato, monospace",
+      "text": "→",
+      "ctx": {
+        "lang": "hi"
+      },
+      "system": true,
+      "chrome": [24.08203125, -1.2890625, 22.79296875, 17.44140625, -4.47265625]
+    },
+    "lang: hi 40px serif, sans-serif Agनम": {
+      "group": "lang",
+      "font": "40px serif, sans-serif",
+      "text": "Agनम",
+      "ctx": {
+        "lang": "hi"
+      },
+      "system": true,
+      "chrome": [94.75093078613281, -0.320000022649765, 95.25874328613281, 28.03999900817871, 8.719999313354492],
+      "flip": "S8"
+    },
+    "lang: hi 40px serif, sans-serif →": {
+      "group": "lang",
+      "font": "40px serif, sans-serif",
+      "text": "→",
+      "ctx": {
+        "lang": "hi"
+      },
+      "system": true,
+      "chrome": [40, -1.54296875, 38.4375, 17.109375, -3.06640625]
+    },
+    "lang: hi 40px NoSuchFamily, cursive Agनम": {
+      "group": "lang",
+      "font": "40px NoSuchFamily, cursive",
+      "text": "Agनम",
+      "ctx": {
+        "lang": "hi"
+      },
+      "system": true,
+      "chrome": [96.0546875, -2.36328125, 96.5625, 26.5234375, 16.34765625],
+      "flip": "S8"
+    },
+    "lang: hi 40px NoSuchFamily, cursive →": {
+      "group": "lang",
+      "font": "40px NoSuchFamily, cursive",
+      "text": "→",
+      "ctx": {
+        "lang": "hi"
+      },
+      "system": true,
+      "chrome": [40, -2, 38.119998931884766, 18.040000915527344, -5.479999542236328]
+    },
+    "lang: ar 40px serif Ag": {
+      "group": "lang",
+      "font": "40px serif",
+      "text": "Ag",
+      "ctx": {
+        "lang": "ar"
+      },
+      "system": true,
+      "chrome": [48.88671875, -0.5859375, 47.67578125, 26.93359375, 8.7109375]
+    },
+    "lang: ar 40px serif 直骨": {
+      "group": "lang",
+      "font": "40px serif",
+      "text": "直骨",
+      "ctx": {
+        "lang": "ar"
+      },
+      "system": true,
+      "chrome": [80, -1.5199999809265137, 78.19999694824219, 30.520000457763672, 6.560005187988281]
+    },
+    "lang: ar 40px serif مرحبا": {
+      "group": "lang",
+      "font": "40px serif",
+      "text": "مرحبا",
+      "ctx": {
+        "lang": "ar"
+      },
+      "system": true,
+      "chrome": [78.35440063476562, -5.443037986755371, 78.11933135986328, 28.571430206298828, 7.992767333984375]
+    },
+    "lang: ar 40px sans-serif Ag": {
+      "group": "lang",
+      "font": "40px sans-serif",
+      "text": "Ag",
+      "ctx": {
+        "lang": "ar"
+      },
+      "system": true,
+      "chrome": [48.92578125, -0.5859375, 46.2109375, 28.69140625, 8.84765625]
+    },
+    "lang: ar 40px sans-serif 直骨": {
+      "group": "lang",
+      "font": "40px sans-serif",
+      "text": "直骨",
+      "ctx": {
+        "lang": "ar"
+      },
+      "system": true,
+      "chrome": [80, -2.2799999713897705, 76.27999877929688, 32.79999923706055, 4]
+    },
+    "lang: ar 40px sans-serif مرحبا": {
+      "group": "lang",
+      "font": "40px sans-serif",
+      "text": "مرحبا",
+      "ctx": {
+        "lang": "ar"
+      },
+      "system": true,
+      "chrome": [78.35440063476562, -5.443037986755371, 78.11933135986328, 28.571430206298828, 7.992767333984375]
+    },
+    "lang: ar 40px monospace 直骨": {
+      "group": "lang",
+      "font": "40px monospace",
+      "text": "直骨",
+      "ctx": {
+        "lang": "ar"
+      },
+      "system": true,
+      "chrome": [80, -2.2799999713897705, 76.27999877929688, 32.79999923706055, 4]
+    },
+    "lang: ar 40px monospace مرحبا": {
+      "group": "lang",
+      "font": "40px monospace",
+      "text": "مرحبا",
+      "ctx": {
+        "lang": "ar"
+      },
+      "system": true,
+      "chrome": [120.01953125, -9.84375, 119.04296875, 22.48046875, 8.69140625]
+    },
+    "lang: ar 40px cursive Ag": {
+      "group": "lang",
+      "font": "40px cursive",
+      "text": "Ag",
+      "ctx": {
+        "lang": "ar"
+      },
+      "system": true,
+      "chrome": [47.34375, -2.36328125, 46.9921875, 26.5234375, 16.34765625]
+    },
+    "lang: ar 40px cursive 直骨": {
+      "group": "lang",
+      "font": "40px cursive",
+      "text": "直骨",
+      "ctx": {
+        "lang": "ar"
+      },
+      "system": true,
+      "chrome": [80, -3.799999952316284, 77.04000091552734, 30.03999900817871, 6.480005264282227]
+    },
+    "lang: ar 40px cursive مرحبا": {
+      "group": "lang",
+      "font": "40px cursive",
+      "text": "مرحبا",
+      "ctx": {
+        "lang": "ar"
+      },
+      "system": true,
+      "chrome": [78.35440063476562, -5.443037986755371, 78.11933135986328, 28.571430206298828, 7.992767333984375]
+    },
+    "lang: ar 40px fantasy Ag": {
+      "group": "lang",
+      "font": "40px fantasy",
+      "text": "Ag",
+      "ctx": {
+        "lang": "ar"
+      },
+      "system": true,
+      "chrome": [50.95703125, 0.234375, 53.515625, 27.16796875, 15.234375]
+    },
+    "lang: ar 40px fantasy 直骨": {
+      "group": "lang",
+      "font": "40px fantasy",
+      "text": "直骨",
+      "ctx": {
+        "lang": "ar"
+      },
+      "system": true,
+      "chrome": [80, -2.2799999713897705, 76.27999877929688, 32.79999923706055, 4]
+    },
+    "lang: ar 40px fantasy مرحبا": {
+      "group": "lang",
+      "font": "40px fantasy",
+      "text": "مرحبا",
+      "ctx": {
+        "lang": "ar"
+      },
+      "system": true,
+      "chrome": [78.35440063476562, -5.443037986755371, 78.11933135986328, 28.571430206298828, 7.992767333984375]
+    },
+    "lang: ar 40px -webkit-body Ag": {
+      "group": "lang",
+      "font": "40px -webkit-body",
+      "text": "Ag",
+      "ctx": {
+        "lang": "ar"
+      },
+      "system": true,
+      "chrome": [48.88671875, -0.5859375, 47.67578125, 26.93359375, 8.7109375]
+    },
+    "lang: ar 40px -webkit-body 直骨": {
+      "group": "lang",
+      "font": "40px -webkit-body",
+      "text": "直骨",
+      "ctx": {
+        "lang": "ar"
+      },
+      "system": true,
+      "chrome": [80, -1.5199999809265137, 78.19999694824219, 30.520000457763672, 6.560005187988281]
+    },
+    "lang: ar 40px -webkit-body مرحبا": {
+      "group": "lang",
+      "font": "40px -webkit-body",
+      "text": "مرحبا",
+      "ctx": {
+        "lang": "ar"
+      },
+      "system": true,
+      "chrome": [78.35440063476562, -5.443037986755371, 78.11933135986328, 28.571430206298828, 7.992767333984375]
+    },
+    "lang: ar 40px -webkit-standard Ag": {
+      "group": "lang",
+      "font": "40px -webkit-standard",
+      "text": "Ag",
+      "ctx": {
+        "lang": "ar"
+      },
+      "system": true,
+      "chrome": [48.88671875, -0.5859375, 47.67578125, 26.93359375, 8.7109375]
+    },
+    "lang: ar 40px -webkit-standard 直骨": {
+      "group": "lang",
+      "font": "40px -webkit-standard",
+      "text": "直骨",
+      "ctx": {
+        "lang": "ar"
+      },
+      "system": true,
+      "chrome": [80, -1.5199999809265137, 78.19999694824219, 30.520000457763672, 6.560005187988281]
+    },
+    "lang: ar 40px -webkit-standard مرحبا": {
+      "group": "lang",
+      "font": "40px -webkit-standard",
+      "text": "مرحبا",
+      "ctx": {
+        "lang": "ar"
+      },
+      "system": true,
+      "chrome": [78.35440063476562, -5.443037986755371, 78.11933135986328, 28.571430206298828, 7.992767333984375]
+    },
+    "lang: ar 40px math Ag": {
+      "group": "lang",
+      "font": "40px math",
+      "text": "Ag",
+      "ctx": {
+        "lang": "ar"
+      },
+      "system": true,
+      "chrome": [48.079986572265625, -0.12000000476837158, 47.5999870300293, 26.479999542236328, 9.39999771118164]
+    },
+    "lang: ar 40px math 直骨": {
+      "group": "lang",
+      "font": "40px math",
+      "text": "直骨",
+      "ctx": {
+        "lang": "ar"
+      },
+      "system": true,
+      "chrome": [80, -1.5199999809265137, 78.19999694824219, 30.520000457763672, 6.560005187988281]
+    },
+    "lang: ar 40px math مرحبا": {
+      "group": "lang",
+      "font": "40px math",
+      "text": "مرحبا",
+      "ctx": {
+        "lang": "ar"
+      },
+      "system": true,
+      "chrome": [78.35440063476562, -5.443037986755371, 78.11933135986328, 28.571430206298828, 7.992767333984375]
+    },
+    "lang: ar 40px BSLato, serif Agمرحبا": {
+      "group": "lang",
+      "font": "40px BSLato, serif",
+      "text": "Agمرحبا",
+      "ctx": {
+        "lang": "ar"
+      },
+      "system": true,
+      "chrome": [125.994384765625, -0.19999998807907104, 125.75931549072266, 28.65999984741211, 7.992767333984375]
+    },
+    "lang: ar 40px BSLato, serif →": {
+      "group": "lang",
+      "font": "40px BSLato, serif",
+      "text": "→",
+      "ctx": {
+        "lang": "ar"
+      },
+      "system": true,
+      "chrome": [40, -4.5703125, 35.8984375, 22.890625, -6.015625]
+    },
+    "lang: ar 40px BSLato, sans-serif Agمرحبا": {
+      "group": "lang",
+      "font": "40px BSLato, sans-serif",
+      "text": "Agمرحبا",
+      "ctx": {
+        "lang": "ar"
+      },
+      "system": true,
+      "chrome": [125.994384765625, -0.19999998807907104, 125.75931549072266, 28.65999984741211, 7.992767333984375]
+    },
+    "lang: ar 40px BSLato, sans-serif →": {
+      "group": "lang",
+      "font": "40px BSLato, sans-serif",
+      "text": "→",
+      "ctx": {
+        "lang": "ar"
+      },
+      "system": true,
+      "chrome": [40, -4.5703125, 35.8984375, 22.890625, -6.015625]
+    },
+    "lang: ar 40px BSLato, monospace Agمرحبا": {
+      "group": "lang",
+      "font": "40px BSLato, monospace",
+      "text": "Agمرحبا",
+      "ctx": {
+        "lang": "ar"
+      },
+      "system": true,
+      "chrome": [125.994384765625, -0.19999998807907104, 125.75931549072266, 28.65999984741211, 7.992767333984375]
+    },
+    "lang: ar 40px serif, sans-serif Agمرحبا": {
+      "group": "lang",
+      "font": "40px serif, sans-serif",
+      "text": "Agمرحبا",
+      "ctx": {
+        "lang": "ar"
+      },
+      "system": true,
+      "chrome": [127.24111938476562, -0.5859375, 127.00605010986328, 28.571430206298828, 8.7109375]
+    },
+    "lang: ar 40px serif, sans-serif →": {
+      "group": "lang",
+      "font": "40px serif, sans-serif",
+      "text": "→",
+      "ctx": {
+        "lang": "ar"
+      },
+      "system": true,
+      "chrome": [40, -1.54296875, 38.4375, 17.109375, -3.06640625]
+    },
+    "lang: ar 40px NoSuchFamily, cursive Agمرحبا": {
+      "group": "lang",
+      "font": "40px NoSuchFamily, cursive",
+      "text": "Agمرحبا",
+      "ctx": {
+        "lang": "ar"
+      },
+      "system": true,
+      "chrome": [125.69815063476562, -2.36328125, 125.46308135986328, 28.571430206298828, 16.34765625]
+    },
+    "lang: ar 40px NoSuchFamily, cursive →": {
+      "group": "lang",
+      "font": "40px NoSuchFamily, cursive",
+      "text": "→",
+      "ctx": {
+        "lang": "ar"
+      },
+      "system": true,
+      "chrome": [40, -2, 38.119998931884766, 18.040000915527344, -5.479999542236328]
+    },
+    "lang: he 40px serif Ag": {
+      "group": "lang",
+      "font": "40px serif",
+      "text": "Ag",
+      "ctx": {
+        "lang": "he"
+      },
+      "system": true,
+      "chrome": [48.88671875, -0.5859375, 47.67578125, 26.93359375, 8.7109375]
+    },
+    "lang: he 40px serif 直骨": {
+      "group": "lang",
+      "font": "40px serif",
+      "text": "直骨",
+      "ctx": {
+        "lang": "he"
+      },
+      "system": true,
+      "chrome": [80, -1.5199999809265137, 78.19999694824219, 30.520000457763672, 6.560005187988281]
+    },
+    "lang: he 40px serif שלום": {
+      "group": "lang",
+      "font": "40px serif",
+      "text": "שלום",
+      "ctx": {
+        "lang": "he"
+      },
+      "system": true,
+      "chrome": [73.125, -1.953125, 71.81640625, 29.82421875, 0.4296875]
+    },
+    "lang: he 40px sans-serif Ag": {
+      "group": "lang",
+      "font": "40px sans-serif",
+      "text": "Ag",
+      "ctx": {
+        "lang": "he"
+      },
+      "system": true,
+      "chrome": [48.92578125, -0.5859375, 46.2109375, 28.69140625, 8.84765625]
+    },
+    "lang: he 40px sans-serif 直骨": {
+      "group": "lang",
+      "font": "40px sans-serif",
+      "text": "直骨",
+      "ctx": {
+        "lang": "he"
+      },
+      "system": true,
+      "chrome": [80, -2.2799999713897705, 76.27999877929688, 32.79999923706055, 4]
+    },
+    "lang: he 40px sans-serif שלום": {
+      "group": "lang",
+      "font": "40px sans-serif",
+      "text": "שלום",
+      "ctx": {
+        "lang": "he"
+      },
+      "system": true,
+      "chrome": [90.80078125, -1.5234375, 88.8671875, 31.328125, 0.48828125]
+    },
+    "lang: he 40px monospace 直骨": {
+      "group": "lang",
+      "font": "40px monospace",
+      "text": "直骨",
+      "ctx": {
+        "lang": "he"
+      },
+      "system": true,
+      "chrome": [80, -2.2799999713897705, 76.27999877929688, 32.79999923706055, 4]
+    },
+    "lang: he 40px monospace שלום": {
+      "group": "lang",
+      "font": "40px monospace",
+      "text": "שלום",
+      "ctx": {
+        "lang": "he"
+      },
+      "system": true,
+      "chrome": [96.015625, -2.12890625, 92.01171875, 25.17578125, 0.21484375]
+    },
+    "lang: he 40px cursive Ag": {
+      "group": "lang",
+      "font": "40px cursive",
+      "text": "Ag",
+      "ctx": {
+        "lang": "he"
+      },
+      "system": true,
+      "chrome": [47.34375, -2.36328125, 46.9921875, 26.5234375, 16.34765625]
+    },
+    "lang: he 40px cursive 直骨": {
+      "group": "lang",
+      "font": "40px cursive",
+      "text": "直骨",
+      "ctx": {
+        "lang": "he"
+      },
+      "system": true,
+      "chrome": [80, -3.799999952316284, 77.04000091552734, 30.03999900817871, 6.480005264282227]
+    },
+    "lang: he 40px cursive שלום": {
+      "group": "lang",
+      "font": "40px cursive",
+      "text": "שלום",
+      "ctx": {
+        "lang": "he"
+      },
+      "system": true,
+      "chrome": [91.14900207519531, -3.4584755897521973, 88.96471405029297, 32.582481384277344, 0.6370887756347656]
+    },
+    "lang: he 40px fantasy Ag": {
+      "group": "lang",
+      "font": "40px fantasy",
+      "text": "Ag",
+      "ctx": {
+        "lang": "he"
+      },
+      "system": true,
+      "chrome": [50.95703125, 0.234375, 53.515625, 27.16796875, 15.234375]
+    },
+    "lang: he 40px fantasy 直骨": {
+      "group": "lang",
+      "font": "40px fantasy",
+      "text": "直骨",
+      "ctx": {
+        "lang": "he"
+      },
+      "system": true,
+      "chrome": [80, -2.2799999713897705, 76.27999877929688, 32.79999923706055, 4]
+    },
+    "lang: he 40px fantasy שלום": {
+      "group": "lang",
+      "font": "40px fantasy",
+      "text": "שלום",
+      "ctx": {
+        "lang": "he"
+      },
+      "system": true,
+      "chrome": [90.80078125, -1.5234375, 88.8671875, 31.328125, 0.48828125]
+    },
+    "lang: he 40px -webkit-body Ag": {
+      "group": "lang",
+      "font": "40px -webkit-body",
+      "text": "Ag",
+      "ctx": {
+        "lang": "he"
+      },
+      "system": true,
+      "chrome": [48.88671875, -0.5859375, 47.67578125, 26.93359375, 8.7109375]
+    },
+    "lang: he 40px -webkit-body 直骨": {
+      "group": "lang",
+      "font": "40px -webkit-body",
+      "text": "直骨",
+      "ctx": {
+        "lang": "he"
+      },
+      "system": true,
+      "chrome": [80, -1.5199999809265137, 78.19999694824219, 30.520000457763672, 6.560005187988281]
+    },
+    "lang: he 40px -webkit-body שלום": {
+      "group": "lang",
+      "font": "40px -webkit-body",
+      "text": "שלום",
+      "ctx": {
+        "lang": "he"
+      },
+      "system": true,
+      "chrome": [73.125, -1.953125, 71.81640625, 29.82421875, 0.4296875]
+    },
+    "lang: he 40px -webkit-standard Ag": {
+      "group": "lang",
+      "font": "40px -webkit-standard",
+      "text": "Ag",
+      "ctx": {
+        "lang": "he"
+      },
+      "system": true,
+      "chrome": [48.88671875, -0.5859375, 47.67578125, 26.93359375, 8.7109375]
+    },
+    "lang: he 40px -webkit-standard 直骨": {
+      "group": "lang",
+      "font": "40px -webkit-standard",
+      "text": "直骨",
+      "ctx": {
+        "lang": "he"
+      },
+      "system": true,
+      "chrome": [80, -1.5199999809265137, 78.19999694824219, 30.520000457763672, 6.560005187988281]
+    },
+    "lang: he 40px -webkit-standard שלום": {
+      "group": "lang",
+      "font": "40px -webkit-standard",
+      "text": "שלום",
+      "ctx": {
+        "lang": "he"
+      },
+      "system": true,
+      "chrome": [73.125, -1.953125, 71.81640625, 29.82421875, 0.4296875]
+    },
+    "lang: he 40px math Ag": {
+      "group": "lang",
+      "font": "40px math",
+      "text": "Ag",
+      "ctx": {
+        "lang": "he"
+      },
+      "system": true,
+      "chrome": [48.079986572265625, -0.12000000476837158, 47.5999870300293, 26.479999542236328, 9.39999771118164]
+    },
+    "lang: he 40px math 直骨": {
+      "group": "lang",
+      "font": "40px math",
+      "text": "直骨",
+      "ctx": {
+        "lang": "he"
+      },
+      "system": true,
+      "chrome": [80, -1.5199999809265137, 78.19999694824219, 30.520000457763672, 6.560005187988281]
+    },
+    "lang: he 40px math שלום": {
+      "group": "lang",
+      "font": "40px math",
+      "text": "שלום",
+      "ctx": {
+        "lang": "he"
+      },
+      "system": true,
+      "chrome": [73.125, -1.953125, 71.81640625, 29.82421875, 0.4296875]
+    },
+    "lang: he 40px BSLato, serif Agשלום": {
+      "group": "lang",
+      "font": "40px BSLato, serif",
+      "text": "Agשלום",
+      "ctx": {
+        "lang": "he"
+      },
+      "system": true,
+      "chrome": [138.44076538085938, -0.19999998807907104, 136.50717163085938, 31.328125, 7.299999237060547]
+    },
+    "lang: he 40px BSLato, serif →": {
+      "group": "lang",
+      "font": "40px BSLato, serif",
+      "text": "→",
+      "ctx": {
+        "lang": "he"
+      },
+      "system": true,
+      "chrome": [40, -4.5703125, 35.8984375, 22.890625, -6.015625]
+    },
+    "lang: he 40px BSLato, sans-serif Agשלום": {
+      "group": "lang",
+      "font": "40px BSLato, sans-serif",
+      "text": "Agשלום",
+      "ctx": {
+        "lang": "he"
+      },
+      "system": true,
+      "chrome": [138.44076538085938, -0.19999998807907104, 136.50717163085938, 31.328125, 7.299999237060547]
+    },
+    "lang: he 40px BSLato, sans-serif →": {
+      "group": "lang",
+      "font": "40px BSLato, sans-serif",
+      "text": "→",
+      "ctx": {
+        "lang": "he"
+      },
+      "system": true,
+      "chrome": [40, -4.5703125, 35.8984375, 22.890625, -6.015625]
+    },
+    "lang: he 40px BSLato, monospace Agשלום": {
+      "group": "lang",
+      "font": "40px BSLato, monospace",
+      "text": "Agשלום",
+      "ctx": {
+        "lang": "he"
+      },
+      "system": true,
+      "chrome": [138.44076538085938, -0.19999998807907104, 136.50717163085938, 31.328125, 7.299999237060547]
+    },
+    "lang: he 40px serif, sans-serif Agשלום": {
+      "group": "lang",
+      "font": "40px serif, sans-serif",
+      "text": "Agשלום",
+      "ctx": {
+        "lang": "he"
+      },
+      "system": true,
+      "chrome": [122.01171875, -0.5859375, 120.703125, 29.82421875, 8.7109375]
+    },
+    "lang: he 40px serif, sans-serif →": {
+      "group": "lang",
+      "font": "40px serif, sans-serif",
+      "text": "→",
+      "ctx": {
+        "lang": "he"
+      },
+      "system": true,
+      "chrome": [40, -1.54296875, 38.4375, 17.109375, -3.06640625]
+    },
+    "lang: he 40px NoSuchFamily, cursive Agשלום": {
+      "group": "lang",
+      "font": "40px NoSuchFamily, cursive",
+      "text": "Agשלום",
+      "ctx": {
+        "lang": "he"
+      },
+      "system": true,
+      "chrome": [138.4927520751953, -2.36328125, 136.3084716796875, 32.582481384277344, 16.34765625]
+    },
+    "lang: he 40px NoSuchFamily, cursive →": {
+      "group": "lang",
+      "font": "40px NoSuchFamily, cursive",
+      "text": "→",
+      "ctx": {
+        "lang": "he"
+      },
+      "system": true,
+      "chrome": [40, -2, 38.119998931884766, 18.040000915527344, -5.479999542236328]
+    },
+    "lang: th 40px serif Ag": {
+      "group": "lang",
+      "font": "40px serif",
+      "text": "Ag",
+      "ctx": {
+        "lang": "th"
+      },
+      "system": true,
+      "chrome": [48.88671875, -0.5859375, 47.67578125, 26.93359375, 8.7109375]
+    },
+    "lang: th 40px serif 直骨": {
+      "group": "lang",
+      "font": "40px serif",
+      "text": "直骨",
+      "ctx": {
+        "lang": "th"
+      },
+      "system": true,
+      "chrome": [80, -1.5199999809265137, 78.19999694824219, 30.520000457763672, 6.560005187988281]
+    },
+    "lang: th 40px serif สวัสดี": {
+      "group": "lang",
+      "font": "40px serif",
+      "text": "สวัสดี",
+      "ctx": {
+        "lang": "th"
+      },
+      "system": true,
+      "chrome": [93.375, -2.015625, 90.484375, 34.703125, 0.328125]
+    },
+    "lang: th 40px sans-serif Ag": {
+      "group": "lang",
+      "font": "40px sans-serif",
+      "text": "Ag",
+      "ctx": {
+        "lang": "th"
+      },
+      "system": true,
+      "chrome": [48.92578125, -0.5859375, 46.2109375, 28.69140625, 8.84765625]
+    },
+    "lang: th 40px sans-serif 直骨": {
+      "group": "lang",
+      "font": "40px sans-serif",
+      "text": "直骨",
+      "ctx": {
+        "lang": "th"
+      },
+      "system": true,
+      "chrome": [80, -2.2799999713897705, 76.27999877929688, 32.79999923706055, 4]
+    },
+    "lang: th 40px sans-serif สวัสดี": {
+      "group": "lang",
+      "font": "40px sans-serif",
+      "text": "สวัสดี",
+      "ctx": {
+        "lang": "th"
+      },
+      "system": true,
+      "chrome": [93.375, -2.015625, 90.484375, 34.703125, 0.328125]
+    },
+    "lang: th 40px monospace 直骨": {
+      "group": "lang",
+      "font": "40px monospace",
+      "text": "直骨",
+      "ctx": {
+        "lang": "th"
+      },
+      "system": true,
+      "chrome": [80, -2.2799999713897705, 76.27999877929688, 32.79999923706055, 4]
+    },
+    "lang: th 40px monospace สวัสดี": {
+      "group": "lang",
+      "font": "40px monospace",
+      "text": "สวัสดี",
+      "ctx": {
+        "lang": "th"
+      },
+      "system": true,
+      "chrome": [95.085693359375, -3.4285714626312256, 91.77140808105469, 33.44761657714844, 0.114288330078125]
+    },
+    "lang: th 40px cursive Ag": {
+      "group": "lang",
+      "font": "40px cursive",
+      "text": "Ag",
+      "ctx": {
+        "lang": "th"
+      },
+      "system": true,
+      "chrome": [47.34375, -2.36328125, 46.9921875, 26.5234375, 16.34765625]
+    },
+    "lang: th 40px cursive 直骨": {
+      "group": "lang",
+      "font": "40px cursive",
+      "text": "直骨",
+      "ctx": {
+        "lang": "th"
+      },
+      "system": true,
+      "chrome": [80, -3.799999952316284, 77.04000091552734, 30.03999900817871, 6.480005264282227]
+    },
+    "lang: th 40px cursive สวัสดี": {
+      "group": "lang",
+      "font": "40px cursive",
+      "text": "สวัสดี",
+      "ctx": {
+        "lang": "th"
+      },
+      "system": true,
+      "chrome": [93.375, -2.015625, 90.484375, 34.703125, 0.328125]
+    },
+    "lang: th 40px fantasy Ag": {
+      "group": "lang",
+      "font": "40px fantasy",
+      "text": "Ag",
+      "ctx": {
+        "lang": "th"
+      },
+      "system": true,
+      "chrome": [50.95703125, 0.234375, 53.515625, 27.16796875, 15.234375]
+    },
+    "lang: th 40px fantasy 直骨": {
+      "group": "lang",
+      "font": "40px fantasy",
+      "text": "直骨",
+      "ctx": {
+        "lang": "th"
+      },
+      "system": true,
+      "chrome": [80, -2.2799999713897705, 76.27999877929688, 32.79999923706055, 4]
+    },
+    "lang: th 40px fantasy สวัสดี": {
+      "group": "lang",
+      "font": "40px fantasy",
+      "text": "สวัสดี",
+      "ctx": {
+        "lang": "th"
+      },
+      "system": true,
+      "chrome": [93.375, -2.015625, 90.484375, 34.703125, 0.328125]
+    },
+    "lang: th 40px -webkit-body Ag": {
+      "group": "lang",
+      "font": "40px -webkit-body",
+      "text": "Ag",
+      "ctx": {
+        "lang": "th"
+      },
+      "system": true,
+      "chrome": [48.88671875, -0.5859375, 47.67578125, 26.93359375, 8.7109375]
+    },
+    "lang: th 40px -webkit-body 直骨": {
+      "group": "lang",
+      "font": "40px -webkit-body",
+      "text": "直骨",
+      "ctx": {
+        "lang": "th"
+      },
+      "system": true,
+      "chrome": [80, -1.5199999809265137, 78.19999694824219, 30.520000457763672, 6.560005187988281]
+    },
+    "lang: th 40px -webkit-body สวัสดี": {
+      "group": "lang",
+      "font": "40px -webkit-body",
+      "text": "สวัสดี",
+      "ctx": {
+        "lang": "th"
+      },
+      "system": true,
+      "chrome": [93.375, -2.015625, 90.484375, 34.703125, 0.328125]
+    },
+    "lang: th 40px -webkit-standard Ag": {
+      "group": "lang",
+      "font": "40px -webkit-standard",
+      "text": "Ag",
+      "ctx": {
+        "lang": "th"
+      },
+      "system": true,
+      "chrome": [48.88671875, -0.5859375, 47.67578125, 26.93359375, 8.7109375]
+    },
+    "lang: th 40px -webkit-standard 直骨": {
+      "group": "lang",
+      "font": "40px -webkit-standard",
+      "text": "直骨",
+      "ctx": {
+        "lang": "th"
+      },
+      "system": true,
+      "chrome": [80, -1.5199999809265137, 78.19999694824219, 30.520000457763672, 6.560005187988281]
+    },
+    "lang: th 40px -webkit-standard สวัสดี": {
+      "group": "lang",
+      "font": "40px -webkit-standard",
+      "text": "สวัสดี",
+      "ctx": {
+        "lang": "th"
+      },
+      "system": true,
+      "chrome": [93.375, -2.015625, 90.484375, 34.703125, 0.328125]
+    },
+    "lang: th 40px math Ag": {
+      "group": "lang",
+      "font": "40px math",
+      "text": "Ag",
+      "ctx": {
+        "lang": "th"
+      },
+      "system": true,
+      "chrome": [48.079986572265625, -0.12000000476837158, 47.5999870300293, 26.479999542236328, 9.39999771118164]
+    },
+    "lang: th 40px math 直骨": {
+      "group": "lang",
+      "font": "40px math",
+      "text": "直骨",
+      "ctx": {
+        "lang": "th"
+      },
+      "system": true,
+      "chrome": [80, -1.5199999809265137, 78.19999694824219, 30.520000457763672, 6.560005187988281]
+    },
+    "lang: th 40px math สวัสดี": {
+      "group": "lang",
+      "font": "40px math",
+      "text": "สวัสดี",
+      "ctx": {
+        "lang": "th"
+      },
+      "system": true,
+      "chrome": [93.375, -2.015625, 90.484375, 34.703125, 0.328125]
+    },
+    "lang: th 40px BSLato, serif Agสวัสดี": {
+      "group": "lang",
+      "font": "40px BSLato, serif",
+      "text": "Agสวัสดี",
+      "ctx": {
+        "lang": "th"
+      },
+      "system": true,
+      "chrome": [141.01498413085938, -0.19999998807907104, 138.12435913085938, 34.703125, 7.299999237060547]
+    },
+    "lang: th 40px BSLato, serif →": {
+      "group": "lang",
+      "font": "40px BSLato, serif",
+      "text": "→",
+      "ctx": {
+        "lang": "th"
+      },
+      "system": true,
+      "chrome": [40, -4.5703125, 35.8984375, 22.890625, -6.015625]
+    },
+    "lang: th 40px BSLato, sans-serif Agสวัสดี": {
+      "group": "lang",
+      "font": "40px BSLato, sans-serif",
+      "text": "Agสวัสดี",
+      "ctx": {
+        "lang": "th"
+      },
+      "system": true,
+      "chrome": [141.01498413085938, -0.19999998807907104, 138.12435913085938, 34.703125, 7.299999237060547]
+    },
+    "lang: th 40px BSLato, sans-serif →": {
+      "group": "lang",
+      "font": "40px BSLato, sans-serif",
+      "text": "→",
+      "ctx": {
+        "lang": "th"
+      },
+      "system": true,
+      "chrome": [40, -4.5703125, 35.8984375, 22.890625, -6.015625]
+    },
+    "lang: th 40px BSLato, monospace Agสวัสดี": {
+      "group": "lang",
+      "font": "40px BSLato, monospace",
+      "text": "Agสวัสดี",
+      "ctx": {
+        "lang": "th"
+      },
+      "system": true,
+      "chrome": [141.01498413085938, -0.19999998807907104, 138.12435913085938, 34.703125, 7.299999237060547]
+    },
+    "lang: th 40px serif, sans-serif Agสวัสดี": {
+      "group": "lang",
+      "font": "40px serif, sans-serif",
+      "text": "Agสวัสดี",
+      "ctx": {
+        "lang": "th"
+      },
+      "system": true,
+      "chrome": [142.26171875, -0.5859375, 139.37109375, 34.703125, 8.7109375]
+    },
+    "lang: th 40px serif, sans-serif →": {
+      "group": "lang",
+      "font": "40px serif, sans-serif",
+      "text": "→",
+      "ctx": {
+        "lang": "th"
+      },
+      "system": true,
+      "chrome": [40, -1.54296875, 38.4375, 17.109375, -3.06640625]
+    },
+    "lang: th 40px NoSuchFamily, cursive Agสวัสดี": {
+      "group": "lang",
+      "font": "40px NoSuchFamily, cursive",
+      "text": "Agสวัสดี",
+      "ctx": {
+        "lang": "th"
+      },
+      "system": true,
+      "chrome": [140.71875, -2.36328125, 137.828125, 34.703125, 16.34765625]
+    },
+    "lang: th 40px NoSuchFamily, cursive →": {
+      "group": "lang",
+      "font": "40px NoSuchFamily, cursive",
+      "text": "→",
+      "ctx": {
+        "lang": "th"
+      },
+      "system": true,
+      "chrome": [40, -2, 38.119998931884766, 18.040000915527344, -5.479999542236328]
+    },
+    "lang: ru 40px serif Ag": {
+      "group": "lang",
+      "font": "40px serif",
+      "text": "Ag",
+      "ctx": {
+        "lang": "ru"
+      },
+      "system": true,
+      "chrome": [48.88671875, -0.5859375, 47.67578125, 26.93359375, 8.7109375]
+    },
+    "lang: ru 40px serif 直骨": {
+      "group": "lang",
+      "font": "40px serif",
+      "text": "直骨",
+      "ctx": {
+        "lang": "ru"
+      },
+      "system": true,
+      "chrome": [80, -1.5199999809265137, 78.19999694824219, 30.520000457763672, 6.560005187988281]
+    },
+    "lang: ru 40px serif Привет": {
+      "group": "lang",
+      "font": "40px serif",
+      "text": "Привет",
+      "ctx": {
+        "lang": "ru"
+      },
+      "system": true,
+      "chrome": [123.80859375, -0.80078125, 123.28125, 26.484375, 8.671875]
+    },
+    "lang: ru 40px sans-serif Ag": {
+      "group": "lang",
+      "font": "40px sans-serif",
+      "text": "Ag",
+      "ctx": {
+        "lang": "ru"
+      },
+      "system": true,
+      "chrome": [48.92578125, -0.5859375, 46.2109375, 28.69140625, 8.84765625]
+    },
+    "lang: ru 40px sans-serif 直骨": {
+      "group": "lang",
+      "font": "40px sans-serif",
+      "text": "直骨",
+      "ctx": {
+        "lang": "ru"
+      },
+      "system": true,
+      "chrome": [80, -2.2799999713897705, 76.27999877929688, 32.79999923706055, 4]
+    },
+    "lang: ru 40px sans-serif Привет": {
+      "group": "lang",
+      "font": "40px sans-serif",
+      "text": "Привет",
+      "ctx": {
+        "lang": "ru"
+      },
+      "system": true,
+      "chrome": [138.6328125, -2.96875, 137.63671875, 28.7109375, 8.2421875]
+    },
+    "lang: ru 40px monospace 直骨": {
+      "group": "lang",
+      "font": "40px monospace",
+      "text": "直骨",
+      "ctx": {
+        "lang": "ru"
+      },
+      "system": true,
+      "chrome": [80, -2.2799999713897705, 76.27999877929688, 32.79999923706055, 4]
+    },
+    "lang: ru 40px cursive Ag": {
+      "group": "lang",
+      "font": "40px cursive",
+      "text": "Ag",
+      "ctx": {
+        "lang": "ru"
+      },
+      "system": true,
+      "chrome": [47.34375, -2.36328125, 46.9921875, 26.5234375, 16.34765625]
+    },
+    "lang: ru 40px cursive 直骨": {
+      "group": "lang",
+      "font": "40px cursive",
+      "text": "直骨",
+      "ctx": {
+        "lang": "ru"
+      },
+      "system": true,
+      "chrome": [80, -3.799999952316284, 77.04000091552734, 30.03999900817871, 6.480005264282227]
+    },
+    "lang: ru 40px cursive Привет": {
+      "group": "lang",
+      "font": "40px cursive",
+      "text": "Привет",
+      "ctx": {
+        "lang": "ru"
+      },
+      "system": true,
+      "chrome": [123.80859375, -0.80078125, 123.28125, 26.484375, 8.671875]
+    },
+    "lang: ru 40px fantasy Ag": {
+      "group": "lang",
+      "font": "40px fantasy",
+      "text": "Ag",
+      "ctx": {
+        "lang": "ru"
+      },
+      "system": true,
+      "chrome": [50.95703125, 0.234375, 53.515625, 27.16796875, 15.234375]
+    },
+    "lang: ru 40px fantasy 直骨": {
+      "group": "lang",
+      "font": "40px fantasy",
+      "text": "直骨",
+      "ctx": {
+        "lang": "ru"
+      },
+      "system": true,
+      "chrome": [80, -2.2799999713897705, 76.27999877929688, 32.79999923706055, 4]
+    },
+    "lang: ru 40px fantasy Привет": {
+      "group": "lang",
+      "font": "40px fantasy",
+      "text": "Привет",
+      "ctx": {
+        "lang": "ru"
+      },
+      "system": true,
+      "chrome": [123.80859375, -0.80078125, 123.28125, 26.484375, 8.671875]
+    },
+    "lang: ru 40px -webkit-body Ag": {
+      "group": "lang",
+      "font": "40px -webkit-body",
+      "text": "Ag",
+      "ctx": {
+        "lang": "ru"
+      },
+      "system": true,
+      "chrome": [48.88671875, -0.5859375, 47.67578125, 26.93359375, 8.7109375]
+    },
+    "lang: ru 40px -webkit-body 直骨": {
+      "group": "lang",
+      "font": "40px -webkit-body",
+      "text": "直骨",
+      "ctx": {
+        "lang": "ru"
+      },
+      "system": true,
+      "chrome": [80, -1.5199999809265137, 78.19999694824219, 30.520000457763672, 6.560005187988281]
+    },
+    "lang: ru 40px -webkit-body Привет": {
+      "group": "lang",
+      "font": "40px -webkit-body",
+      "text": "Привет",
+      "ctx": {
+        "lang": "ru"
+      },
+      "system": true,
+      "chrome": [123.80859375, -0.80078125, 123.28125, 26.484375, 8.671875]
+    },
+    "lang: ru 40px -webkit-standard Ag": {
+      "group": "lang",
+      "font": "40px -webkit-standard",
+      "text": "Ag",
+      "ctx": {
+        "lang": "ru"
+      },
+      "system": true,
+      "chrome": [48.88671875, -0.5859375, 47.67578125, 26.93359375, 8.7109375]
+    },
+    "lang: ru 40px -webkit-standard 直骨": {
+      "group": "lang",
+      "font": "40px -webkit-standard",
+      "text": "直骨",
+      "ctx": {
+        "lang": "ru"
+      },
+      "system": true,
+      "chrome": [80, -1.5199999809265137, 78.19999694824219, 30.520000457763672, 6.560005187988281]
+    },
+    "lang: ru 40px -webkit-standard Привет": {
+      "group": "lang",
+      "font": "40px -webkit-standard",
+      "text": "Привет",
+      "ctx": {
+        "lang": "ru"
+      },
+      "system": true,
+      "chrome": [123.80859375, -0.80078125, 123.28125, 26.484375, 8.671875]
+    },
+    "lang: ru 40px math Ag": {
+      "group": "lang",
+      "font": "40px math",
+      "text": "Ag",
+      "ctx": {
+        "lang": "ru"
+      },
+      "system": true,
+      "chrome": [48.079986572265625, -0.12000000476837158, 47.5999870300293, 26.479999542236328, 9.39999771118164]
+    },
+    "lang: ru 40px math 直骨": {
+      "group": "lang",
+      "font": "40px math",
+      "text": "直骨",
+      "ctx": {
+        "lang": "ru"
+      },
+      "system": true,
+      "chrome": [80, -1.5199999809265137, 78.19999694824219, 30.520000457763672, 6.560005187988281]
+    },
+    "lang: ru 40px math Привет": {
+      "group": "lang",
+      "font": "40px math",
+      "text": "Привет",
+      "ctx": {
+        "lang": "ru"
+      },
+      "system": true,
+      "chrome": [132.5999755859375, -1.4399999380111694, 132.2799835205078, 26.280000686645508, 8.80000114440918]
+    },
+    "lang: ru 40px BSLato, serif AgПривет": {
+      "group": "lang",
+      "font": "40px BSLato, serif",
+      "text": "AgПривет",
+      "ctx": {
+        "lang": "ru"
+      },
+      "system": true,
+      "chrome": [171.44857788085938, -0.19999998807907104, 170.92123413085938, 28.65999984741211, 8.671875]
+    },
+    "lang: ru 40px BSLato, serif →": {
+      "group": "lang",
+      "font": "40px BSLato, serif",
+      "text": "→",
+      "ctx": {
+        "lang": "ru"
+      },
+      "system": true,
+      "chrome": [40, -4.5703125, 35.8984375, 22.890625, -6.015625]
+    },
+    "lang: ru 40px BSLato, sans-serif AgПривет": {
+      "group": "lang",
+      "font": "40px BSLato, sans-serif",
+      "text": "AgПривет",
+      "ctx": {
+        "lang": "ru"
+      },
+      "system": true,
+      "chrome": [186.27279663085938, -0.19999998807907104, 185.27670288085938, 28.7109375, 8.2421875]
+    },
+    "lang: ru 40px BSLato, sans-serif →": {
+      "group": "lang",
+      "font": "40px BSLato, sans-serif",
+      "text": "→",
+      "ctx": {
+        "lang": "ru"
+      },
+      "system": true,
+      "chrome": [40, -4.5703125, 35.8984375, 22.890625, -6.015625]
+    },
+    "lang: ru 40px serif, sans-serif AgПривет": {
+      "group": "lang",
+      "font": "40px serif, sans-serif",
+      "text": "AgПривет",
+      "ctx": {
+        "lang": "ru"
+      },
+      "system": true,
+      "chrome": [172.6953125, -0.5859375, 172.16796875, 26.93359375, 8.7109375]
+    },
+    "lang: ru 40px serif, sans-serif →": {
+      "group": "lang",
+      "font": "40px serif, sans-serif",
+      "text": "→",
+      "ctx": {
+        "lang": "ru"
+      },
+      "system": true,
+      "chrome": [40, -1.54296875, 38.4375, 17.109375, -3.06640625]
+    },
+    "lang: ru 40px NoSuchFamily, cursive AgПривет": {
+      "group": "lang",
+      "font": "40px NoSuchFamily, cursive",
+      "text": "AgПривет",
+      "ctx": {
+        "lang": "ru"
+      },
+      "system": true,
+      "chrome": [171.15234375, -2.36328125, 170.625, 26.5234375, 16.34765625]
+    },
+    "lang: ru 40px NoSuchFamily, cursive →": {
+      "group": "lang",
+      "font": "40px NoSuchFamily, cursive",
+      "text": "→",
+      "ctx": {
+        "lang": "ru"
+      },
+      "system": true,
+      "chrome": [40, -2, 38.119998931884766, 18.040000915527344, -5.479999542236328]
+    },
+    "lang: el 40px serif Ag": {
+      "group": "lang",
+      "font": "40px serif",
+      "text": "Ag",
+      "ctx": {
+        "lang": "el"
+      },
+      "system": true,
+      "chrome": [48.88671875, -0.5859375, 47.67578125, 26.93359375, 8.7109375]
+    },
+    "lang: el 40px serif 直骨": {
+      "group": "lang",
+      "font": "40px serif",
+      "text": "直骨",
+      "ctx": {
+        "lang": "el"
+      },
+      "system": true,
+      "chrome": [80, -1.5199999809265137, 78.19999694824219, 30.520000457763672, 6.560005187988281]
+    },
+    "lang: el 40px serif Γειά": {
+      "group": "lang",
+      "font": "40px serif",
+      "text": "Γειά",
+      "ctx": {
+        "lang": "el"
+      },
+      "system": true,
+      "chrome": [77.734375, -0.87890625, 76.54296875, 29.12109375, 0.52734375]
+    },
+    "lang: el 40px sans-serif Ag": {
+      "group": "lang",
+      "font": "40px sans-serif",
+      "text": "Ag",
+      "ctx": {
+        "lang": "el"
+      },
+      "system": true,
+      "chrome": [48.92578125, -0.5859375, 46.2109375, 28.69140625, 8.84765625]
+    },
+    "lang: el 40px sans-serif 直骨": {
+      "group": "lang",
+      "font": "40px sans-serif",
+      "text": "直骨",
+      "ctx": {
+        "lang": "el"
+      },
+      "system": true,
+      "chrome": [80, -2.2799999713897705, 76.27999877929688, 32.79999923706055, 4]
+    },
+    "lang: el 40px sans-serif Γειά": {
+      "group": "lang",
+      "font": "40px sans-serif",
+      "text": "Γειά",
+      "ctx": {
+        "lang": "el"
+      },
+      "system": true,
+      "chrome": [82.2265625, -4.16015625, 80.91796875, 31.015625, 0.390625]
+    },
+    "lang: el 40px monospace 直骨": {
+      "group": "lang",
+      "font": "40px monospace",
+      "text": "直骨",
+      "ctx": {
+        "lang": "el"
+      },
+      "system": true,
+      "chrome": [80, -2.2799999713897705, 76.27999877929688, 32.79999923706055, 4]
+    },
+    "lang: el 40px cursive Ag": {
+      "group": "lang",
+      "font": "40px cursive",
+      "text": "Ag",
+      "ctx": {
+        "lang": "el"
+      },
+      "system": true,
+      "chrome": [47.34375, -2.36328125, 46.9921875, 26.5234375, 16.34765625]
+    },
+    "lang: el 40px cursive 直骨": {
+      "group": "lang",
+      "font": "40px cursive",
+      "text": "直骨",
+      "ctx": {
+        "lang": "el"
+      },
+      "system": true,
+      "chrome": [80, -3.799999952316284, 77.04000091552734, 30.03999900817871, 6.480005264282227]
+    },
+    "lang: el 40px cursive Γειά": {
+      "group": "lang",
+      "font": "40px cursive",
+      "text": "Γειά",
+      "ctx": {
+        "lang": "el"
+      },
+      "system": true,
+      "chrome": [77.734375, -0.87890625, 76.54296875, 29.12109375, 0.52734375]
+    },
+    "lang: el 40px fantasy Ag": {
+      "group": "lang",
+      "font": "40px fantasy",
+      "text": "Ag",
+      "ctx": {
+        "lang": "el"
+      },
+      "system": true,
+      "chrome": [50.95703125, 0.234375, 53.515625, 27.16796875, 15.234375]
+    },
+    "lang: el 40px fantasy 直骨": {
+      "group": "lang",
+      "font": "40px fantasy",
+      "text": "直骨",
+      "ctx": {
+        "lang": "el"
+      },
+      "system": true,
+      "chrome": [80, -2.2799999713897705, 76.27999877929688, 32.79999923706055, 4]
+    },
+    "lang: el 40px fantasy Γειά": {
+      "group": "lang",
+      "font": "40px fantasy",
+      "text": "Γειά",
+      "ctx": {
+        "lang": "el"
+      },
+      "system": true,
+      "chrome": [77.734375, -0.87890625, 76.54296875, 29.12109375, 0.52734375]
+    },
+    "lang: el 40px -webkit-body Ag": {
+      "group": "lang",
+      "font": "40px -webkit-body",
+      "text": "Ag",
+      "ctx": {
+        "lang": "el"
+      },
+      "system": true,
+      "chrome": [48.88671875, -0.5859375, 47.67578125, 26.93359375, 8.7109375]
+    },
+    "lang: el 40px -webkit-body 直骨": {
+      "group": "lang",
+      "font": "40px -webkit-body",
+      "text": "直骨",
+      "ctx": {
+        "lang": "el"
+      },
+      "system": true,
+      "chrome": [80, -1.5199999809265137, 78.19999694824219, 30.520000457763672, 6.560005187988281]
+    },
+    "lang: el 40px -webkit-body Γειά": {
+      "group": "lang",
+      "font": "40px -webkit-body",
+      "text": "Γειά",
+      "ctx": {
+        "lang": "el"
+      },
+      "system": true,
+      "chrome": [77.734375, -0.87890625, 76.54296875, 29.12109375, 0.52734375]
+    },
+    "lang: el 40px -webkit-standard Ag": {
+      "group": "lang",
+      "font": "40px -webkit-standard",
+      "text": "Ag",
+      "ctx": {
+        "lang": "el"
+      },
+      "system": true,
+      "chrome": [48.88671875, -0.5859375, 47.67578125, 26.93359375, 8.7109375]
+    },
+    "lang: el 40px -webkit-standard 直骨": {
+      "group": "lang",
+      "font": "40px -webkit-standard",
+      "text": "直骨",
+      "ctx": {
+        "lang": "el"
+      },
+      "system": true,
+      "chrome": [80, -1.5199999809265137, 78.19999694824219, 30.520000457763672, 6.560005187988281]
+    },
+    "lang: el 40px -webkit-standard Γειά": {
+      "group": "lang",
+      "font": "40px -webkit-standard",
+      "text": "Γειά",
+      "ctx": {
+        "lang": "el"
+      },
+      "system": true,
+      "chrome": [77.734375, -0.87890625, 76.54296875, 29.12109375, 0.52734375]
+    },
+    "lang: el 40px math Ag": {
+      "group": "lang",
+      "font": "40px math",
+      "text": "Ag",
+      "ctx": {
+        "lang": "el"
+      },
+      "system": true,
+      "chrome": [48.079986572265625, -0.12000000476837158, 47.5999870300293, 26.479999542236328, 9.39999771118164]
+    },
+    "lang: el 40px math 直骨": {
+      "group": "lang",
+      "font": "40px math",
+      "text": "直骨",
+      "ctx": {
+        "lang": "el"
+      },
+      "system": true,
+      "chrome": [80, -1.5199999809265137, 78.19999694824219, 30.520000457763672, 6.560005187988281]
+    },
+    "lang: el 40px math Γειά": {
+      "group": "lang",
+      "font": "40px math",
+      "text": "Γειά",
+      "ctx": {
+        "lang": "el"
+      },
+      "system": true,
+      "chrome": [68.79995727539062, -1.6799999475479126, 68.67996978759766, 27.959999084472656, 0.5600013732910156]
+    },
+    "lang: el 40px BSLato, serif AgΓειά": {
+      "group": "lang",
+      "font": "40px BSLato, serif",
+      "text": "AgΓειά",
+      "ctx": {
+        "lang": "el"
+      },
+      "system": true,
+      "chrome": [125.37435913085938, -0.19999998807907104, 124.18295288085938, 29.12109375, 7.299999237060547]
+    },
+    "lang: el 40px BSLato, serif →": {
+      "group": "lang",
+      "font": "40px BSLato, serif",
+      "text": "→",
+      "ctx": {
+        "lang": "el"
+      },
+      "system": true,
+      "chrome": [40, -4.5703125, 35.8984375, 22.890625, -6.015625]
+    },
+    "lang: el 40px BSLato, sans-serif AgΓειά": {
+      "group": "lang",
+      "font": "40px BSLato, sans-serif",
+      "text": "AgΓειά",
+      "ctx": {
+        "lang": "el"
+      },
+      "system": true,
+      "chrome": [129.86654663085938, -0.19999998807907104, 128.55795288085938, 31.015625, 7.299999237060547]
+    },
+    "lang: el 40px BSLato, sans-serif →": {
+      "group": "lang",
+      "font": "40px BSLato, sans-serif",
+      "text": "→",
+      "ctx": {
+        "lang": "el"
+      },
+      "system": true,
+      "chrome": [40, -4.5703125, 35.8984375, 22.890625, -6.015625]
+    },
+    "lang: el 40px serif, sans-serif AgΓειά": {
+      "group": "lang",
+      "font": "40px serif, sans-serif",
+      "text": "AgΓειά",
+      "ctx": {
+        "lang": "el"
+      },
+      "system": true,
+      "chrome": [126.62109375, -0.5859375, 125.4296875, 29.12109375, 8.7109375]
+    },
+    "lang: el 40px serif, sans-serif →": {
+      "group": "lang",
+      "font": "40px serif, sans-serif",
+      "text": "→",
+      "ctx": {
+        "lang": "el"
+      },
+      "system": true,
+      "chrome": [40, -1.54296875, 38.4375, 17.109375, -3.06640625]
+    },
+    "lang: el 40px NoSuchFamily, cursive AgΓειά": {
+      "group": "lang",
+      "font": "40px NoSuchFamily, cursive",
+      "text": "AgΓειά",
+      "ctx": {
+        "lang": "el"
+      },
+      "system": true,
+      "chrome": [125.078125, -2.36328125, 123.88671875, 29.12109375, 16.34765625]
+    },
+    "lang: el 40px NoSuchFamily, cursive →": {
+      "group": "lang",
+      "font": "40px NoSuchFamily, cursive",
+      "text": "→",
+      "ctx": {
+        "lang": "el"
+      },
+      "system": true,
+      "chrome": [40, -2, 38.119998931884766, 18.040000915527344, -5.479999542236328]
+    },
+    "lang: ja 40px serif font-size-adjust 0.5 aあア": {
+      "group": "lang",
+      "font": "40px serif",
+      "text": "aあア",
+      "ctx": {
+        "lang": "ja"
+      },
+      "css": {
+        "fontSizeAdjust": "0.5"
+      },
+      "system": true,
+      "chrome": [94.59764099121094, -1.5983099937438965, 90.24874877929688, 30.144868850708008, 1.7841625213623047],
+      "flip": "S8"
+    },
+    "lang: ja 40px sans-serif font-size-adjust 0.5 aあア": {
+      "group": "lang",
+      "font": "40px sans-serif",
+      "text": "aあア",
+      "ctx": {
+        "lang": "ja"
+      },
+      "css": {
+        "fontSizeAdjust": "0.5"
+      },
+      "system": true,
+      "chrome": [94.47671508789062, -1.9812599420547485, 91.24800109863281, 29.828969955444336, 1.5042915344238281],
+      "flip": "S8"
+    },
+    "lang: ja 40px BSLato, serif font-size-adjust 0.5 aあア": {
+      "group": "lang",
+      "font": "40px BSLato, serif",
+      "text": "aあア",
+      "ctx": {
+        "lang": "ja"
+      },
+      "css": {
+        "fontSizeAdjust": "0.5"
+      },
+      "system": true,
+      "chrome": [94.35635375976562, -1.8160799741744995, 90.00746154785156, 30.144868850708008, 1.7841625213623047],
+      "flip": "S8"
+    },
+    "lang: ko 40px serif font-size-adjust 0.5 a한국": {
+      "group": "lang",
+      "font": "40px serif",
+      "text": "a한국",
+      "ctx": {
+        "lang": "ko"
+      },
+      "css": {
+        "fontSizeAdjust": "0.5"
+      },
+      "system": true,
+      "chrome": [110.405029296875, -1.1940292119979858, 107.88905334472656, 36.332603454589844, 3.795307159423828],
+      "flip": "S8"
+    },
+    "lang: ko 40px sans-serif font-size-adjust 0.5 a한국": {
+      "group": "lang",
+      "font": "40px sans-serif",
+      "text": "a한국",
+      "ctx": {
+        "lang": "ko"
+      },
+      "css": {
+        "fontSizeAdjust": "0.5"
+      },
+      "system": true,
+      "chrome": [81.84831237792969, -1.4496299028396606, 80.43586730957031, 29.884679794311523, 2.824922561645508],
+      "flip": "S8"
+    },
+    "lang: ko 40px BSLato, serif font-size-adjust 0.5 a한국": {
+      "group": "lang",
+      "font": "40px BSLato, serif",
+      "text": "a한국",
+      "ctx": {
+        "lang": "ko"
+      },
+      "css": {
+        "fontSizeAdjust": "0.5"
+      },
+      "system": true,
+      "chrome": [107.35104370117188, -1.8160799741744995, 104.83506774902344, 36.332603454589844, 3.795307159423828],
+      "flip": "S8"
+    },
+    "lang: zh-CN 40px serif font-size-adjust 0.5 a水说": {
+      "group": "lang",
+      "font": "40px serif",
+      "text": "a水说",
+      "ctx": {
+        "lang": "zh-CN"
+      },
+      "css": {
+        "fontSizeAdjust": "0.5"
+      },
+      "system": true,
+      "chrome": [112.78013610839844, -1.7115199565887451, 111.2037353515625, 34.9960823059082, 7.611763000488281],
+      "flip": "S8"
+    },
+    "lang: zh-CN 40px sans-serif font-size-adjust 0.5 a水说": {
+      "group": "lang",
+      "font": "40px sans-serif",
+      "text": "a水说",
+      "ctx": {
+        "lang": "zh-CN"
+      },
+      "css": {
+        "fontSizeAdjust": "0.5"
+      },
+      "system": true,
+      "chrome": [98.98208618164062, -1.624559998512268, 97.74433898925781, 31.949678421020508, 3.9066829681396484],
+      "flip": "S8"
+    },
+    "lang: zh-CN 40px BSLato, serif font-size-adjust 0.5 a水说": {
+      "group": "lang",
+      "font": "40px BSLato, serif",
+      "text": "a水说",
+      "ctx": {
+        "lang": "zh-CN"
+      },
+      "css": {
+        "fontSizeAdjust": "0.5"
+      },
+      "system": true,
+      "chrome": [110.09634399414062, -1.8160799741744995, 108.51994323730469, 34.9960823059082, 7.611763000488281],
+      "flip": "S8"
+    },
+    "lang: zh-TW 40px serif font-size-adjust 0.5 a水說": {
+      "group": "lang",
+      "font": "40px serif",
+      "text": "a水說",
+      "ctx": {
+        "lang": "zh-TW"
+      },
+      "css": {
+        "fontSizeAdjust": "0.5"
+      },
+      "system": true,
+      "chrome": [112.78013610839844, -1.7115199565887451, 111.51902770996094, 34.9960823059082, 7.611763000488281],
+      "flip": "S8"
+    },
+    "lang: zh-TW 40px sans-serif font-size-adjust 0.5 a水說": {
+      "group": "lang",
+      "font": "40px sans-serif",
+      "text": "a水說",
+      "ctx": {
+        "lang": "zh-TW"
+      },
+      "css": {
+        "fontSizeAdjust": "0.5"
+      },
+      "system": true,
+      "chrome": [98.98208618164062, -1.624559998512268, 97.51225280761719, 31.75627899169922, 3.9066848754882812],
+      "flip": "S8"
+    },
+    "lang: zh-TW 40px BSLato, serif font-size-adjust 0.5 a水說": {
+      "group": "lang",
+      "font": "40px BSLato, serif",
+      "text": "a水說",
+      "ctx": {
+        "lang": "zh-TW"
+      },
+      "css": {
+        "fontSizeAdjust": "0.5"
+      },
+      "system": true,
+      "chrome": [110.09634399414062, -1.8160799741744995, 108.83523559570312, 34.9960823059082, 7.611763000488281],
+      "flip": "S8"
+    },
+    "lang: hi 40px serif font-size-adjust 0.5 aनम": {
+      "group": "lang",
+      "font": "40px serif",
+      "text": "aनम",
+      "ctx": {
+        "lang": "hi"
+      },
+      "css": {
+        "fontSizeAdjust": "0.5"
+      },
+      "system": true,
+      "chrome": [66.46484375, -1.42578125, 66.97265625, 24.3359375, 0.6640625],
+      "flip": "S8"
+    },
+    "lang: hi 40px sans-serif font-size-adjust 0.5 aनम": {
+      "group": "lang",
+      "font": "40px sans-serif",
+      "text": "aनम",
+      "ctx": {
+        "lang": "hi"
+      },
+      "css": {
+        "fontSizeAdjust": "0.5"
+      },
+      "system": true,
+      "chrome": [60.17610168457031, -1.948279857635498, 60.984832763671875, 23.59992027282715, 0.4043617248535156],
+      "flip": "S8"
+    },
+    "lang: hi 40px BSLato, serif font-size-adjust 0.5 aनम": {
+      "group": "lang",
+      "font": "40px BSLato, serif",
+      "text": "aनम",
+      "ctx": {
+        "lang": "hi"
+      },
+      "css": {
+        "fontSizeAdjust": "0.5"
+      },
+      "system": true,
+      "chrome": [68.727294921875, -1.8160799741744995, 69.235107421875, 24.3359375, 0.6640625],
+      "flip": "S8"
+    },
+    "lang: ru 40px serif font-size-adjust 0.5 aПривет": {
+      "group": "lang",
+      "font": "40px serif",
+      "text": "aПривет",
+      "ctx": {
+        "lang": "ru"
+      },
+      "css": {
+        "fontSizeAdjust": "0.5"
+      },
+      "system": true,
+      "chrome": [157.73597717285156, -1.6322021484375, 157.14837646484375, 29.51021385192871, 9.662637710571289]
+    },
+    "lang: ru 40px sans-serif font-size-adjust 0.5 aПривет": {
+      "group": "lang",
+      "font": "40px sans-serif",
+      "text": "aПривет",
+      "ctx": {
+        "lang": "ru"
+      },
+      "css": {
+        "fontSizeAdjust": "0.5"
+      },
+      "system": true,
+      "chrome": [153.80018615722656, -1.5310938358306885, 152.84793090820312, 27.447656631469727, 7.879533767700195]
+    },
+    "lang: ru 40px BSLato, serif font-size-adjust 0.5 aПривет": {
+      "group": "lang",
+      "font": "40px BSLato, serif",
+      "text": "aПривет",
+      "ctx": {
+        "lang": "ru"
+      },
+      "css": {
+        "fontSizeAdjust": "0.5"
+      },
+      "system": true,
+      "chrome": [157.9700469970703, -1.8160799741744995, 157.3824462890625, 29.51021385192871, 9.662637710571289]
+    },
+    "lang: unset 40px Helvetica, -webkit-body Ag": {
+      "group": "lang",
+      "font": "40px Helvetica, -webkit-body",
+      "text": "Ag",
+      "system": true,
+      "chrome": [48.88671875, -0.5859375, 47.67578125, 26.93359375, 8.7109375],
+      "flip": "S8"
+    },
+    "lang: unset 40px Helvetica, -webkit-body 直骨→": {
+      "group": "lang",
+      "font": "40px Helvetica, -webkit-body",
+      "text": "直骨→",
+      "system": true,
+      "chrome": [120, -1.5199999809265137, 118.4375, 30.520000457763672, 6.560005187988281],
+      "flip": "S8"
+    },
+    "lang: ja 40px Times, -webkit-body Ag": {
+      "group": "lang",
+      "font": "40px Times, -webkit-body",
+      "text": "Ag",
+      "ctx": {
+        "lang": "ja"
+      },
+      "system": true,
+      "chrome": [55.63999938964844, -0.5600000023841858, 52.76000213623047, 30.639999389648438, 8.360000610351562],
+      "flip": "S8"
+    },
+    "lang: ja 40px Helvetica, -webkit-body Ag": {
+      "group": "lang",
+      "font": "40px Helvetica, -webkit-body",
+      "text": "Ag",
+      "ctx": {
+        "lang": "ja"
+      },
+      "system": true,
+      "chrome": [55.63999938964844, -0.5600000023841858, 52.76000213623047, 30.639999389648438, 8.360000610351562],
+      "flip": "S8"
+    },
+    "lang: ja 40px -webkit-body, serif Ag": {
+      "group": "lang",
+      "font": "40px -webkit-body, serif",
+      "text": "Ag",
+      "ctx": {
+        "lang": "ja"
+      },
+      "system": true,
+      "chrome": [48.88671875, -0.5859375, 47.67578125, 26.93359375, 8.7109375]
+    },
+    "lang: ja 40px -webkit-body, serif 直骨→": {
+      "group": "lang",
+      "font": "40px -webkit-body, serif",
+      "text": "直骨→",
+      "ctx": {
+        "lang": "ja"
+      },
+      "system": true,
+      "chrome": [120, -2.319999933242798, 118.47999572753906, 33.47999954223633, 3.2000045776367188],
+      "flip": "S8"
+    },
+    "lang: ja 40px serif, -webkit-body Ag": {
+      "group": "lang",
+      "font": "40px serif, -webkit-body",
+      "text": "Ag",
+      "ctx": {
+        "lang": "ja"
+      },
+      "system": true,
+      "chrome": [55.63999938964844, -0.5600000023841858, 52.76000213623047, 30.639999389648438, 8.360000610351562],
+      "flip": "S8"
+    },
+    "lang: ja 40px serif, -webkit-body 直骨→": {
+      "group": "lang",
+      "font": "40px serif, -webkit-body",
+      "text": "直骨→",
+      "ctx": {
+        "lang": "ja"
+      },
+      "system": true,
+      "chrome": [120, -3.1600000858306885, 118.47999572753906, 33.55999755859375, 2.9200057983398438],
+      "flip": "S8"
+    },
+    "lang: zh-CN 40px Times, -webkit-body Ag": {
+      "group": "lang",
+      "font": "40px Times, -webkit-body",
+      "text": "Ag",
+      "ctx": {
+        "lang": "zh-CN"
+      },
+      "system": true,
+      "chrome": [49.91999816894531, 0, 47.439998626708984, 28.559999465942383, 8.480001449584961],
+      "flip": "S8"
+    },
+    "lang: zh-CN 40px Helvetica, -webkit-body Ag": {
+      "group": "lang",
+      "font": "40px Helvetica, -webkit-body",
+      "text": "Ag",
+      "ctx": {
+        "lang": "zh-CN"
+      },
+      "system": true,
+      "chrome": [49.91999816894531, 0, 47.439998626708984, 28.559999465942383, 8.480001449584961],
+      "flip": "S8"
+    },
+    "lang: zh-CN 40px -webkit-body, serif Ag": {
+      "group": "lang",
+      "font": "40px -webkit-body, serif",
+      "text": "Ag",
+      "ctx": {
+        "lang": "zh-CN"
+      },
+      "system": true,
+      "chrome": [48.88671875, -0.5859375, 47.67578125, 26.93359375, 8.7109375]
+    },
+    "lang: zh-CN 40px -webkit-body, serif 直骨→": {
+      "group": "lang",
+      "font": "40px -webkit-body, serif",
+      "text": "直骨→",
+      "ctx": {
+        "lang": "zh-CN"
+      },
+      "system": true,
+      "chrome": [120, -1.5199999809265137, 118.19999694824219, 30.520000457763672, 6.560005187988281],
+      "flip": "S8"
+    },
+    "lang: zh-CN 40px serif, -webkit-body Ag": {
+      "group": "lang",
+      "font": "40px serif, -webkit-body",
+      "text": "Ag",
+      "ctx": {
+        "lang": "zh-CN"
+      },
+      "system": true,
+      "chrome": [49.91999816894531, 0, 47.439998626708984, 28.559999465942383, 8.480001449584961],
+      "flip": "S8"
+    },
+    "lang: zh-CN 40px serif, -webkit-body 直骨→": {
+      "group": "lang",
+      "font": "40px serif, -webkit-body",
+      "text": "直骨→",
+      "ctx": {
+        "lang": "zh-CN"
+      },
+      "system": true,
+      "chrome": [120, -2.2799999713897705, 119.1199951171875, 32.79999923706055, 4],
+      "flip": "S8"
+    },
+    "lang: ko 40px Times, -webkit-body Ag": {
+      "group": "lang",
+      "font": "40px Times, -webkit-body",
+      "text": "Ag",
+      "ctx": {
+        "lang": "ko"
+      },
+      "system": true,
+      "chrome": [44.43998718261719, -0.7599999904632568, 43.679996490478516, 28.520000457763672, 4.200000762939453],
+      "flip": "S8"
+    },
+    "lang: ko 40px Helvetica, -webkit-body Ag": {
+      "group": "lang",
+      "font": "40px Helvetica, -webkit-body",
+      "text": "Ag",
+      "ctx": {
+        "lang": "ko"
+      },
+      "system": true,
+      "chrome": [44.43998718261719, -0.7599999904632568, 43.679996490478516, 28.520000457763672, 4.200000762939453],
+      "flip": "S8"
+    },
+    "lang: ko 40px -webkit-body, serif Ag": {
+      "group": "lang",
+      "font": "40px -webkit-body, serif",
+      "text": "Ag",
+      "ctx": {
+        "lang": "ko"
+      },
+      "system": true,
+      "chrome": [48.88671875, -0.5859375, 47.67578125, 26.93359375, 8.7109375]
+    },
+    "lang: ko 40px -webkit-body, serif 直骨→": {
+      "group": "lang",
+      "font": "40px -webkit-body, serif",
+      "text": "直骨→",
+      "ctx": {
+        "lang": "ko"
+      },
+      "system": true,
+      "chrome": [119.88290405273438, -2.7317073345184326, 119.8829116821289, 32.780487060546875, 3.31707763671875],
+      "flip": "S8"
+    },
+    "lang: ko 40px serif, -webkit-body Ag": {
+      "group": "lang",
+      "font": "40px serif, -webkit-body",
+      "text": "Ag",
+      "ctx": {
+        "lang": "ko"
+      },
+      "system": true,
+      "chrome": [44.43998718261719, -0.7599999904632568, 43.679996490478516, 28.520000457763672, 4.200000762939453],
+      "flip": "S8"
+    },
+    "lang: ko 40px serif, -webkit-body 直骨→": {
+      "group": "lang",
+      "font": "40px serif, -webkit-body",
+      "text": "直骨→",
+      "ctx": {
+        "lang": "ko"
+      },
+      "system": true,
+      "chrome": [97.39997863769531, -2.879999876022339, 95.55998229980469, 31.35999870300293, 2.400003433227539],
+      "flip": "S8"
+    },
+    "lang: hi 40px Times, -webkit-body Ag": {
+      "group": "lang",
+      "font": "40px Times, -webkit-body",
+      "text": "Ag",
+      "ctx": {
+        "lang": "hi"
+      },
+      "system": true,
+      "chrome": [48.88671875, -0.3125, 48.1640625, 27.08984375, 8.6328125],
+      "flip": "S8"
+    },
+    "lang: hi 40px Helvetica, -webkit-body Ag": {
+      "group": "lang",
+      "font": "40px Helvetica, -webkit-body",
+      "text": "Ag",
+      "ctx": {
+        "lang": "hi"
+      },
+      "system": true,
+      "chrome": [48.88671875, -0.3125, 48.1640625, 27.08984375, 8.6328125],
+      "flip": "S8"
+    },
+    "lang: hi 40px Helvetica, -webkit-body 直骨→": {
+      "group": "lang",
+      "font": "40px Helvetica, -webkit-body",
+      "text": "直骨→",
+      "ctx": {
+        "lang": "hi"
+      },
+      "system": true,
+      "chrome": [120, -1.5199999809265137, 118.4375, 30.520000457763672, 6.560005187988281],
+      "flip": "S8"
+    },
+    "lang: hi 40px -webkit-body, serif Ag": {
+      "group": "lang",
+      "font": "40px -webkit-body, serif",
+      "text": "Ag",
+      "ctx": {
+        "lang": "hi"
+      },
+      "system": true,
+      "chrome": [48.88671875, -0.5859375, 47.67578125, 26.93359375, 8.7109375]
+    },
+    "lang: unset 40px system-ui, -webkit-body Ag": {
+      "group": "lang",
+      "font": "40px system-ui, -webkit-body",
+      "text": "Ag",
+      "system": true,
+      "chrome": [48.88671875, -0.5859375, 47.67578125, 26.93359375, 8.7109375],
+      "flip": "S8"
+    },
+    "lang: unset 40px system-ui, -webkit-body 直骨→": {
+      "group": "lang",
+      "font": "40px system-ui, -webkit-body",
+      "text": "直骨→",
+      "system": true,
+      "chrome": [120, -1.5199999809265137, 118.4375, 30.520000457763672, 6.560005187988281],
+      "flip": "S8"
+    },
+    "lang: unset 40px system-ui, -webkit-body Привет": {
+      "group": "lang",
+      "font": "40px system-ui, -webkit-body",
+      "text": "Привет",
+      "system": true,
+      "chrome": [123.80859375, -0.80078125, 123.28125, 26.484375, 8.671875],
+      "flip": "S8"
+    },
+    "lang: unset 40px math, -webkit-body Ag": {
+      "group": "lang",
+      "font": "40px math, -webkit-body",
+      "text": "Ag",
+      "system": true,
+      "chrome": [48.88671875, -0.5859375, 47.67578125, 26.93359375, 8.7109375],
+      "flip": "S8"
+    },
+    "lang: unset 40px math, -webkit-body 直骨→": {
+      "group": "lang",
+      "font": "40px math, -webkit-body",
+      "text": "直骨→",
+      "system": true,
+      "chrome": [120, -1.5199999809265137, 118.4375, 30.520000457763672, 6.560005187988281],
+      "flip": "S8"
+    },
+    "lang: unset 40px math, -webkit-body Привет": {
+      "group": "lang",
+      "font": "40px math, -webkit-body",
+      "text": "Привет",
+      "system": true,
+      "chrome": [123.80859375, -0.80078125, 123.28125, 26.484375, 8.671875],
+      "flip": "S8"
+    },
+    "lang: unset 40px monospace, -webkit-body Ag": {
+      "group": "lang",
+      "font": "40px monospace, -webkit-body",
+      "text": "Ag",
+      "system": true,
+      "chrome": [48.88671875, -0.5859375, 47.67578125, 26.93359375, 8.7109375],
+      "flip": "S8"
+    },
+    "lang: unset 40px monospace, -webkit-body 直骨→": {
+      "group": "lang",
+      "font": "40px monospace, -webkit-body",
+      "text": "直骨→",
+      "system": true,
+      "chrome": [120, -1.5199999809265137, 118.4375, 30.520000457763672, 6.560005187988281],
+      "flip": "S8"
+    },
+    "lang: unset 40px monospace, -webkit-body Привет": {
+      "group": "lang",
+      "font": "40px monospace, -webkit-body",
+      "text": "Привет",
+      "system": true,
+      "chrome": [123.80859375, -0.80078125, 123.28125, 26.484375, 8.671875],
+      "flip": "S8"
+    },
+    "lang: unset 40px cursive, -webkit-body Ag": {
+      "group": "lang",
+      "font": "40px cursive, -webkit-body",
+      "text": "Ag",
+      "system": true,
+      "chrome": [48.88671875, -0.5859375, 47.67578125, 26.93359375, 8.7109375],
+      "flip": "S8"
+    },
+    "lang: unset 40px cursive, -webkit-body 直骨→": {
+      "group": "lang",
+      "font": "40px cursive, -webkit-body",
+      "text": "直骨→",
+      "system": true,
+      "chrome": [120, -1.5199999809265137, 118.4375, 30.520000457763672, 6.560005187988281],
+      "flip": "S8"
+    },
+    "lang: unset 40px Menlo, -webkit-body Ag": {
+      "group": "lang",
+      "font": "40px Menlo, -webkit-body",
+      "text": "Ag",
+      "system": true,
+      "chrome": [48.88671875, -0.5859375, 47.67578125, 26.93359375, 8.7109375],
+      "flip": "S8"
+    },
+    "lang: unset 40px Menlo, -webkit-body 直骨→": {
+      "group": "lang",
+      "font": "40px Menlo, -webkit-body",
+      "text": "直骨→",
+      "system": true,
+      "chrome": [120, -1.5199999809265137, 118.4375, 30.520000457763672, 6.560005187988281],
+      "flip": "S8"
+    },
+    "lang: unset 40px Menlo, -webkit-body Привет": {
+      "group": "lang",
+      "font": "40px Menlo, -webkit-body",
+      "text": "Привет",
+      "system": true,
+      "chrome": [123.80859375, -0.80078125, 123.28125, 26.484375, 8.671875],
+      "flip": "S8"
+    },
+    "lang: ja 40px system-ui, -webkit-body Ag": {
+      "group": "lang",
+      "font": "40px system-ui, -webkit-body",
+      "text": "Ag",
+      "ctx": {
+        "lang": "ja"
+      },
+      "system": true,
+      "chrome": [55.63999938964844, -0.5600000023841858, 52.76000213623047, 30.639999389648438, 8.360000610351562],
+      "flip": "S8"
+    },
+    "lang: ja 40px system-ui, -webkit-body 直骨→": {
+      "group": "lang",
+      "font": "40px system-ui, -webkit-body",
+      "text": "直骨→",
+      "ctx": {
+        "lang": "ja"
+      },
+      "system": true,
+      "chrome": [120, -3.1600000858306885, 118.47999572753906, 33.55999755859375, 2.9200057983398438],
+      "flip": "S8"
+    },
+    "lang: ja 40px system-ui, -webkit-body Привет": {
+      "group": "lang",
+      "font": "40px system-ui, -webkit-body",
+      "text": "Привет",
+      "ctx": {
+        "lang": "ja"
+      },
+      "system": true,
+      "chrome": [240, -8.199999809265137, 229.51998901367188, 30.520000457763672, 4.759998321533203],
+      "flip": "S8"
+    },
+    "lang: ja 40px math, -webkit-body Ag": {
+      "group": "lang",
+      "font": "40px math, -webkit-body",
+      "text": "Ag",
+      "ctx": {
+        "lang": "ja"
+      },
+      "system": true,
+      "chrome": [55.63999938964844, -0.5600000023841858, 52.76000213623047, 30.639999389648438, 8.360000610351562],
+      "flip": "S8"
+    },
+    "lang: ja 40px math, -webkit-body 直骨→": {
+      "group": "lang",
+      "font": "40px math, -webkit-body",
+      "text": "直骨→",
+      "ctx": {
+        "lang": "ja"
+      },
+      "system": true,
+      "chrome": [120, -3.1600000858306885, 118.47999572753906, 33.55999755859375, 2.9200057983398438],
+      "flip": "S8"
+    },
+    "lang: ja 40px math, -webkit-body Привет": {
+      "group": "lang",
+      "font": "40px math, -webkit-body",
+      "text": "Привет",
+      "ctx": {
+        "lang": "ja"
+      },
+      "system": true,
+      "chrome": [240, -8.199999809265137, 229.51998901367188, 30.520000457763672, 4.759998321533203],
+      "flip": "S8"
+    },
+    "lang: ja 40px monospace, -webkit-body Ag": {
+      "group": "lang",
+      "font": "40px monospace, -webkit-body",
+      "text": "Ag",
+      "ctx": {
+        "lang": "ja"
+      },
+      "system": true,
+      "chrome": [55.63999938964844, -0.5600000023841858, 52.76000213623047, 30.639999389648438, 8.360000610351562],
+      "flip": "S8"
+    },
+    "lang: ja 40px monospace, -webkit-body 直骨→": {
+      "group": "lang",
+      "font": "40px monospace, -webkit-body",
+      "text": "直骨→",
+      "ctx": {
+        "lang": "ja"
+      },
+      "system": true,
+      "chrome": [120, -3.1600000858306885, 118.47999572753906, 33.55999755859375, 2.9200057983398438],
+      "flip": "S8"
+    },
+    "lang: ja 40px monospace, -webkit-body Привет": {
+      "group": "lang",
+      "font": "40px monospace, -webkit-body",
+      "text": "Привет",
+      "ctx": {
+        "lang": "ja"
+      },
+      "system": true,
+      "chrome": [240, -8.199999809265137, 229.51998901367188, 30.520000457763672, 4.759998321533203],
+      "flip": "S8"
+    },
+    "lang: ja 40px cursive, -webkit-body Ag": {
+      "group": "lang",
+      "font": "40px cursive, -webkit-body",
+      "text": "Ag",
+      "ctx": {
+        "lang": "ja"
+      },
+      "system": true,
+      "chrome": [55.63999938964844, -0.5600000023841858, 52.76000213623047, 30.639999389648438, 8.360000610351562],
+      "flip": "S8"
+    },
+    "lang: ja 40px serif, -webkit-body, BSLato Ag": {
+      "group": "lang",
+      "font": "40px serif, -webkit-body, BSLato",
+      "text": "Ag",
+      "ctx": {
+        "lang": "ja"
+      },
+      "system": true,
+      "chrome": [55.63999938964844, -0.5600000023841858, 52.76000213623047, 30.639999389648438, 8.360000610351562],
+      "flip": "S8"
+    },
+    "lang: ja 40px serif, -webkit-body, BSLato 直骨→": {
+      "group": "lang",
+      "font": "40px serif, -webkit-body, BSLato",
+      "text": "直骨→",
+      "ctx": {
+        "lang": "ja"
+      },
+      "system": true,
+      "chrome": [120, -3.1600000858306885, 118.47999572753906, 33.55999755859375, 2.9200057983398438],
+      "flip": "S8"
+    },
+    "lang: ja 40px serif, -webkit-body, BSLato Привет": {
+      "group": "lang",
+      "font": "40px serif, -webkit-body, BSLato",
+      "text": "Привет",
+      "ctx": {
+        "lang": "ja"
+      },
+      "system": true,
+      "chrome": [240, -8.199999809265137, 229.51998901367188, 30.520000457763672, 4.759998321533203],
+      "flip": "S8"
+    },
+    "lang: ja 40px -webkit-body, serif, Helvetica Ag": {
+      "group": "lang",
+      "font": "40px -webkit-body, serif, Helvetica",
+      "text": "Ag",
+      "ctx": {
+        "lang": "ja"
+      },
+      "system": true,
+      "chrome": [48.88671875, -0.5859375, 47.67578125, 26.93359375, 8.7109375]
+    },
+    "lang: ja 40px -webkit-body, serif, Helvetica 直骨→": {
+      "group": "lang",
+      "font": "40px -webkit-body, serif, Helvetica",
+      "text": "直骨→",
+      "ctx": {
+        "lang": "ja"
+      },
+      "system": true,
+      "chrome": [120, -2.319999933242798, 118.47999572753906, 33.47999954223633, 3.2000045776367188],
+      "flip": "S8"
+    },
+    "lang: ja 40px -webkit-body, serif, Helvetica Привет": {
+      "group": "lang",
+      "font": "40px -webkit-body, serif, Helvetica",
+      "text": "Привет",
+      "ctx": {
+        "lang": "ja"
+      },
+      "system": true,
+      "chrome": [123.80859375, -0.80078125, 123.28125, 26.484375, 8.671875]
+    },
+    "lang: ja 40px Helvetica, -webkit-body, serif 直骨→": {
+      "group": "lang",
+      "font": "40px Helvetica, -webkit-body, serif",
+      "text": "直骨→",
+      "ctx": {
+        "lang": "ja"
+      },
+      "system": true,
+      "chrome": [120, -2.319999933242798, 118.47999572753906, 33.47999954223633, 3.2000045776367188],
+      "flip": "S8"
+    },
+    "lang: ja 40px BSLato, -webkit-body, serif 直骨→": {
+      "group": "lang",
+      "font": "40px BSLato, -webkit-body, serif",
+      "text": "直骨→",
+      "ctx": {
+        "lang": "ja"
+      },
+      "system": true,
+      "chrome": [120, -2.319999933242798, 118.47999572753906, 33.47999954223633, 3.2000045776367188],
+      "flip": "S8"
+    },
+    "lang: ja 40px BSLato, -webkit-body, serif Привет": {
+      "group": "lang",
+      "font": "40px BSLato, -webkit-body, serif",
+      "text": "Привет",
+      "ctx": {
+        "lang": "ja"
+      },
+      "system": true,
+      "chrome": [123.80859375, -0.80078125, 123.28125, 26.484375, 8.671875]
+    },
+    "lang: ja 40px Menlo, -webkit-body Ag": {
+      "group": "lang",
+      "font": "40px Menlo, -webkit-body",
+      "text": "Ag",
+      "ctx": {
+        "lang": "ja"
+      },
+      "system": true,
+      "chrome": [55.63999938964844, -0.5600000023841858, 52.76000213623047, 30.639999389648438, 8.360000610351562],
+      "flip": "S8"
+    },
+    "lang: ja 40px Menlo, -webkit-body 直骨→": {
+      "group": "lang",
+      "font": "40px Menlo, -webkit-body",
+      "text": "直骨→",
+      "ctx": {
+        "lang": "ja"
+      },
+      "system": true,
+      "chrome": [120, -3.1600000858306885, 118.47999572753906, 33.55999755859375, 2.9200057983398438],
+      "flip": "S8"
+    },
+    "lang: ja 40px Menlo, -webkit-body Привет": {
+      "group": "lang",
+      "font": "40px Menlo, -webkit-body",
+      "text": "Привет",
+      "ctx": {
+        "lang": "ja"
+      },
+      "system": true,
+      "chrome": [240, -8.199999809265137, 229.51998901367188, 30.520000457763672, 4.759998321533203],
+      "flip": "S8"
+    },
+    "lang: zh-CN 40px system-ui, -webkit-body Ag": {
+      "group": "lang",
+      "font": "40px system-ui, -webkit-body",
+      "text": "Ag",
+      "ctx": {
+        "lang": "zh-CN"
+      },
+      "system": true,
+      "chrome": [49.91999816894531, 0, 47.439998626708984, 28.559999465942383, 8.480001449584961],
+      "flip": "S8"
+    },
+    "lang: zh-CN 40px system-ui, -webkit-body 直骨→": {
+      "group": "lang",
+      "font": "40px system-ui, -webkit-body",
+      "text": "直骨→",
+      "ctx": {
+        "lang": "zh-CN"
+      },
+      "system": true,
+      "chrome": [120, -2.2799999713897705, 119.1199951171875, 32.79999923706055, 4],
+      "flip": "S8"
+    },
+    "lang: zh-CN 40px system-ui, -webkit-body Привет": {
+      "group": "lang",
+      "font": "40px system-ui, -webkit-body",
+      "text": "Привет",
+      "ctx": {
+        "lang": "zh-CN"
+      },
+      "system": true,
+      "chrome": [138.15994262695312, -2.879999876022339, 137.2799530029297, 28.559999465942383, 7.920000076293945],
+      "flip": "S8"
+    },
+    "lang: zh-CN 40px math, -webkit-body Ag": {
+      "group": "lang",
+      "font": "40px math, -webkit-body",
+      "text": "Ag",
+      "ctx": {
+        "lang": "zh-CN"
+      },
+      "system": true,
+      "chrome": [49.91999816894531, 0, 47.439998626708984, 28.559999465942383, 8.480001449584961],
+      "flip": "S8"
+    },
+    "lang: zh-CN 40px math, -webkit-body 直骨→": {
+      "group": "lang",
+      "font": "40px math, -webkit-body",
+      "text": "直骨→",
+      "ctx": {
+        "lang": "zh-CN"
+      },
+      "system": true,
+      "chrome": [120, -2.2799999713897705, 119.1199951171875, 32.79999923706055, 4],
+      "flip": "S8"
+    },
+    "lang: zh-CN 40px math, -webkit-body Привет": {
+      "group": "lang",
+      "font": "40px math, -webkit-body",
+      "text": "Привет",
+      "ctx": {
+        "lang": "zh-CN"
+      },
+      "system": true,
+      "chrome": [138.15994262695312, -2.879999876022339, 137.2799530029297, 28.559999465942383, 7.920000076293945],
+      "flip": "S8"
+    },
+    "lang: zh-CN 40px monospace, -webkit-body Ag": {
+      "group": "lang",
+      "font": "40px monospace, -webkit-body",
+      "text": "Ag",
+      "ctx": {
+        "lang": "zh-CN"
+      },
+      "system": true,
+      "chrome": [49.91999816894531, 0, 47.439998626708984, 28.559999465942383, 8.480001449584961],
+      "flip": "S8"
+    },
+    "lang: zh-CN 40px monospace, -webkit-body 直骨→": {
+      "group": "lang",
+      "font": "40px monospace, -webkit-body",
+      "text": "直骨→",
+      "ctx": {
+        "lang": "zh-CN"
+      },
+      "system": true,
+      "chrome": [120, -2.2799999713897705, 119.1199951171875, 32.79999923706055, 4],
+      "flip": "S8"
+    },
+    "lang: zh-CN 40px monospace, -webkit-body Привет": {
+      "group": "lang",
+      "font": "40px monospace, -webkit-body",
+      "text": "Привет",
+      "ctx": {
+        "lang": "zh-CN"
+      },
+      "system": true,
+      "chrome": [138.15994262695312, -2.879999876022339, 137.2799530029297, 28.559999465942383, 7.920000076293945],
+      "flip": "S8"
+    },
+    "lang: zh-CN 40px cursive, -webkit-body Ag": {
+      "group": "lang",
+      "font": "40px cursive, -webkit-body",
+      "text": "Ag",
+      "ctx": {
+        "lang": "zh-CN"
+      },
+      "system": true,
+      "chrome": [49.91999816894531, 0, 47.439998626708984, 28.559999465942383, 8.480001449584961],
+      "flip": "S8"
+    },
+    "lang: zh-CN 40px cursive, -webkit-body 直骨→": {
+      "group": "lang",
+      "font": "40px cursive, -webkit-body",
+      "text": "直骨→",
+      "ctx": {
+        "lang": "zh-CN"
+      },
+      "system": true,
+      "chrome": [120, -2.2799999713897705, 119.1199951171875, 32.79999923706055, 4],
+      "flip": "S8"
+    },
+    "lang: zh-CN 40px cursive, -webkit-body Привет": {
+      "group": "lang",
+      "font": "40px cursive, -webkit-body",
+      "text": "Привет",
+      "ctx": {
+        "lang": "zh-CN"
+      },
+      "system": true,
+      "chrome": [138.15994262695312, -2.879999876022339, 137.2799530029297, 28.559999465942383, 7.920000076293945],
+      "flip": "S8"
+    },
+    "lang: zh-CN 40px serif, -webkit-body, BSLato Ag": {
+      "group": "lang",
+      "font": "40px serif, -webkit-body, BSLato",
+      "text": "Ag",
+      "ctx": {
+        "lang": "zh-CN"
+      },
+      "system": true,
+      "chrome": [49.91999816894531, 0, 47.439998626708984, 28.559999465942383, 8.480001449584961],
+      "flip": "S8"
+    },
+    "lang: zh-CN 40px serif, -webkit-body, BSLato 直骨→": {
+      "group": "lang",
+      "font": "40px serif, -webkit-body, BSLato",
+      "text": "直骨→",
+      "ctx": {
+        "lang": "zh-CN"
+      },
+      "system": true,
+      "chrome": [120, -2.2799999713897705, 119.1199951171875, 32.79999923706055, 4],
+      "flip": "S8"
+    },
+    "lang: zh-CN 40px serif, -webkit-body, BSLato Привет": {
+      "group": "lang",
+      "font": "40px serif, -webkit-body, BSLato",
+      "text": "Привет",
+      "ctx": {
+        "lang": "zh-CN"
+      },
+      "system": true,
+      "chrome": [138.15994262695312, -2.879999876022339, 137.2799530029297, 28.559999465942383, 7.920000076293945],
+      "flip": "S8"
+    },
+    "lang: zh-CN 40px -webkit-body, serif, Helvetica Ag": {
+      "group": "lang",
+      "font": "40px -webkit-body, serif, Helvetica",
+      "text": "Ag",
+      "ctx": {
+        "lang": "zh-CN"
+      },
+      "system": true,
+      "chrome": [48.88671875, -0.5859375, 47.67578125, 26.93359375, 8.7109375]
+    },
+    "lang: zh-CN 40px -webkit-body, serif, Helvetica 直骨→": {
+      "group": "lang",
+      "font": "40px -webkit-body, serif, Helvetica",
+      "text": "直骨→",
+      "ctx": {
+        "lang": "zh-CN"
+      },
+      "system": true,
+      "chrome": [120, -1.5199999809265137, 118.19999694824219, 30.520000457763672, 6.560005187988281],
+      "flip": "S8"
+    },
+    "lang: zh-CN 40px -webkit-body, serif, Helvetica Привет": {
+      "group": "lang",
+      "font": "40px -webkit-body, serif, Helvetica",
+      "text": "Привет",
+      "ctx": {
+        "lang": "zh-CN"
+      },
+      "system": true,
+      "chrome": [123.80859375, -0.80078125, 123.28125, 26.484375, 8.671875]
+    },
+    "lang: zh-CN 40px Helvetica, -webkit-body, serif 直骨→": {
+      "group": "lang",
+      "font": "40px Helvetica, -webkit-body, serif",
+      "text": "直骨→",
+      "ctx": {
+        "lang": "zh-CN"
+      },
+      "system": true,
+      "chrome": [120, -1.5199999809265137, 118.19999694824219, 30.520000457763672, 6.560005187988281],
+      "flip": "S8"
+    },
+    "lang: zh-CN 40px BSLato, -webkit-body, serif 直骨→": {
+      "group": "lang",
+      "font": "40px BSLato, -webkit-body, serif",
+      "text": "直骨→",
+      "ctx": {
+        "lang": "zh-CN"
+      },
+      "system": true,
+      "chrome": [120, -1.5199999809265137, 118.19999694824219, 30.520000457763672, 6.560005187988281],
+      "flip": "S8"
+    },
+    "lang: zh-CN 40px BSLato, -webkit-body, serif Привет": {
+      "group": "lang",
+      "font": "40px BSLato, -webkit-body, serif",
+      "text": "Привет",
+      "ctx": {
+        "lang": "zh-CN"
+      },
+      "system": true,
+      "chrome": [123.80859375, -0.80078125, 123.28125, 26.484375, 8.671875]
+    },
+    "lang: zh-CN 40px Menlo, -webkit-body Ag": {
+      "group": "lang",
+      "font": "40px Menlo, -webkit-body",
+      "text": "Ag",
+      "ctx": {
+        "lang": "zh-CN"
+      },
+      "system": true,
+      "chrome": [49.91999816894531, 0, 47.439998626708984, 28.559999465942383, 8.480001449584961],
+      "flip": "S8"
+    },
+    "lang: zh-CN 40px Menlo, -webkit-body 直骨→": {
+      "group": "lang",
+      "font": "40px Menlo, -webkit-body",
+      "text": "直骨→",
+      "ctx": {
+        "lang": "zh-CN"
+      },
+      "system": true,
+      "chrome": [120, -2.2799999713897705, 119.1199951171875, 32.79999923706055, 4],
+      "flip": "S8"
+    },
+    "lang: zh-CN 40px Menlo, -webkit-body Привет": {
+      "group": "lang",
+      "font": "40px Menlo, -webkit-body",
+      "text": "Привет",
+      "ctx": {
+        "lang": "zh-CN"
+      },
+      "system": true,
+      "chrome": [138.15994262695312, -2.879999876022339, 137.2799530029297, 28.559999465942383, 7.920000076293945],
+      "flip": "S8"
+    },
+    "lang: ko 40px system-ui, -webkit-body Ag": {
+      "group": "lang",
+      "font": "40px system-ui, -webkit-body",
+      "text": "Ag",
+      "ctx": {
+        "lang": "ko"
+      },
+      "system": true,
+      "chrome": [44.43998718261719, -0.7599999904632568, 43.679996490478516, 28.520000457763672, 4.200000762939453],
+      "flip": "S8"
+    },
+    "lang: ko 40px system-ui, -webkit-body 直骨→": {
+      "group": "lang",
+      "font": "40px system-ui, -webkit-body",
+      "text": "直骨→",
+      "ctx": {
+        "lang": "ko"
+      },
+      "system": true,
+      "chrome": [97.39997863769531, -2.879999876022339, 95.55998229980469, 31.35999870300293, 2.400003433227539],
+      "flip": "S8"
+    },
+    "lang: ko 40px system-ui, -webkit-body Привет": {
+      "group": "lang",
+      "font": "40px system-ui, -webkit-body",
+      "text": "Привет",
+      "ctx": {
+        "lang": "ko"
+      },
+      "system": true,
+      "chrome": [125.83998107910156, -3.0399999618530273, 125.39998626708984, 29.15999984741211, 4.320003509521484],
+      "flip": "S8"
+    },
+    "lang: ko 40px math, -webkit-body Ag": {
+      "group": "lang",
+      "font": "40px math, -webkit-body",
+      "text": "Ag",
+      "ctx": {
+        "lang": "ko"
+      },
+      "system": true,
+      "chrome": [44.43998718261719, -0.7599999904632568, 43.679996490478516, 28.520000457763672, 4.200000762939453],
+      "flip": "S8"
+    },
+    "lang: ko 40px math, -webkit-body 直骨→": {
+      "group": "lang",
+      "font": "40px math, -webkit-body",
+      "text": "直骨→",
+      "ctx": {
+        "lang": "ko"
+      },
+      "system": true,
+      "chrome": [97.39997863769531, -2.879999876022339, 95.55998229980469, 31.35999870300293, 2.400003433227539],
+      "flip": "S8"
+    },
+    "lang: ko 40px math, -webkit-body Привет": {
+      "group": "lang",
+      "font": "40px math, -webkit-body",
+      "text": "Привет",
+      "ctx": {
+        "lang": "ko"
+      },
+      "system": true,
+      "chrome": [125.83998107910156, -3.0399999618530273, 125.39998626708984, 29.15999984741211, 4.320003509521484],
+      "flip": "S8"
+    },
+    "lang: ko 40px monospace, -webkit-body Ag": {
+      "group": "lang",
+      "font": "40px monospace, -webkit-body",
+      "text": "Ag",
+      "ctx": {
+        "lang": "ko"
+      },
+      "system": true,
+      "chrome": [44.43998718261719, -0.7599999904632568, 43.679996490478516, 28.520000457763672, 4.200000762939453],
+      "flip": "S8"
+    },
+    "lang: ko 40px monospace, -webkit-body 直骨→": {
+      "group": "lang",
+      "font": "40px monospace, -webkit-body",
+      "text": "直骨→",
+      "ctx": {
+        "lang": "ko"
+      },
+      "system": true,
+      "chrome": [97.39997863769531, -2.879999876022339, 95.55998229980469, 31.35999870300293, 2.400003433227539],
+      "flip": "S8"
+    },
+    "lang: ko 40px monospace, -webkit-body Привет": {
+      "group": "lang",
+      "font": "40px monospace, -webkit-body",
+      "text": "Привет",
+      "ctx": {
+        "lang": "ko"
+      },
+      "system": true,
+      "chrome": [125.83998107910156, -3.0399999618530273, 125.39998626708984, 29.15999984741211, 4.320003509521484],
+      "flip": "S8"
+    },
+    "lang: ko 40px cursive, -webkit-body Ag": {
+      "group": "lang",
+      "font": "40px cursive, -webkit-body",
+      "text": "Ag",
+      "ctx": {
+        "lang": "ko"
+      },
+      "system": true,
+      "chrome": [44.43998718261719, -0.7599999904632568, 43.679996490478516, 28.520000457763672, 4.200000762939453],
+      "flip": "S8"
+    },
+    "lang: ko 40px serif, -webkit-body, BSLato Ag": {
+      "group": "lang",
+      "font": "40px serif, -webkit-body, BSLato",
+      "text": "Ag",
+      "ctx": {
+        "lang": "ko"
+      },
+      "system": true,
+      "chrome": [44.43998718261719, -0.7599999904632568, 43.679996490478516, 28.520000457763672, 4.200000762939453],
+      "flip": "S8"
+    },
+    "lang: ko 40px serif, -webkit-body, BSLato 直骨→": {
+      "group": "lang",
+      "font": "40px serif, -webkit-body, BSLato",
+      "text": "直骨→",
+      "ctx": {
+        "lang": "ko"
+      },
+      "system": true,
+      "chrome": [97.39997863769531, -2.879999876022339, 95.55998229980469, 31.35999870300293, 2.400003433227539],
+      "flip": "S8"
+    },
+    "lang: ko 40px serif, -webkit-body, BSLato Привет": {
+      "group": "lang",
+      "font": "40px serif, -webkit-body, BSLato",
+      "text": "Привет",
+      "ctx": {
+        "lang": "ko"
+      },
+      "system": true,
+      "chrome": [125.83998107910156, -3.0399999618530273, 125.39998626708984, 29.15999984741211, 4.320003509521484],
+      "flip": "S8"
+    },
+    "lang: ko 40px -webkit-body, serif, Helvetica Ag": {
+      "group": "lang",
+      "font": "40px -webkit-body, serif, Helvetica",
+      "text": "Ag",
+      "ctx": {
+        "lang": "ko"
+      },
+      "system": true,
+      "chrome": [48.88671875, -0.5859375, 47.67578125, 26.93359375, 8.7109375]
+    },
+    "lang: ko 40px -webkit-body, serif, Helvetica 直骨→": {
+      "group": "lang",
+      "font": "40px -webkit-body, serif, Helvetica",
+      "text": "直骨→",
+      "ctx": {
+        "lang": "ko"
+      },
+      "system": true,
+      "chrome": [119.88290405273438, -2.7317073345184326, 119.8829116821289, 32.780487060546875, 3.31707763671875],
+      "flip": "S8"
+    },
+    "lang: ko 40px -webkit-body, serif, Helvetica Привет": {
+      "group": "lang",
+      "font": "40px -webkit-body, serif, Helvetica",
+      "text": "Привет",
+      "ctx": {
+        "lang": "ko"
+      },
+      "system": true,
+      "chrome": [123.80859375, -0.80078125, 123.28125, 26.484375, 8.671875]
+    },
+    "lang: ko 40px Helvetica, -webkit-body, serif 直骨→": {
+      "group": "lang",
+      "font": "40px Helvetica, -webkit-body, serif",
+      "text": "直骨→",
+      "ctx": {
+        "lang": "ko"
+      },
+      "system": true,
+      "chrome": [119.88290405273438, -2.7317073345184326, 119.8829116821289, 32.780487060546875, 3.31707763671875],
+      "flip": "S8"
+    },
+    "lang: ko 40px BSLato, -webkit-body, serif 直骨→": {
+      "group": "lang",
+      "font": "40px BSLato, -webkit-body, serif",
+      "text": "直骨→",
+      "ctx": {
+        "lang": "ko"
+      },
+      "system": true,
+      "chrome": [119.88290405273438, -2.7317073345184326, 119.8829116821289, 32.780487060546875, 3.31707763671875],
+      "flip": "S8"
+    },
+    "lang: ko 40px BSLato, -webkit-body, serif Привет": {
+      "group": "lang",
+      "font": "40px BSLato, -webkit-body, serif",
+      "text": "Привет",
+      "ctx": {
+        "lang": "ko"
+      },
+      "system": true,
+      "chrome": [123.80859375, -0.80078125, 123.28125, 26.484375, 8.671875]
+    },
+    "lang: ko 40px Menlo, -webkit-body Ag": {
+      "group": "lang",
+      "font": "40px Menlo, -webkit-body",
+      "text": "Ag",
+      "ctx": {
+        "lang": "ko"
+      },
+      "system": true,
+      "chrome": [44.43998718261719, -0.7599999904632568, 43.679996490478516, 28.520000457763672, 4.200000762939453],
+      "flip": "S8"
+    },
+    "lang: ko 40px Menlo, -webkit-body 直骨→": {
+      "group": "lang",
+      "font": "40px Menlo, -webkit-body",
+      "text": "直骨→",
+      "ctx": {
+        "lang": "ko"
+      },
+      "system": true,
+      "chrome": [97.39997863769531, -2.879999876022339, 95.55998229980469, 31.35999870300293, 2.400003433227539],
+      "flip": "S8"
+    },
+    "lang: ko 40px Menlo, -webkit-body Привет": {
+      "group": "lang",
+      "font": "40px Menlo, -webkit-body",
+      "text": "Привет",
+      "ctx": {
+        "lang": "ko"
+      },
+      "system": true,
+      "chrome": [125.83998107910156, -3.0399999618530273, 125.39998626708984, 29.15999984741211, 4.320003509521484],
+      "flip": "S8"
+    },
+    "lang: hi 40px system-ui, -webkit-body Ag": {
+      "group": "lang",
+      "font": "40px system-ui, -webkit-body",
+      "text": "Ag",
+      "ctx": {
+        "lang": "hi"
+      },
+      "system": true,
+      "chrome": [48.88671875, -0.3125, 48.1640625, 27.08984375, 8.6328125],
+      "flip": "S8"
+    },
+    "lang: hi 40px system-ui, -webkit-body 直骨→": {
+      "group": "lang",
+      "font": "40px system-ui, -webkit-body",
+      "text": "直骨→",
+      "ctx": {
+        "lang": "hi"
+      },
+      "system": true,
+      "chrome": [120, -1.5199999809265137, 118.4375, 30.520000457763672, 6.560005187988281],
+      "flip": "S8"
+    },
+    "lang: hi 40px system-ui, -webkit-body Привет": {
+      "group": "lang",
+      "font": "40px system-ui, -webkit-body",
+      "text": "Привет",
+      "ctx": {
+        "lang": "hi"
+      },
+      "system": true,
+      "chrome": [124.1796875, -0.72265625, 123.92578125, 26.484375, 8.5546875],
+      "flip": "S8"
+    },
+    "lang: hi 40px math, -webkit-body Ag": {
+      "group": "lang",
+      "font": "40px math, -webkit-body",
+      "text": "Ag",
+      "ctx": {
+        "lang": "hi"
+      },
+      "system": true,
+      "chrome": [48.88671875, -0.3125, 48.1640625, 27.08984375, 8.6328125],
+      "flip": "S8"
+    },
+    "lang: hi 40px math, -webkit-body 直骨→": {
+      "group": "lang",
+      "font": "40px math, -webkit-body",
+      "text": "直骨→",
+      "ctx": {
+        "lang": "hi"
+      },
+      "system": true,
+      "chrome": [120, -1.5199999809265137, 118.4375, 30.520000457763672, 6.560005187988281],
+      "flip": "S8"
+    },
+    "lang: hi 40px math, -webkit-body Привет": {
+      "group": "lang",
+      "font": "40px math, -webkit-body",
+      "text": "Привет",
+      "ctx": {
+        "lang": "hi"
+      },
+      "system": true,
+      "chrome": [124.1796875, -0.72265625, 123.92578125, 26.484375, 8.5546875],
+      "flip": "S8"
+    },
+    "lang: hi 40px monospace, -webkit-body Ag": {
+      "group": "lang",
+      "font": "40px monospace, -webkit-body",
+      "text": "Ag",
+      "ctx": {
+        "lang": "hi"
+      },
+      "system": true,
+      "chrome": [48.88671875, -0.3125, 48.1640625, 27.08984375, 8.6328125],
+      "flip": "S8"
+    },
+    "lang: hi 40px monospace, -webkit-body 直骨→": {
+      "group": "lang",
+      "font": "40px monospace, -webkit-body",
+      "text": "直骨→",
+      "ctx": {
+        "lang": "hi"
+      },
+      "system": true,
+      "chrome": [120, -1.5199999809265137, 118.4375, 30.520000457763672, 6.560005187988281],
+      "flip": "S8"
+    },
+    "lang: hi 40px monospace, -webkit-body Привет": {
+      "group": "lang",
+      "font": "40px monospace, -webkit-body",
+      "text": "Привет",
+      "ctx": {
+        "lang": "hi"
+      },
+      "system": true,
+      "chrome": [124.1796875, -0.72265625, 123.92578125, 26.484375, 8.5546875],
+      "flip": "S8"
+    },
+    "lang: hi 40px cursive, -webkit-body Ag": {
+      "group": "lang",
+      "font": "40px cursive, -webkit-body",
+      "text": "Ag",
+      "ctx": {
+        "lang": "hi"
+      },
+      "system": true,
+      "chrome": [48.88671875, -0.3125, 48.1640625, 27.08984375, 8.6328125],
+      "flip": "S8"
+    },
+    "lang: hi 40px cursive, -webkit-body 直骨→": {
+      "group": "lang",
+      "font": "40px cursive, -webkit-body",
+      "text": "直骨→",
+      "ctx": {
+        "lang": "hi"
+      },
+      "system": true,
+      "chrome": [120, -1.5199999809265137, 118.4375, 30.520000457763672, 6.560005187988281],
+      "flip": "S8"
+    },
+    "lang: hi 40px cursive, -webkit-body Привет": {
+      "group": "lang",
+      "font": "40px cursive, -webkit-body",
+      "text": "Привет",
+      "ctx": {
+        "lang": "hi"
+      },
+      "system": true,
+      "chrome": [124.1796875, -0.72265625, 123.92578125, 26.484375, 8.5546875],
+      "flip": "S8"
+    },
+    "lang: hi 40px -webkit-body, serif, Helvetica Ag": {
+      "group": "lang",
+      "font": "40px -webkit-body, serif, Helvetica",
+      "text": "Ag",
+      "ctx": {
+        "lang": "hi"
+      },
+      "system": true,
+      "chrome": [48.88671875, -0.5859375, 47.67578125, 26.93359375, 8.7109375]
+    },
+    "lang: hi 40px -webkit-body, serif, Helvetica Привет": {
+      "group": "lang",
+      "font": "40px -webkit-body, serif, Helvetica",
+      "text": "Привет",
+      "ctx": {
+        "lang": "hi"
+      },
+      "system": true,
+      "chrome": [123.80859375, -0.80078125, 123.28125, 26.484375, 8.671875]
+    },
+    "lang: hi 40px BSLato, -webkit-body, serif Привет": {
+      "group": "lang",
+      "font": "40px BSLato, -webkit-body, serif",
+      "text": "Привет",
+      "ctx": {
+        "lang": "hi"
+      },
+      "system": true,
+      "chrome": [123.80859375, -0.80078125, 123.28125, 26.484375, 8.671875]
+    },
+    "lang: hi 40px Menlo, -webkit-body Ag": {
+      "group": "lang",
+      "font": "40px Menlo, -webkit-body",
+      "text": "Ag",
+      "ctx": {
+        "lang": "hi"
+      },
+      "system": true,
+      "chrome": [48.88671875, -0.3125, 48.1640625, 27.08984375, 8.6328125],
+      "flip": "S8"
+    },
+    "lang: hi 40px Menlo, -webkit-body 直骨→": {
+      "group": "lang",
+      "font": "40px Menlo, -webkit-body",
+      "text": "直骨→",
+      "ctx": {
+        "lang": "hi"
+      },
+      "system": true,
+      "chrome": [120, -1.5199999809265137, 118.4375, 30.520000457763672, 6.560005187988281],
+      "flip": "S8"
+    },
+    "lang: hi 40px Menlo, -webkit-body Привет": {
+      "group": "lang",
+      "font": "40px Menlo, -webkit-body",
+      "text": "Привет",
+      "ctx": {
+        "lang": "hi"
+      },
+      "system": true,
+      "chrome": [124.1796875, -0.72265625, 123.92578125, 26.484375, 8.5546875],
+      "flip": "S8"
+    },
+    "lang: ar 40px system-ui, -webkit-body Ag": {
+      "group": "lang",
+      "font": "40px system-ui, -webkit-body",
+      "text": "Ag",
+      "ctx": {
+        "lang": "ar"
+      },
+      "system": true,
+      "chrome": [48.88671875, -0.5859375, 47.67578125, 26.93359375, 8.7109375],
+      "flip": "S8"
+    },
+    "lang: ar 40px system-ui, -webkit-body 直骨→": {
+      "group": "lang",
+      "font": "40px system-ui, -webkit-body",
+      "text": "直骨→",
+      "ctx": {
+        "lang": "ar"
+      },
+      "system": true,
+      "chrome": [120, -1.5199999809265137, 118.4375, 30.520000457763672, 6.560005187988281],
+      "flip": "S8"
+    },
+    "lang: ar 40px system-ui, -webkit-body Привет": {
+      "group": "lang",
+      "font": "40px system-ui, -webkit-body",
+      "text": "Привет",
+      "ctx": {
+        "lang": "ar"
+      },
+      "system": true,
+      "chrome": [123.80859375, -0.80078125, 123.28125, 26.484375, 8.671875],
+      "flip": "S8"
+    },
+    "lang: ar 40px math, -webkit-body Ag": {
+      "group": "lang",
+      "font": "40px math, -webkit-body",
+      "text": "Ag",
+      "ctx": {
+        "lang": "ar"
+      },
+      "system": true,
+      "chrome": [48.88671875, -0.5859375, 47.67578125, 26.93359375, 8.7109375],
+      "flip": "S8"
+    },
+    "lang: ar 40px math, -webkit-body 直骨→": {
+      "group": "lang",
+      "font": "40px math, -webkit-body",
+      "text": "直骨→",
+      "ctx": {
+        "lang": "ar"
+      },
+      "system": true,
+      "chrome": [120, -1.5199999809265137, 118.4375, 30.520000457763672, 6.560005187988281],
+      "flip": "S8"
+    },
+    "lang: ar 40px math, -webkit-body Привет": {
+      "group": "lang",
+      "font": "40px math, -webkit-body",
+      "text": "Привет",
+      "ctx": {
+        "lang": "ar"
+      },
+      "system": true,
+      "chrome": [123.80859375, -0.80078125, 123.28125, 26.484375, 8.671875],
+      "flip": "S8"
+    },
+    "lang: ar 40px monospace, -webkit-body Ag": {
+      "group": "lang",
+      "font": "40px monospace, -webkit-body",
+      "text": "Ag",
+      "ctx": {
+        "lang": "ar"
+      },
+      "system": true,
+      "chrome": [48.88671875, -0.5859375, 47.67578125, 26.93359375, 8.7109375],
+      "flip": "S8"
+    },
+    "lang: ar 40px monospace, -webkit-body 直骨→": {
+      "group": "lang",
+      "font": "40px monospace, -webkit-body",
+      "text": "直骨→",
+      "ctx": {
+        "lang": "ar"
+      },
+      "system": true,
+      "chrome": [120, -1.5199999809265137, 118.4375, 30.520000457763672, 6.560005187988281],
+      "flip": "S8"
+    },
+    "lang: ar 40px monospace, -webkit-body Привет": {
+      "group": "lang",
+      "font": "40px monospace, -webkit-body",
+      "text": "Привет",
+      "ctx": {
+        "lang": "ar"
+      },
+      "system": true,
+      "chrome": [123.80859375, -0.80078125, 123.28125, 26.484375, 8.671875],
+      "flip": "S8"
+    },
+    "lang: ar 40px cursive, -webkit-body Ag": {
+      "group": "lang",
+      "font": "40px cursive, -webkit-body",
+      "text": "Ag",
+      "ctx": {
+        "lang": "ar"
+      },
+      "system": true,
+      "chrome": [48.88671875, -0.5859375, 47.67578125, 26.93359375, 8.7109375],
+      "flip": "S8"
+    },
+    "lang: ar 40px cursive, -webkit-body 直骨→": {
+      "group": "lang",
+      "font": "40px cursive, -webkit-body",
+      "text": "直骨→",
+      "ctx": {
+        "lang": "ar"
+      },
+      "system": true,
+      "chrome": [120, -1.5199999809265137, 118.4375, 30.520000457763672, 6.560005187988281],
+      "flip": "S8"
+    },
+    "lang: ar 40px Menlo, -webkit-body Ag": {
+      "group": "lang",
+      "font": "40px Menlo, -webkit-body",
+      "text": "Ag",
+      "ctx": {
+        "lang": "ar"
+      },
+      "system": true,
+      "chrome": [48.88671875, -0.5859375, 47.67578125, 26.93359375, 8.7109375],
+      "flip": "S8"
+    },
+    "lang: ar 40px Menlo, -webkit-body 直骨→": {
+      "group": "lang",
+      "font": "40px Menlo, -webkit-body",
+      "text": "直骨→",
+      "ctx": {
+        "lang": "ar"
+      },
+      "system": true,
+      "chrome": [120, -1.5199999809265137, 118.4375, 30.520000457763672, 6.560005187988281],
+      "flip": "S8"
+    },
+    "lang: ar 40px Menlo, -webkit-body Привет": {
+      "group": "lang",
+      "font": "40px Menlo, -webkit-body",
+      "text": "Привет",
+      "ctx": {
+        "lang": "ar"
+      },
+      "system": true,
+      "chrome": [123.80859375, -0.80078125, 123.28125, 26.484375, 8.671875],
+      "flip": "S8"
     }
   }
 }

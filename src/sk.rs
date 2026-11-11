@@ -823,6 +823,8 @@ pub mod ffi {
 
     pub fn skiac_debug_shaper_stats(stats: *mut skiac_shaper_stats, reset: bool);
 
+    pub fn skiac_blink_shaper_on() -> bool;
+
     pub fn skiac_debug_text_line(
       font_collection: *mut skiac_font_collection,
       request: *const skiac_text_request,

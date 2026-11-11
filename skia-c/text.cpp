@@ -40,7 +40,8 @@ TextCaches& GetTextCaches(skiac_font_collection* c_collection) {
 
 const std::vector<SkString>& CachedFontFamilies(
     skiac_font_collection* c_collection,
-    const skiac_text_request& request) {
+    const skiac_text_request& request,
+    const LocaleFamilies* locale) {
   auto& cache = GetTextCaches(c_collection).families;
   if (cache.size() > 256) {
     NoteTextCachesChange();
@@ -54,12 +55,29 @@ const std::vector<SkString>& CachedFontFamilies(
     key.append(reinterpret_cast<const char*>(prefix), sizeof(prefix));
     key.append(family.name, family.name_len);
   }
+  if (locale) {
+    // A family entry's prefix never has a negative generic value: -1 is the
+    // standard font, -2 - g the setting of generic family g.
+    auto append = [&key](int64_t tag, const std::string& name) {
+      if (name.empty()) {
+        return;
+      }
+      const int64_t prefix[2] = {tag, static_cast<int64_t>(name.size())};
+      key.append(reinterpret_cast<const char*>(prefix), sizeof(prefix));
+      key.append(name);
+    };
+    append(-1, locale->standard);
+    for (int64_t g = 0; g < 9; ++g) {
+      append(-2 - g, locale->generic[g]);
+    }
+  }
   auto found = cache.find(key);
   if (found == cache.end()) {
-    found =
-        cache
-            .emplace(std::move(key), ResolveFontFamilies(c_collection, request))
-            .first;
+    found = cache
+                .emplace(
+                    std::move(key),
+                    ResolveFontFamilies(c_collection, request, nullptr, locale))
+                .first;
   }
   return found->second;
 }
@@ -455,14 +473,13 @@ std::vector<SizeRun> PieceSizeRuns(const std::vector<SizeRun>& runs,
   return parts;
 }
 
-// Lays out `request` into `line`: with the Blink shaper when it is on and
-// takes the request (shaper.cpp), else with skparagraph.
-void LayOutLine(skiac_font_collection* c_collection,
-                const skiac_text_request& request,
-                Line* line) {
-  if (BlinkShaperOn() && LayOutLineBlink(c_collection, request, line)) {
-    return;
-  }
+// Lays out `request` into `line` with skparagraph. `locale`: the font
+// settings of ResolveFontRequest (shaper.hpp FontResolution::locale) for a
+// line the shaper turns down, null with the shaper off.
+void LayOutLineParagraph(skiac_font_collection* c_collection,
+                         const skiac_text_request& request,
+                         const LocaleFamilies* locale,
+                         Line* line) {
   auto font_collection = c_collection->collection;
   auto font_style =
       SkFontStyle(static_cast<int>(roundf(request.weight)), request.stretch,
@@ -470,7 +487,7 @@ void LayOutLine(skiac_font_collection* c_collection,
   auto text_direction = static_cast<TextDirection>(request.direction);
   const float letter_spacing = request.letter_spacing;
   TextStyle text_style;
-  text_style.setFontFamilies(CachedFontFamilies(c_collection, request));
+  text_style.setFontFamilies(CachedFontFamilies(c_collection, request, locale));
   text_style.setFontSize(request.size);
   text_style.setWordSpacing(request.word_spacing);
   text_style.setLetterSpacing(letter_spacing);
@@ -484,7 +501,8 @@ void LayOutLine(skiac_font_collection* c_collection,
   // font-size-adjust: the primary font's size, opsz, and a size for each
   // family that has its own (text_styles.cpp ComputeUsedSizes). Without it,
   // the request's size. Both floored to 1/100 px (EffectiveFontSize).
-  const UsedSizes sizes = ComputeUsedSizes(c_collection, base_faces, request);
+  const UsedSizes sizes =
+      ComputeUsedSizes(c_collection, base_faces, request, locale);
   text_style.setFontSize(sizes.effective);
   const std::vector<SkFontArguments::VariationPosition::Coordinate> coords =
       FontVariations(base_faces, request, sizes.opsz);
@@ -906,6 +924,28 @@ void LayOutLine(skiac_font_collection* c_collection,
   line->words = std::move(words);
 }
 
+// Lays out `request` into `line`: with the Blink shaper when it is on and
+// takes the request (shaper.cpp), else with skparagraph.
+void LayOutLine(skiac_font_collection* c_collection,
+                const skiac_text_request& request,
+                Line* line) {
+  if (!BlinkShaperOn()) {
+    LayOutLineParagraph(c_collection, request, nullptr, line);
+    return;
+  }
+  const FontResolution resolution = ResolveFontRequest(c_collection, request);
+  if (LayOutLineBlink(c_collection, request, resolution, line)) {
+    return;
+  }
+  // A line the shaper turns down picks its fonts as the shaper does: the
+  // same families and sizes (the locale's font settings), and the host
+  // language for "inherit" in skparagraph's locale and the case map.
+  skiac_text_request fallback = request;
+  fallback.lang = resolution.paragraph_lang.data();
+  fallback.lang_len = resolution.paragraph_lang.size();
+  LayOutLineParagraph(c_collection, fallback, resolution.locale(), line);
+}
+
 // The cached layout of `request`, laid out now if there is none.
 Line* FindOrLayOutLine(skiac_font_collection* c_collection,
                        const skiac_text_request& request) {
@@ -1306,9 +1346,12 @@ bool skiac_text_line_kept(skiac_font_collection* c_collection,
 // a unicode-range face is skipped), and SimpleFontData::IdeographicInlineSize,
 // the unshaped advance of that glyph (simple_font_data.cc:437-474). Our
 // primary face is the first that text layout tries: findTypefaces() with the
-// same resolved families (ResolveFontFamilies), style and variations. When no
-// family of the list exists, that is the standard font, as in Blink
-// (font_fallback_list.cc:181-194); it has no U+6C34 in a default setup.
+// same resolved families (ResolveFontFamilies with ResolveFontRequest's font
+// settings, which the shaper uses), style and variations. Chrome 157
+// OffscreenCanvas: lang ja "40px serif" is Hiragino Mincho ProN, 1ic 40px
+// (stages/S8/review-r2/chrome-ic-*.json). When no family of the list exists,
+// that is the standard font, as in Blink (font_fallback_list.cc:181-194); the
+// common one has no U+6C34.
 // False when nothing resolves or the face has no such glyph; ic is then 1em.
 // The request's text is not read.
 bool skiac_font_collection_ideographic_advance(
@@ -1316,7 +1359,11 @@ bool skiac_font_collection_ideographic_advance(
     const skiac_text_request* request,
     float* advance) {
   c_collection->flushCachesIfDirty();
-  const auto families_vec = ResolveFontFamilies(c_collection, *request);
+  // The families and size the text of this font takes (ResolveFontRequest:
+  // with the shaper on, the locale's font settings).
+  const FontResolution resolution = ResolveFontRequest(c_collection, *request);
+  const auto families_vec =
+      ResolveFontFamilies(c_collection, *request, nullptr, resolution.locale());
   if (families_vec.empty()) {
     return false;
   }
@@ -1353,7 +1400,7 @@ bool skiac_font_collection_ideographic_advance(
               SkFontStyle(static_cast<int>(roundf(request->weight)),
                           request->stretch,
                           static_cast<SkFontStyle::Slant>(request->style))),
-          *request)
+          *request, resolution.locale())
           .effective;
   SkFont font(typefaces[0], size);
   // Blink's font has subpixel positioning, so the advance is unhinted.
