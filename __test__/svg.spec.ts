@@ -131,6 +131,21 @@ test('convertSVGTextToPath past the budget: a pattern chain into an href cycle e
   }
 })
 
+// SkSVG walks a pattern's href chain only from a pattern a fill or stroke
+// names: a cycle only c, never painted, runs into is kept, and b still takes
+// its size from a (without it, b's paint fails and the rect is blue).
+test('convertSVGTextToPath past the budget: a cycle no painted pattern runs into is kept', (t) => {
+  const body =
+    '<defs><pattern id="c" xlink:href="#a"/><pattern id="a" width="4" height="4" patternUnits="userSpaceOnUse" xlink:href="#b"/>' +
+    '<pattern id="b" xlink:href="#a"><rect width="2" height="2" fill="red"/></pattern></defs><rect width="5" height="5" fill="url(#b) blue"/>'
+  const under = convertSVGTextToPath(`<svg ${XLINK} width="10" height="10">${body}</svg>`).toString()
+  t.false(under.includes('blue'))
+  const child = convertInChild(`<svg ${XLINK} width="10" height="10">${body}${fanOut(6)}</svg>`)
+  t.is(child.signal, null, 'timed out')
+  t.is(child.status, 0, child.stderr)
+  t.is(child.stdout, under)
+})
+
 // SkSVG reads only xlink:href: SVG2 href (it wins over xlink:href) and an
 // XLink href under another prefix are renamed.
 test('convertSVGTextToPath past the budget: SVG2 href draws', (t) => {

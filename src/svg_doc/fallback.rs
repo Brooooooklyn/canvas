@@ -6,7 +6,8 @@
 //!   SkSVGPattern::resolveHref (no loop check; a cycle through the painted
 //!   pattern ends there, as that one is borrowed). The reference that
 //!   closes the cycle at the chain's entry is blanked, so a chain from
-//!   outside walks the cycle once, as Blink's visited set does.
+//!   outside walks the cycle once, as Blink's visited set does. Only a
+//!   chain from a pattern some fill or stroke names is walked.
 //! - SkSVG reads only an attribute spelled `xlink:href` (expat runs without
 //!   namespaces). The href svg_doc reads on use, pattern, gradients and
 //!   textPath (`href`, else an XLink `href` under any prefix) is renamed
@@ -150,6 +151,8 @@ struct El {
 struct Model<'t> {
   text: &'t str,
   els: Vec<El>,
+  /// The elements a fill or stroke names, in any declaration.
+  painted: Vec<u32>,
 }
 
 /// The QName at `range` in the text, when it spells `local` (unprefixed or
@@ -224,6 +227,8 @@ struct Refs {
   mask: Option<RawRef>,
   filter: Option<RawRef>,
   href: [Option<String>; 2],
+  /// Every `url(#id)` of a fill or stroke, also one a later one replaces.
+  paints: Vec<String>,
 }
 
 impl Refs {
@@ -231,8 +236,20 @@ impl Refs {
   /// does not parse keeps the last one.
   fn set(&mut self, name: &str, value: &str) {
     let slot = match name {
-      "fill" => (&mut self.fill, paint(value)),
-      "stroke" => (&mut self.stroke, paint(value)),
+      "fill" | "stroke" => {
+        let p = paint(value);
+        if let Some(RawRef::Url(id)) = &p {
+          self.paints.push(id.clone());
+        }
+        (
+          if name == "fill" {
+            &mut self.fill
+          } else {
+            &mut self.stroke
+          },
+          p,
+        )
+      }
       "clip-path" => (&mut self.clip, reference(value)),
       "mask" => (&mut self.mask, reference(value)),
       "filter" => (&mut self.filter, reference(value)),
@@ -361,6 +378,7 @@ impl<'t> Model<'t> {
       Some(RawRef::Plain) => Paint::Plain,
       Some(RawRef::Url(id)) => Paint::Url(find(id)),
     };
+    let mut painted = Vec::new();
     for (e, r) in els.iter_mut().zip(&refs) {
       e.fill = paint(&r.fill);
       e.stroke = paint(&r.stroke);
@@ -368,8 +386,9 @@ impl<'t> Model<'t> {
       e.mask = target(&r.mask);
       e.filter = target(&r.filter);
       e.href = [0, 1].map(|v| r.href[v].as_deref().and_then(find));
+      painted.extend(r.paints.iter().filter_map(|id| find(id)));
     }
-    Model { text, els }
+    Model { text, els, painted }
   }
 
   fn tag(&self, i: u32) -> Tag {
@@ -396,11 +415,12 @@ impl<'t> Model<'t> {
   }
 }
 
-/// The patterns whose href closes a cycle a pattern outside it runs into:
-/// at each such cycle, the one before its first entry (in document order).
-/// A walk from outside then goes round the cycle once; a cycle nothing
-/// runs into is left as it is (SkSVG stops at the painted pattern).
-fn cycle_breaks(next: &[Option<u32>]) -> Vec<usize> {
+/// The patterns whose href closes a cycle a walk from a `painted` pattern
+/// outside it runs into: at each such cycle, the one before its first
+/// entry (in document order). That walk then goes round the cycle once; a
+/// cycle no such walk runs into is left as it is (SkSVG stops at the
+/// painted pattern, and walks only from a painted one).
+fn cycle_breaks(next: &[Option<u32>], painted: &[u32]) -> Vec<usize> {
   let n = next.len();
   // 0 new, 1 on this walk, 2 done.
   let mut state = vec![0u8; n];
@@ -435,14 +455,21 @@ fn cycle_breaks(next: &[Option<u32>]) -> Vec<usize> {
       state[p as usize] = 2;
     }
   }
+  // Each pattern outside a cycle is walked from once.
   let mut entry = vec![u32::MAX; cycles as usize];
-  for (p, q) in next.iter().enumerate() {
-    if let Some(q) = *q
-      && cycle[p] == u32::MAX
-      && cycle[q as usize] != u32::MAX
-    {
-      let e = &mut entry[cycle[q as usize] as usize];
-      *e = (*e).min(q);
+  let mut walked = vec![false; n];
+  for &s in painted {
+    let mut p = s as usize;
+    while cycle[p] == u32::MAX && !walked[p] {
+      walked[p] = true;
+      let Some(q) = next[p] else {
+        break;
+      };
+      if cycle[q as usize] != u32::MAX {
+        let e = &mut entry[cycle[q as usize] as usize];
+        *e = (*e).min(q);
+      }
+      p = q as usize;
     }
   }
   entry
@@ -923,7 +950,7 @@ pub(crate) fn clean(doc: &Doc, text: &str) -> Result<Option<Vec<u8>>, ()> {
       }
     }
     let mut b = vec![false; n];
-    for i in cycle_breaks(&next) {
+    for i in cycle_breaks(&next, &m.painted) {
       b[i] = true;
     }
     b
@@ -1022,19 +1049,19 @@ mod tests {
   #[test]
   fn a_pattern_chain_into_a_cycle_walks_it_once() {
     // c -> a -> b -> a: b's href closes the cycle at a.
-    let body = r##"<pattern id="c" xlink:href="#a"/><pattern id="a" xlink:href="#b"/><pattern id="b" xlink:href="#a"/>"##;
+    let body = r##"<pattern id="c" xlink:href="#a"/><pattern id="a" xlink:href="#b"/><pattern id="b" xlink:href="#a"/><rect fill="url(#c)"/>"##;
     assert_eq!(
       cleaned(body),
       blanked(body, r#"id="b""#, r##"xlink:href="#a""##)
     );
-    // c -> a -> a.
-    let body = r##"<pattern id="c" xlink:href="#a"/><pattern id="a" xlink:href="#a"/>"##;
+    // c -> a -> a, c named in a style="" declaration a later one replaces.
+    let body = r##"<pattern id="c" xlink:href="#a"/><pattern id="a" xlink:href="#a"/><rect style="stroke:url(#c);stroke:none"/>"##;
     assert_eq!(
       cleaned(body),
       blanked(body, r#"id="a""#, r##"xlink:href="#a""##)
     );
     // Two ways in: the cycle closes at the first entry in document order.
-    let body = r##"<pattern id="t" xlink:href="#b"/><pattern id="u" xlink:href="#a"/><pattern id="a" xlink:href="#b"/><pattern id="b" xlink:href="#a"/>"##;
+    let body = r##"<pattern id="t" xlink:href="#b"/><pattern id="u" xlink:href="#a"/><pattern id="a" xlink:href="#b"/><pattern id="b" xlink:href="#a"/><rect fill="url(#t)" stroke="url(#u)"/>"##;
     assert_eq!(
       cleaned(body),
       blanked(body, r#"id="b""#, r##"xlink:href="#a""##)
@@ -1042,9 +1069,13 @@ mod tests {
   }
 
   #[test]
-  fn a_cycle_nothing_runs_into_is_kept() {
+  fn a_cycle_no_painted_walk_runs_into_is_kept() {
     // SkSVG stops at the painted pattern, which is in the cycle.
     let body = r##"<pattern id="a" xlink:href="#b"/><pattern id="b" xlink:href="#a"/><rect width="5" height="5" fill="url(#a)"/>"##;
+    assert_eq!(cleaned(body), body);
+    // SkSVG walks only from a painted pattern: c, which runs into the
+    // cycle, is not one. b, painted, keeps a's size.
+    let body = r##"<pattern id="c" xlink:href="#a"/><pattern id="a" width="4" height="4" xlink:href="#b"/><pattern id="b" xlink:href="#a"><rect/></pattern><rect fill="url(#b)"/>"##;
     assert_eq!(cleaned(body), body);
     // Gradients and <use> stop at the borrowed element.
     let body = r##"<linearGradient id="c" xlink:href="#a"/><linearGradient id="a" xlink:href="#a"/><use id="u" xlink:href="#u"/>"##;
@@ -1086,8 +1117,7 @@ mod tests {
   #[test]
   fn a_renamed_pattern_cycle_is_broken_too() {
     // SkSVG ignored the SVG2 cycle; renamed, it would loop.
-    let body =
-      r##"<pattern id="c" href="#a"/><pattern id="a" href="#b"/><pattern id="b" href="#a"/>"##;
+    let body = r##"<pattern id="c" href="#a"/><pattern id="a" href="#b"/><pattern id="b" href="#a"/><rect fill="url(#c)"/>"##;
     assert_eq!(
       cleaned(body),
       blanked(body, r#"id="b""#, r##"href="#a""##).replace(" href=", " xlink:href=")
@@ -1162,11 +1192,11 @@ mod tests {
 
   #[test]
   fn a_blank_wins_over_a_rename_of_the_same_entity_text() {
-    // Each use of the entity is a pattern with id p: the first runs into
-    // the second, whose href to itself is the cycle. Both are one attribute
-    // in the text: blanked.
+    // Each use of the entity is a pattern with id p: c runs into the
+    // second, whose href to itself is the cycle; the first is renamed. Both
+    // are one attribute in the text: blanked.
     let text = format!(
-      r##"<!DOCTYPE svg [<!ENTITY p '<pattern id="p" href="#p"/>'>]><svg {X}><use href="#r"/><rect id="r"/>&p;&p;</svg>"##
+      r##"<!DOCTYPE svg [<!ENTITY p '<pattern id="p" href="#p"/>'>]><svg {X}><use href="#r"/><rect id="r"/><pattern id="c" href="#p"/><rect fill="url(#c)"/>&p;&p;</svg>"##
     );
     let doc = Doc::parse(&text).unwrap();
     let out = String::from_utf8(clean(&doc, &text).unwrap().unwrap()).unwrap();
@@ -1175,6 +1205,7 @@ mod tests {
       text
         .replace(r##"id="p" href="#p""##, r#"id="p"          "#)
         .replace(r##"<use href"##, r##"<use xlink:href"##)
+        .replace(r##"id="c" href"##, r##"id="c" xlink:href"##)
     );
   }
 
