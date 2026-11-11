@@ -72,6 +72,7 @@ int uscript_getScript(UChar32 codepoint, UErrorCode* err);
 constexpr int U_ZERO_ERROR = 0;
 
 // UProperty (enumerated)
+constexpr int UCHAR_BLOCK = 0x1001;
 constexpr int UCHAR_EAST_ASIAN_WIDTH = 0x1004;
 constexpr int UCHAR_GENERAL_CATEGORY = 0x1005;
 constexpr int UCHAR_BIDI_PAIRED_BRACKET_TYPE = 0x1015;
@@ -90,6 +91,9 @@ constexpr int U_BPT_CLOSE = 2;
 constexpr int U_EA_HALFWIDTH = 2;
 constexpr int U_EA_FULLWIDTH = 3;
 constexpr int U_EA_WIDE = 5;
+
+// UBlockCode
+constexpr int UBLOCK_CJK_SYMBOLS_AND_PUNCTUATION = 61;
 
 // UCharDirection
 constexpr int U_LEFT_TO_RIGHT = 0;
@@ -143,6 +147,8 @@ constexpr int USCRIPT_MONGOLIAN = 27;
 constexpr int USCRIPT_SYRIAC = 34;
 constexpr int USCRIPT_THAI = 38;
 constexpr int USCRIPT_KATAKANA_OR_HIRAGANA = 54;
+constexpr int USCRIPT_SIMPLIFIED_HAN = 73;
+constexpr int USCRIPT_TRADITIONAL_HAN = 74;
 constexpr int USCRIPT_MANDAIC = 84;
 constexpr int USCRIPT_NKO = 87;
 constexpr int USCRIPT_PHAGS_PA = 90;

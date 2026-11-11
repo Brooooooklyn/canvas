@@ -37,6 +37,37 @@ struct SystemFallbackKeyHash {
   }
 };
 
+// HanKerning::FontData's key: SimpleFontData's (typeface, size, synthetic
+// styles: the draw font; the HarfBuzz font's options) and the locale.
+struct HanKerningKey {
+  SkTypefaceID typeface;
+  uint32_t size_bits;
+  uint32_t scale_x_bits;
+  uint32_t skew_x_bits;
+  uint32_t ptem_bits;
+  uint8_t edging;
+  uint8_t hinting;
+  uint8_t flags;
+  hb_language_t language;
+  int han_script;
+  bool operator==(const HanKerningKey&) const = default;
+};
+
+struct HanKerningKeyHash {
+  size_t operator()(const HanKerningKey& key) const {
+    size_t hash = std::hash<uint32_t>()(key.typeface);
+    for (const uint64_t part :
+         {uint64_t{key.size_bits}, uint64_t{key.scale_x_bits},
+          uint64_t{key.skew_x_bits}, uint64_t{key.ptem_bits},
+          uint64_t{key.edging}, uint64_t{key.hinting}, uint64_t{key.flags},
+          static_cast<uint64_t>(reinterpret_cast<uintptr_t>(key.language)),
+          static_cast<uint64_t>(key.han_script)}) {
+      hash = hash * 31 + std::hash<uint64_t>()(part);
+    }
+    return hash;
+  }
+};
+
 struct ShaperCaches {
   struct Parent {
     HbFontRef font;
@@ -53,6 +84,9 @@ struct ShaperCaches {
   hb_buffer_t* buffer = nullptr;
   // The opsz instances of the system fallback faces.
   std::map<std::pair<SkTypefaceID, uint32_t>, sk_sp<SkTypeface>> instances;
+  // HanKerning::FontData by font and locale.
+  std::unordered_map<HanKerningKey, HanKerningFontData, HanKerningKeyHash>
+      han_kerning;
 
   ~ShaperCaches() {
     if (buffer) {
@@ -93,6 +127,13 @@ namespace {
 constexpr size_t kMaxParents = 100;
 constexpr size_t kMaxSystemFallbacks = 4096;
 constexpr size_t kMaxSystemInstances = 256;
+constexpr size_t kMaxHanKerningFonts = 256;
+
+uint32_t FloatBits(float value) {
+  uint32_t bits;
+  memcpy(&bits, &value, sizeof(bits));
+  return bits;
+}
 
 // skia_text_metrics.cc SkiaScalarToHarfBuzzPosition: ClampTo<int>.
 hb_position_t SkiaScalarToHarfBuzzPosition(SkScalar value) {
@@ -347,20 +388,8 @@ hb_bool_t GetExtents(hb_font_t*,
     return false;
   }
   const SkFont& font = static_cast<HbFontData*>(font_data)->font;
-  const SkGlyphID glyph = static_cast<SkGlyphID>(codepoint);
-  SkRect bounds;
-#if defined(__APPLE__)
-  if (const auto path = font.getPath(glyph)) {
-    bounds = path->getBounds();
-  } else {
-    bounds = font.getBounds(glyph, nullptr);
-  }
-#else
-  bounds = font.getBounds(glyph, nullptr);
-#endif
-  if (!font.isSubpixel()) {
-    bounds.set(bounds.roundOut());
-  }
+  const SkRect bounds =
+      BlinkGlyphBounds(font, static_cast<SkGlyphID>(codepoint));
   extents->x_bearing = SkiaScalarToHarfBuzzPosition(bounds.fLeft);
   extents->y_bearing = SkiaScalarToHarfBuzzPosition(-bounds.fTop);
   extents->width = SkiaScalarToHarfBuzzPosition(bounds.width());
@@ -398,6 +427,57 @@ hb_font_funcs_t* FontFuncs(bool harfbuzz_advances) {
 }
 
 }  // namespace
+
+SkRect BlinkGlyphBounds(const SkFont& font, SkGlyphID glyph) {
+  SkRect bounds;
+#if defined(__APPLE__)
+  if (const auto path = font.getPath(glyph)) {
+    bounds = path->getBounds();
+  } else {
+    bounds = font.getBounds(glyph, nullptr);
+  }
+#else
+  bounds = font.getBounds(glyph, nullptr);
+#endif
+  if (!font.isSubpixel()) {
+    bounds.set(bounds.roundOut());
+  }
+  return bounds;
+}
+
+HanKerningFontData CachedHanKerningFontData(skiac_font_collection* c_collection,
+                                            const FontEntry& font,
+                                            hb_language_t language,
+                                            int han_script) {
+  const SkFont& draw = font.draw_font;
+  const HanKerningKey key = {
+      font.face->uniqueID(),
+      FloatBits(draw.getSize()),
+      FloatBits(draw.getScaleX()),
+      FloatBits(draw.getSkewX()),
+      FloatBits(font.ptem),
+      static_cast<uint8_t>(draw.getEdging()),
+      static_cast<uint8_t>(draw.getHinting()),
+      static_cast<uint8_t>(
+          (draw.isEmbolden() ? 1 : 0) | (draw.isSubpixel() ? 2 : 0) |
+          (draw.isLinearMetrics() ? 4 : 0) | (draw.isBaselineSnap() ? 8 : 0) |
+          (font.harfbuzz_advances ? 16 : 0) | (font.web_font ? 32 : 0)),
+      language,
+      han_script,
+  };
+  ShaperCaches& caches = GetShaperCaches(c_collection);
+  if (const auto found = caches.han_kerning.find(key);
+      found != caches.han_kerning.end()) {
+    return found->second;
+  }
+  if (caches.han_kerning.size() >= kMaxHanKerningFonts) {
+    caches.han_kerning.clear();
+  }
+  const HanKerningFontData data =
+      ComputeHanKerningFontData(font, language, han_script);
+  caches.han_kerning.emplace(key, data);
+  return data;
+}
 
 SkGlyphID HbNominalGlyph(skiac_font_collection* c_collection,
                          SkTypeface* typeface,
@@ -453,6 +533,9 @@ bool MakeEntryFont(skiac_font_collection* c_collection,
   hb_font_set_ptem(font, options.ptem);
   entry->hb = HbFontRef(font);
   entry->hb_data = data;
+  entry->ptem = options.ptem;
+  entry->harfbuzz_advances = harfbuzz_advances;
+  entry->web_font = cached.trak && options.web_font;
   return true;
 }
 

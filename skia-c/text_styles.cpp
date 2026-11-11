@@ -383,7 +383,8 @@ constexpr uint8_t kLigaturesDisabled = 2;
 
 }  // namespace
 
-std::vector<hb_feature_t> BlinkFeatures(const skiac_text_request& request) {
+std::vector<hb_feature_t> BlinkFeatures(const skiac_text_request& request,
+                                        bool default_chws) {
   std::vector<hb_feature_t> features;
   auto add = [&features](hb_tag_t tag, uint32_t value) {
     features.push_back(
@@ -446,10 +447,21 @@ std::vector<hb_feature_t> BlinkFeatures(const skiac_text_request& request) {
   if (numeric & (1 << 7)) {
     add(tag("zero"), 1);
   }
-  // font-feature-settings, in computed order. Blink's default chws 1 is not
-  // pushed (no text-spacing-trim source here).
+  // font-feature-settings, in computed order. Blink's default chws 1
+  // (text-spacing-trim normal: ShouldTrimAdjacent) follows them unless they
+  // set chws (any value) or a glyph-width GPOS feature, halt or palt, to a
+  // non-zero value. The old path never pushes it.
   for (int i = 0; request.features && i < request.features_count; ++i) {
-    add(request.features[i].tag, request.features[i].value);
+    const hb_tag_t setting = request.features[i].tag;
+    const uint32_t value = request.features[i].value;
+    add(setting, value);
+    if (setting == tag("chws") ||
+        (value && (setting == tag("halt") || setting == tag("palt")))) {
+      default_chws = false;
+    }
+  }
+  if (default_chws) {
+    add(tag("chws"), 1);
   }
   // font-variant-position, last: it wins over font-feature-settings.
   if (request.variant_position == 1) {

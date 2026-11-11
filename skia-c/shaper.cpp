@@ -464,6 +464,7 @@ class ItemShaper {
              hb_buffer_t* buffer,
              const std::vector<hb_feature_t>& features,
              hb_language_t language,
+             int han_script,
              skiac_font_collection* c_collection,
              int variant_caps,
              const char* case_map_locale,
@@ -475,6 +476,7 @@ class ItemShaper {
         buffer_(buffer),
         features_(features),
         language_(language),
+        han_script_(han_script),
         c_collection_(c_collection),
         variant_caps_(variant_caps),
         case_map_locale_(case_map_locale),
@@ -486,6 +488,7 @@ class ItemShaper {
   // (ShaperReject::kFallback), or one the lang's standard font has, which
   // the family list does not have yet (kLocaleFallback): reject_reason().
   bool ShapeSegment(const Segment& segment) {
+    HanKerning han_kerning(text_, length_, segment.start, segment.end);
     FallbackIterator iterator(fonts_, segment.priority);
     queue_.clear();
     queue_.push_back({QueueAction::kNextFont, 0, 0});
@@ -572,6 +575,22 @@ class ItemShaper {
         PrependCapsFeatures(&caps_features_, caps_feature);
         features = &caps_features_;
       }
+      // HanKerning's `halt` ranges for this range and font, on a copy of
+      // its features (Blink's FontFeatureRangesSaver drops them after it).
+      // The FontData's locale is the shaping language for now (the host
+      // language for none comes with stage S8).
+      bool han_kerning_computed = false;
+      if (han_kerning.MayApply() &&
+          han_kerning.RangeMayApply(shape_start, shape_end)) {
+        const HanKerningFontData data = CachedHanKerningFontData(
+            c_collection_, *adjusted_font, language_, han_script_);
+        han_features_ = *features;
+        han_kerning_computed = han_kerning.AppendFontFeatures(
+            shape_start, shape_end, data, &han_features_);
+        if (han_kerning_computed) {
+          features = &han_features_;
+        }
+      }
       hb_shape_full(adjusted_font->hb.get(), buffer_, features->data(),
                     static_cast<unsigned int>(features->size()), kOtShaperList);
       if (!adjusted_font->draw_font.isSubpixel()) {
@@ -579,6 +598,11 @@ class ItemShaper {
       }
       ExtractShapeResults(current, adjusted_font, segment.script,
                           &font_cycle_queued);
+      // TextSpacingTrimFallback: the next fonts' ranges see the classes this
+      // font gave its characters.
+      if (han_kerning_computed && !queue_.empty()) {
+        han_kerning.PrepareFallback();
+      }
       hb_buffer_reset(buffer_);
     }
     return true;
@@ -1040,6 +1064,7 @@ class ItemShaper {
   hb_buffer_t* buffer_;
   const std::vector<hb_feature_t>& features_;
   hb_language_t language_;
+  int han_script_;
   skiac_font_collection* c_collection_;
   const int variant_caps_;
   const char* case_map_locale_;
@@ -1047,6 +1072,7 @@ class ItemShaper {
   ShapeResult* result_;
   // The features with the caps ones in front, for a range that has them.
   std::vector<hb_feature_t> caps_features_;
+  std::vector<hb_feature_t> han_features_;
   std::optional<std::u16string> upper_;
   std::optional<std::u16string> lower_;
   std::deque<QueueItem> queue_;
@@ -1289,8 +1315,10 @@ bool LayOutLineBlink(skiac_font_collection* c_collection,
       });
   const bool rtl = request.direction == static_cast<int>(TextDirection::kRtl);
   const ItemList items = SegmentText(prepared, rtl, word_by_word);
-  const std::vector<hb_feature_t> features = BlinkFeatures(request);
+  const std::vector<hb_feature_t> features =
+      BlinkFeatures(request, /*default_chws=*/true);
   const hb_language_t language = ShapingLanguage(request);
+  const int han_script = HanScriptForLocale(hb_language_to_string(language));
   const char* case_map_locale = CaseMapLocale(request);
   hb_buffer_t* buffer = ShaperBuffer(c_collection);
   hb_buffer_reset(buffer);
@@ -1301,8 +1329,8 @@ bool LayOutLineBlink(skiac_font_collection* c_collection,
     ShapedItem result{item, {}};
     const char16_t* text = prepared.text.data() + item.start;
     ItemShaper shaper(text, item.length, item.rtl, buffer, features, language,
-                      c_collection, request.variant_caps, case_map_locale,
-                      fonts, &result.result);
+                      han_script, c_collection, request.variant_caps,
+                      case_map_locale, fonts, &result.result);
     for (const Segment& segment :
          SegmentItem(text, item.length, prepared.is_8bit)) {
       if (!shaper.ShapeSegment(segment)) {

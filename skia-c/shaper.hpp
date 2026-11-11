@@ -169,6 +169,12 @@ struct FontEntry {
   HbFontData* hb_data = nullptr;
   // SimpleFontData::SpaceGlyph: HarfBuzz's glyph for U+0020.
   SkGlyphID space_glyph = 0;
+  // How MakeEntryFont made `hb`: ptem, HarfBuzz's own advances (Apple trak),
+  // the parent font without `trak` (a web font). Part of the HanKerning
+  // FontData key.
+  float ptem = 0;
+  bool harfbuzz_advances = false;
+  bool web_font = false;
 };
 
 // A glyph as HarfBuzz placed it: `advance` in 16.16 (TextRunLayoutUnit),
@@ -283,6 +289,100 @@ constexpr hb_codepoint_t kUnmatchedVSGlyphId = static_cast<hb_codepoint_t>(-1);
 struct ShapedItem {
   Item item;
   ShapeResult result;
+};
+
+// HanKerningCharType (han_kerning_char_type.h).
+enum class HanKerningCharType : uint8_t {
+  kOther,
+  kOpen,
+  kClose,
+  kMiddle,
+  kOpenNarrow,
+  kCloseNarrow,
+  kDot,
+  kColon,
+  kSemicolon,
+  kOpenQuote,
+  kCloseQuote,
+  kInvalid,
+};
+
+// HanKerning::FontData (han_kerning.h): whether a font has `halt` and
+// `chws`, and the classes its glyphs give the font-dependent characters.
+struct HanKerningFontData {
+  bool has_alternate_spacing = false;
+  bool has_contextual_spacing = false;
+  bool is_quote_fullwidth = false;
+  HanKerningCharType type_for_dot = HanKerningCharType::kOther;
+  HanKerningCharType type_for_colon = HanKerningCharType::kOther;
+  HanKerningCharType type_for_semicolon = HanKerningCharType::kOther;
+};
+
+// HanKerning::FontData of `font` for a locale (its HarfBuzz language and
+// LayoutLocale::GetScriptForHan): shaper_features.cpp.
+HanKerningFontData ComputeHanKerningFontData(const FontEntry& font,
+                                             hb_language_t language,
+                                             int han_script);
+
+// The same, cached (SimpleFontData::HanKerningData) by the font (typeface,
+// draw font, HarfBuzz font options) and the locale; 256 entries, cleared
+// when full and with the text caches: shaper_font.cpp.
+HanKerningFontData CachedHanKerningFontData(skiac_font_collection* c_collection,
+                                            const FontEntry& font,
+                                            hb_language_t language,
+                                            int han_script);
+
+// SkFontGetBoundsForGlyph (skia_text_metrics.cc): on Apple the path bounds
+// when there is a path; rounded out when the font is not subpixel.
+SkRect BlinkGlyphBounds(const SkFont& font, SkGlyphID glyph);
+
+// Character::GetHanKerningCharType: the text spacing class of a UTF-16 unit
+// (character_property_data_generator.cc SetHanKerning).
+HanKerningCharType GetHanKerningCharType(char16_t ch);
+
+// HanKerning (han_kerning.cc) for one segment of an item, with the canvas's
+// options (text-spacing-trim normal; not a line start, no trimming at the
+// start or end) and TextSpacingTrimFallback (stable), without
+// TextSpacingTrimFallback2 (test only). `text` is the item's text.
+class HanKerning {
+ public:
+  HanKerning(const char16_t* text,
+             uint32_t length,
+             uint32_t segment_start,
+             uint32_t segment_end);
+
+  bool MayApply() const { return may_apply_; }
+  // AppendFontFeatures' first check: a range other than the segment needs
+  // a character that may be open or close punctuation.
+  bool RangeMayApply(uint32_t start, uint32_t end) const;
+  // The rest of AppendFontFeatures: false when the font has no `halt` or a
+  // feature in `features` is one `chws` excludes; else appends
+  // {halt, 1, i, i + 1} for each character to kern and returns true.
+  bool AppendFontFeatures(uint32_t start,
+                          uint32_t end,
+                          const HanKerningFontData& font_data,
+                          std::vector<hb_feature_t>* features);
+  // After a range whose features were computed, when more ranges follow
+  // (fallback fonts): keeps the classes this font gave its characters.
+  void PrepareFallback();
+
+ private:
+  enum class Priority { kText, kCache };
+  HanKerningCharType CharType(uint32_t index,
+                              const HanKerningFontData& font_data,
+                              Priority priority = Priority::kText);
+
+  const char16_t* text_;
+  uint32_t length_;
+  bool may_apply_;
+  bool is_start_prev_used_ = false;
+  bool is_end_next_used_ = false;
+  uint32_t segment_start_;
+  uint32_t segment_end_;
+  uint32_t last_start_ = 0;
+  uint32_t last_end_ = 0;
+  HanKerningFontData last_font_data_;
+  std::vector<HanKerningCharType> char_types_;
 };
 
 // ShapeResultSpacing over the prepared text, as PlainTextNode::Shape applies
