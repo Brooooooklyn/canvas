@@ -64,6 +64,26 @@ const GLYPH_WORK: u64 = 1024;
 /// (512 `<use href>` draws of 400 arcs went past 1 GB).
 const ARC_WORK: u64 = 1024;
 
+/// The work of a draw of a rounded rect: SkSVGDevice::drawRRect writes
+/// any rrect but an oval or a plain rect as path data, 4 conics of up to
+/// 32 quads each, 2.5 to 7 KB a draw (Codex cleanup round 5: 8^6 `<use
+/// href>` draws of a 24x24 icon with rx="4" went past 1 GB).
+const RRECT_WORK: u64 = 1 << 14;
+
+/// Whether a style value may declare `d` (SkSVG's StyleIterator trims a
+/// name of bytes up to ' ' and, as a signed char, from 0x80): any `d`
+/// before such bytes and a `:`, in any case.
+fn may_declare_d(value: &str) -> bool {
+  let b = value.as_bytes();
+  (0..b.len()).any(|i| {
+    b[i] | 0x20 == b'd'
+      && b[i + 1..]
+        .iter()
+        .find(|&&c| !(c <= b' ' || c >= 0x80))
+        .is_some_and(|&c| c == b':')
+  })
+}
+
 /// Bytes the reference scan may compare; past them the references are not
 /// known (no renames; every pattern counts as painted).
 const SCAN_LIMIT: u64 = 1 << 26;
@@ -1099,7 +1119,9 @@ struct Graph {
   root: u32,
   class: Vec<Class>,
   /// The work of one call: 1, and for a shape, text or image 32 more plus
-  /// its attribute values (ARC_WORK a byte of path data with an arc); plus
+  /// its attribute values (ARC_WORK a byte of path data with an arc, a
+  /// style that may declare `d` included), RRECT_WORK more for a rect that
+  /// may be rounded; plus
   /// its text (GLYPH_WORK a byte in a text element); for a <path> a
   /// textPath names, the text bytes below each such textPath times the
   /// path's attribute bytes.
@@ -1213,12 +1235,26 @@ impl Graph {
         }
       }
       // A shape's path data, an image's data: URL (decoded per draw).
+      // SkSVG reads `d` from the attribute and from a style declaration
+      // (also a nested `style:d:`): a style that may declare `d` counts as
+      // path data.
       if drawn {
         for a in attrs {
-          let arc = a.name == "d" && a.value.bytes().any(|c| c | 0x20 == b'a');
+          let data = a.name == "d" || (a.name == "style" && may_declare_d(&a.value));
+          let arc = data && a.value.bytes().any(|c| c | 0x20 == b'a');
           let per = if arc { ARC_WORK } else { 1 };
           w = add(w, mul(per, a.value.len() as u64));
         }
+      }
+      // A rect that may be rounded (rx or ry in any attribute, a style
+      // included): the SVG canvas writes a rounded rect as path data.
+      let rounded = |v: &str| {
+        v.as_bytes()
+          .windows(2)
+          .any(|w| w.eq_ignore_ascii_case(b"rx") || w.eq_ignore_ascii_case(b"ry"))
+      };
+      if name == "rect" && attrs.iter().any(|a| rounded(&a.name) || rounded(&a.value)) {
+        w = add(w, RRECT_WORK);
       }
       for &(ai, target, ek) in &scan.refs[k] {
         // By where the attribute is in the text: an element from an
@@ -2269,6 +2305,58 @@ mod tests {
     assert!(renamed(
       &arcs(400).replace("A1e6 1e6 0 1 1 1 0", "L1e6 1e6 0 1 1 1 0")
     ));
+  }
+
+  #[test]
+  fn rounded_rects_and_style_arcs_are_not_added_past_their_bytes() {
+    let renamed = |body: &str| !cleaned(body).contains(" href=");
+    let drawn = |leaf: &str, levels: usize| {
+      fan_defs(8, levels, "a").replace(r#"<g id="a0"/>"#, &format!(r#"<g id="a0">{leaf}</g>"#))
+        + &format!(r##"<use href="#a{levels}"/>"##)
+    };
+    // The SVG canvas writes a rounded rect as path data (Codex cleanup
+    // round 5: 8^6 draws of a 24x24 icon with rx="4" went past 1 GB):
+    // 8^4 draws are too much, 8^2 are not; a plain rect is not rounded.
+    for leaf in [
+      r#"<rect width="24" height="24" rx="4"/>"#,
+      r#"<rect width="24" height="24" ry="4"/>"#,
+      r#"<rect width="24" height="24" style="rx:4"/>"#,
+      r#"<rect width="24" height="24" style="style:RY:4"/>"#,
+    ] {
+      assert!(!renamed(&drawn(leaf, 4)), "{leaf}");
+      assert!(renamed(&drawn(leaf, 2)), "{leaf}");
+    }
+    assert!(renamed(&drawn(r#"<rect width="24" height="24"/>"#, 4)));
+    // SkSVG reads `d` from a style too: arcs there count as in `d`.
+    let arc = "M0 0A1e6 1e6 0 1 1 1 0A1e6 1e6 0 1 1 0 0";
+    for leaf in [
+      format!(r#"<path style="d:{arc}"/>"#),
+      format!(r#"<path style="fill:red; d :{arc}"/>"#),
+      format!(r#"<path style="style:d:{arc}"/>"#),
+      format!("<path style=\"style:d\u{a0}:{arc}\"/>"),
+    ] {
+      assert!(!renamed(&drawn(&leaf, 4)), "{leaf}");
+      assert!(renamed(&drawn(&leaf, 1)), "{leaf}");
+    }
+    // A style that declares no `d` is not path data.
+    assert!(renamed(&drawn(
+      r#"<path d="M0 0H1" style="fill:black;stroke:salmon"/>"#,
+      4
+    )));
+    // An ATTLIST goes only where the rounded rects are bounded.
+    let doc = |levels: usize| {
+      let fan =
+        drawn(r#"<rect width="24" height="24" rx="4"/>"#, levels).replace(" href=", " xlink:href=");
+      format!(r#"<!DOCTYPE svg [<!ATTLIST rect display CDATA "none">]><svg {X}>{fan}</svg>"#)
+    };
+    let big = doc(4);
+    assert_eq!(clean(&Doc::parse(&big).unwrap(), &big), Ok(None));
+    let small = doc(2);
+    assert!(
+      clean(&Doc::parse(&small).unwrap(), &small)
+        .unwrap()
+        .is_some()
+    );
   }
 
   #[test]

@@ -414,6 +414,45 @@ test('convertSVGTextToPath past the budget: SVG2 href to a filter or to many arc
   }
 })
 
+// The SVG canvas writes a rounded rect as path data, 2.5 to 7 KB a draw
+// (8^6 <use href> draws of a 24x24 icon with rx="4": over 1 GB). The renames
+// may not add 8^4 of them, and an ATTLIST that hides them stays.
+test('convertSVGTextToPath past the budget: SVG2 href to many rounded rects stays unread', (t) => {
+  const drawn = (leaf: string, k: number) =>
+    `${fanOutDefs(k, 'm').replace('<g id="m0"/>', `<g id="m0">${leaf}</g>`)}<use href="#m${k}"/>`
+  const empty = convertSVGTextToPath(`<svg ${XLINK} width="10" height="10">${fanOut(6)}</svg>`).toString()
+  for (const [doctype, body] of [
+    ['', drawn('<rect width="100" height="100" rx="10"/>', 4)],
+    ['', drawn('<rect width="24" height="24" style="ry:4"/>', 4)],
+    [
+      '<!DOCTYPE svg [<!ATTLIST rect display CDATA "none">]>',
+      drawn('<rect width="24" height="24" rx="4"/>', 4).replaceAll(' href=', ' xlink:href='),
+    ],
+  ]) {
+    const child = convertInChild(`${doctype}<svg ${XLINK} width="10" height="10">${body}${fanOut(6)}</svg>`)
+    t.is(child.signal, null, `killed (time or output): ${doctype}${body.slice(-80)}`)
+    t.is(child.status, 0, child.stderr)
+    t.is(child.stdout, empty, `${doctype}${body.slice(-80)}`)
+  }
+})
+
+// SkSVG reads `d` from a style declaration too, nested or not: arcs there cost
+// as in the attribute (8^4 <use href> draws of a 40-byte arc icon: 20 MB).
+test('convertSVGTextToPath past the budget: SVG2 href to arcs in a style stays unread', (t) => {
+  const drawn = (leaf: string, k: number) =>
+    `${fanOutDefs(k, 'm').replace('<g id="m0"/>', `<g id="m0">${leaf}</g>`)}<use href="#m${k}"/>`
+  const arc = 'M0 0A1e6 1e6 0 1 1 1 0A1e6 1e6 0 1 1 0 0'
+  const empty = convertSVGTextToPath(`<svg ${XLINK} width="10" height="10">${fanOut(6)}</svg>`).toString()
+  for (const style of [`d:${arc}`, `style:d:${arc}`]) {
+    const child = convertInChild(
+      `<svg ${XLINK} width="10" height="10">${drawn(`<path style="${style}"/>`, 4)}${fanOut(6)}</svg>`,
+    )
+    t.is(child.signal, null, `killed (time or output): ${style}`)
+    t.is(child.status, 0, child.stderr)
+    t.is(child.stdout, empty, style)
+  }
+})
+
 // SkSVG reads a nested style="style:fill:url(#c)": the pattern c it paints
 // runs into the cycle a -> a, which is broken.
 test('convertSVGTextToPath past the budget: a pattern a nested style paints is walked', (t) => {
