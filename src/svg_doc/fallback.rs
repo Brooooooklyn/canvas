@@ -1355,7 +1355,7 @@ impl Graph {
   }
 
   /// What a draw (R) of `x` makes through an edge.
-  fn from_draw(&self, x: usize, ek: Ek) -> Call {
+  fn call_after_draw(&self, x: usize, ek: Ek) -> Call {
     match (ek, self.class[x]) {
       (Ek::Tree, Class::Container) | (Ek::Bare, Class::Use) => Call::Draw,
       // mask, clipPath, filter and gradients are hidden containers too.
@@ -1427,7 +1427,7 @@ impl Graph {
         tq = add(tq, mul(m, q));
         b = add(b, tb[y]);
         hh = hh.max(add(ek.weight(), h[y]));
-        if self.from_draw(x, ek) == Call::Other {
+        if self.call_after_draw(x, ek) == Call::Other {
           r = add(r, mul(m, calls));
           rq = add(rq, mul(m, q));
         }
@@ -1534,7 +1534,7 @@ impl Graph {
           }
         };
         let (rr, rq) = (mul(pr_r[x], m), through(pr_r[x], q_r[x]));
-        match self.from_draw(x, ek) {
+        match self.call_after_draw(x, ek) {
           Call::Draw => {
             pr_r[y] = add(pr_r[y], rr);
             q_r[y] = add(q_r[y], rq);
