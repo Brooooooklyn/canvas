@@ -58,7 +58,8 @@ enum Tag {
   Pattern,
   Gradient,
   Filter,
-  /// defs, stop, fe*, image: drawn as nothing.
+  Stop,
+  /// defs, fe*, image: drawn as nothing.
   Leaf,
 }
 
@@ -76,8 +77,8 @@ fn tag(raw: &str) -> Option<Tag> {
     "pattern" => Tag::Pattern,
     "linearGradient" | "radialGradient" => Tag::Gradient,
     "filter" => Tag::Filter,
+    "stop" => Tag::Stop,
     "defs"
-    | "stop"
     | "image"
     | "feBlend"
     | "feColorMatrix"
@@ -675,6 +676,17 @@ impl<'t> Model<'t> {
     self.els[i as usize].tag
   }
 
+  /// A pattern with children, a gradient with `<stop>` children: the end of
+  /// an href chain's search for content (SkSVGPattern::resolveHref,
+  /// SkSVGGradient::collectColorStops).
+  fn full(&self, i: usize) -> bool {
+    let e = &self.els[i];
+    match e.tag {
+      Tag::Gradient => e.children.iter().any(|&c| self.tag(c) == Tag::Stop),
+      _ => !e.children.is_empty(),
+    }
+  }
+
   /// The pattern or gradient each one's href chain goes on to, in
   /// `variant`: a gradient with stops of its own does not follow it
   /// (SkSVGGradient::collectColorStops).
@@ -687,7 +699,7 @@ impl<'t> Model<'t> {
         let t = e.href[variant]?;
         match e.tag {
           Tag::Pattern if !broken[i] && self.tag(t) == Tag::Pattern => Some(t),
-          Tag::Gradient if e.children.is_empty() && self.tag(t) == Tag::Gradient => Some(t),
+          Tag::Gradient if !self.full(i) && self.tag(t) == Tag::Gradient => Some(t),
           _ => None,
         }
       })
@@ -866,7 +878,7 @@ fn below(v: &mut Val, x: Val, w: u32) -> Val {
 
 impl Cost<'_> {
   fn new<'m>(m: &'m Model<'m>, variant: usize, broken: &[bool]) -> Cost<'m> {
-    let walks = walks(&m.chain(variant, broken), |i| !m.els[i].children.is_empty());
+    let walks = walks(&m.chain(variant, broken), |i| m.full(i));
     Cost { m, variant, walks }
   }
 
@@ -1431,6 +1443,20 @@ mod tests {
     body += &r#"<rect width="1" height="1"/>"#.repeat(1 << 12);
     body += "</g>";
     assert_eq!(cleaned(&body), body);
+    // A 2000-link gradient chain: SkSVG follows a gradient's href while it
+    // has no <stop> child, whatever else it holds.
+    let mut body = String::from(r#"<defs><linearGradient id="g0"><stop/></linearGradient>"#);
+    for i in 1..2000 {
+      body += &format!(
+        r##"<linearGradient id="g{i}" href="#g{}"><g/></linearGradient>"##,
+        i - 1
+      );
+    }
+    body += r##"</defs><rect fill="url(#g1999)"/>"##;
+    assert_eq!(cleaned(&body), body);
+    // A <stop> in each ends each chain: renamed.
+    let body = body.replace("<g/>", "<stop/>");
+    assert!(!cleaned(&body).contains(" href="));
     // A reference cycle the renames make: not renamed.
     let body = r##"<g id="g"><rect width="2" height="2"/><use href="#g"/></g>"##;
     assert_eq!(cleaned(body), body);

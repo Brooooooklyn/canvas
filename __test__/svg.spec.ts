@@ -105,12 +105,16 @@ function fanOutDefs(k: number, id = 'l') {
   return `<defs>${defs}</defs>`
 }
 
-// In a child process, killed after 20 s.
-function convertInChild(svg: string) {
-  const script = `
+// In a child process, killed after 20 s; with `worker`, in a worker thread
+// there, on a 4 MB stack.
+function convertInChild(svg: string, worker = false) {
+  const convert = `
     const { convertSVGTextToPath } = require(process.env.PROBE_INDEX)
     process.stdout.write(convertSVGTextToPath(require('fs').readFileSync(0, 'utf8')))
   `
+  const script = worker
+    ? `new (require('worker_threads').Worker)(${JSON.stringify(convert)}, { eval: true, resourceLimits: { stackSizeMb: 4 } })`
+    : convert
   return spawnSync(process.execPath, ['-e', script], {
     input: svg,
     encoding: 'utf8',
@@ -199,6 +203,23 @@ test('convertSVGTextToPath past the budget: a value SkSVG does not parse keeps t
     t.is(child.signal, null, `timed out: ${attrs}`)
     t.is(child.status, 0, child.stderr)
   }
+})
+
+// SkSVG follows a gradient's href while it has no <stop> child, whatever
+// else it holds, one native call per link: a 50000-link chain of gradients
+// holding a <g/> is too deep for the renames and stays unread. The fan-out
+// comes first, so svg_doc stops at its budget before it walks the chain.
+test('convertSVGTextToPath past the budget: a long gradient href chain stays unread', (t) => {
+  let defs = '<linearGradient id="g0"><stop offset="0" stop-color="green"/></linearGradient>'
+  for (let i = 1; i < 50000; i++) {
+    defs += `<linearGradient id="g${i}" href="#g${i - 1}"><g/></linearGradient>`
+  }
+  const child = convertInChild(
+    `<svg ${XLINK} width="10" height="10">${fanOut(6)}<defs>${defs}</defs><rect width="5" height="5" fill="url(#g49999)"/></svg>`,
+    true,
+  )
+  t.is(child.signal, null, 'crashed or timed out')
+  t.is(child.status, 0, child.stderr)
 })
 
 // convertSVGTextToPath keeps the root's size, coordinates and transform:
