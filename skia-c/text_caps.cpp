@@ -31,9 +31,8 @@ enum VariantCaps {
   kTitlingCaps,
 };
 
-enum class FontSupport { kFull, kFallback, kNone };
-enum class CapsSynthesis { kNone, kLowerToSmallCaps, kUpperToSmallCaps, kBoth };
-enum class CaseRun { kUppercaseNeeded, kSameCase };
+using FontSupport = CapsSupport::Font;
+using CapsSynthesis = CapsSupport::Synthesis;
 
 // Bits of the caps features a face has for a script.
 enum : uint8_t {
@@ -154,10 +153,7 @@ uint8_t CapsFeatures(skiac_font_collection* c_collection,
   return features;
 }
 
-struct Support {
-  FontSupport font = FontSupport::kFull;
-  CapsSynthesis synthesis = CapsSynthesis::kNone;
-};
+using Support = CapsSupport;
 
 // OpenTypeCapsSupport::DetermineFontSupport.
 Support DetermineFontSupport(int caps, uint8_t has) {
@@ -222,8 +218,6 @@ int FeatureToUse(const Support& s, int caps, CaseRun run) {
   return kCapsNormal;
 }
 
-enum class CaseMapIntend { kKeepSameCase, kUpperCase, kLowerCase };
-
 // NeedsCaseChange.
 CaseMapIntend CaseChange(const Support& s, CaseRun run) {
   if (s.font == FontSupport::kFull) {
@@ -236,11 +230,15 @@ CaseMapIntend CaseChange(const Support& s, CaseRun run) {
                ? CaseMapIntend::kLowerCase
                : CaseMapIntend::kKeepSameCase;
   }
-  return s.font != FontSupport::kFallback &&
-                 (s.synthesis == CapsSynthesis::kLowerToSmallCaps ||
-                  s.synthesis == CapsSynthesis::kBoth)
-             ? CaseMapIntend::kUpperCase
-             : CaseMapIntend::kKeepSameCase;
+  if (run == CaseRun::kUppercaseNeeded) {
+    return s.font != FontSupport::kFallback &&
+                   (s.synthesis == CapsSynthesis::kLowerToSmallCaps ||
+                    s.synthesis == CapsSynthesis::kBoth)
+               ? CaseMapIntend::kUpperCase
+               : CaseMapIntend::kKeepSameCase;
+  }
+  // A run of combining marks only (SmallCapsIterator's kSmallCapsInvalid).
+  return CaseMapIntend::kKeepSameCase;
 }
 
 // NeedsSyntheticFont.
@@ -252,8 +250,11 @@ bool SyntheticFont(const Support& s, int caps, CaseRun run) {
     return s.synthesis == CapsSynthesis::kLowerToSmallCaps ||
            s.synthesis == CapsSynthesis::kBoth;
   }
-  return s.synthesis == CapsSynthesis::kUpperToSmallCaps ||
-         s.synthesis == CapsSynthesis::kBoth;
+  if (run == CaseRun::kSameCase) {
+    return s.synthesis == CapsSynthesis::kUpperToSmallCaps ||
+           s.synthesis == CapsSynthesis::kBoth;
+  }
+  return false;
 }
 
 // CaseMap::Locale: the ICU locale for case mapping, root for most
@@ -274,6 +275,8 @@ bool LocaleMatches(std::string_view locale, std::string_view lang) {
   return locale.size() == lang.size() || locale[lang.size()] == '-' ||
          locale[lang.size()] == '_' || locale[lang.size()] == '@';
 }
+
+}  // namespace
 
 const char* CaseMapLocale(const skiac_text_request& request) {
   const std::string_view lang(request.lang ? request.lang : "",
@@ -314,6 +317,8 @@ std::u16string MapCase(CaseMapIntend intend,
   out.resize(length);
   return out;
 }
+
+namespace {
 
 void AppendUtf16(std::u16string* out, SkUnichar c) {
   uint16_t units[2];
@@ -508,4 +513,85 @@ std::vector<CapsPiece> SplitCaps(skiac_font_collection* c_collection,
     run_start = run_end;
   }
   return pieces;
+}
+
+CapsSupport FontCapsSupport(skiac_font_collection* c_collection,
+                            SkTypeface* face,
+                            int caps,
+                            hb_script_t script) {
+  if (caps == kCapsNormal) {
+    return {};
+  }
+  return DetermineFontSupport(caps, CapsFeatures(c_collection, face, script));
+}
+
+bool NeedsRunCaseSplitting(const CapsSupport& support, int caps) {
+  // Lack of titling case support is ignored: titling case is not
+  // synthesized.
+  return support.font != FontSupport::kFull && caps != kTitlingCaps;
+}
+
+int CapsFeatureToUse(const CapsSupport& support, int caps, CaseRun run) {
+  return FeatureToUse(support, caps, run);
+}
+
+CaseMapIntend NeedsCaseChange(const CapsSupport& support, CaseRun run) {
+  return CaseChange(support, run);
+}
+
+bool NeedsSyntheticFont(const CapsSupport& support, int caps, CaseRun run) {
+  return SyntheticFont(support, caps, run);
+}
+
+uint32_t NextCaseRun(const char16_t* text, uint32_t length, CaseRun* run) {
+  CaseRun current = CaseRun::kInvalid;
+  for (uint32_t i = 0; i < length;) {
+    const uint32_t at = i;
+    uint32_t c = text[i++];
+    if (c >= 0xD800 && c <= 0xDBFF && i < length && text[i] >= 0xDC00 &&
+        text[i] <= 0xDFFF) {
+      c = 0x10000 + ((c - 0xD800) << 10) + (text[i++] - 0xDC00);
+    }
+    const CaseRun previous = current;
+    // Combining marks combine with the small caps uppercased text as well:
+    // their own case does not split.
+    if (!u_getCombiningClass(static_cast<UChar32>(c))) {
+      current = u_hasBinaryProperty(static_cast<UChar32>(c),
+                                    UCHAR_CHANGES_WHEN_UPPERCASED)
+                    ? CaseRun::kUppercaseNeeded
+                    : CaseRun::kSameCase;
+    }
+    if (previous != current && previous != CaseRun::kInvalid) {
+      *run = previous;
+      return at;
+    }
+  }
+  *run = current;
+  return length;
+}
+
+void PrependCapsFeatures(std::vector<hb_feature_t>* features, int caps) {
+  auto prepend = [features](char a, char b, char c, char d) {
+    features->insert(features->begin(),
+                     {SKIAC_HB_TAG(a, b, c, d), 1, HB_FEATURE_GLOBAL_START,
+                      HB_FEATURE_GLOBAL_END});
+  };
+  if (caps == kSmallCaps || caps == kAllSmallCaps) {
+    prepend('s', 'm', 'c', 'p');
+    if (caps == kAllSmallCaps) {
+      prepend('c', '2', 's', 'c');
+    }
+  }
+  if (caps == kPetiteCaps || caps == kAllPetiteCaps) {
+    prepend('p', 'c', 'a', 'p');
+    if (caps == kAllPetiteCaps) {
+      prepend('c', '2', 'p', 'c');
+    }
+  }
+  if (caps == kUnicase) {
+    prepend('u', 'n', 'i', 'c');
+  }
+  if (caps == kTitlingCaps) {
+    prepend('t', 'i', 't', 'l');
+  }
 }

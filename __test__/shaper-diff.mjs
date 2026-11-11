@@ -25,7 +25,7 @@ const __dirname = dirname(fileURLToPath(import.meta.url))
 const require = createRequire(import.meta.url)
 
 // The stage this branch has landed, and the classes it may change.
-const STAGE = 'S4'
+const STAGE = 'S5'
 const ALLOWED = new Set([
   // PR-D10: no forced liga 0 (letter spacing is still turned down in S2).
   'd10',
@@ -101,6 +101,30 @@ const ALLOWED = new Set([
   // S4, spacing as TextRunLayoutUnit (truncated to 1/65536 px). Chrome 157
   // (blink-shaper.json): "spacing: tiny.ls" (0.0002px: 181.20192).
   'ls-quantize',
+  // S5, font-variant-caps per font in the fallback loop: each font uses its
+  // own caps features for the segment's script, or synthesizes small caps
+  // (uppercase at 70% of the size) when it has none; the old path asked the
+  // primary font only. Chrome 157, system renderer (stages/S5/caps-chrome.json),
+  // small-caps: 40px "BSLato, BSSerif" "Hello αβγ q\u0301x" 223.7999 (old
+  // path 200.6879), 40px "BSGothic, BSHan" "Hello αβγ Ωμέγα" 348.9197
+  // (365.2615), 40px "BSLato, BSSerif" lang el "άλφα Ωμέγα" 228.7999
+  // (185.4639).
+  'caps-per-font',
+  // S5, a run of combining marks only (SmallCapsIterator's
+  // kSmallCapsInvalid) is not synthesized: no case change and the font's own
+  // size. Chrome 157 (stages/S5/caps-chrome.json): 30px BSOswald
+  // all-small-caps "\u0301\u0308" ink 4.2 4.2 31.26 -18.78 (old path drew
+  // it at 21px: 2.94 2.94 21.882 -13.146).
+  'caps-marks',
+  // S5 (detected, not tagged): a case map that changes the UTF-8 length
+  // (ß to SS, Turkish i to İ, ı to I) moves only the clusters: the new
+  // path's index the fillText string, as Blink's
+  // CaseMappingHarfBuzzBufferFiller keeps the original indices, the old
+  // path's index its case-mapped copy. The same glyphs at the same places,
+  // the same pixels, and the same metrics up to a long line's rounding.
+  // Chrome 157 (stages/S5/caps-chrome.json) gives the new metrics for each:
+  // 40px BSOswald lang tr small-caps "İstanbul ılık iI" 177.1799.
+  'caps-clusters',
 ])
 
 const FONTS = {
@@ -120,6 +144,7 @@ const FONTS = {
   BSNews: 'Newsreader-opsz-only.ttf',
   BSArA: 'ArA.ttf',
   BSArB: 'ArB.ttf',
+  BSGothic: 'ScienceGothic-VariableFont.ttf',
 }
 
 // One letter of each of these scripts, most of which no font in the
@@ -281,6 +306,61 @@ const SPACED = [
   ['Hamburgefonstiv '.repeat(40), 'BSLato', { letterSpacing: '1px', wordSpacing: '2px' }, ['long', 'ws-rule']],
 ]
 
+// S5: font-variant-caps per font. Lato and Oswald have no caps features
+// (synthesized small caps), Source Serif has smcp and c2sc, Roboto Mono
+// smcp only, Science Gothic smcp and c2sc but no Greek. Each value on a
+// font with and without the features, a fallback font with and without
+// them, mixed case, Turkish, Azeri and Greek case mapping, sharp s, marks
+// (also marks alone), letter spacing and RTL. [text, font families,
+// settings, tags]
+const CAPS_VALUES = ['small-caps', 'all-small-caps', 'petite-caps', 'all-petite-caps', 'unicase', 'titling-caps']
+const CAPS = [
+  ...CAPS_VALUES.flatMap((caps) => [
+    ['Hello World ß fi 123 Éé', 'BSLato', { fontVariantCaps: caps }, []],
+    ['Hello World ß fi 123 Éé', 'BSSerif', { fontVariantCaps: caps }, []],
+    ['Hello World ß fi 123 Éé', 'BSMono', { fontVariantCaps: caps }, []],
+    ['aBcDeF GhIj', 'BSOswald', { fontVariantCaps: caps }, []],
+    // The fallback font has the caps features the primary lacks, and the
+    // other way round.
+    [
+      'Hello αβγ q\u0301x',
+      'BSLato, BSSerif',
+      { fontVariantCaps: caps },
+      ['script', 'family-fallback', 'caps-per-font'],
+    ],
+    ['Hello αβγ Ωμέγα', 'BSGothic, BSHan', { fontVariantCaps: caps }, ['script', 'family-fallback', 'caps-per-font']],
+    ['Hello 水 world', 'BSLato, BSHan', { fontVariantCaps: caps }, ['script', 'family-fallback']],
+    ['İstanbul ılık iI', 'BSOswald', { fontVariantCaps: caps, lang: 'tr' }, []],
+  ]),
+  ['Iiİı', 'BSOswald', { fontVariantCaps: 'all-small-caps', lang: 'az' }, []],
+  ['Iiİı', 'BSOswald', { fontVariantCaps: 'unicase', lang: 'tr-TR' }, []],
+  ['iıIİ fi', 'BSOswald', { fontVariantCaps: 'small-caps', lang: 'en' }, []],
+  ['άλφα Ωμέγα', 'BSSerif', { fontVariantCaps: 'all-small-caps', lang: 'el' }, ['script']],
+  ['άλφα Ωμέγα', 'BSSerif', { fontVariantCaps: 'all-small-caps', lang: 'en' }, ['script']],
+  [
+    'άλφα Ωμέγα',
+    'BSLato, BSSerif',
+    { fontVariantCaps: 'small-caps', lang: 'el' },
+    ['script', 'family-fallback', 'caps-per-font'],
+  ],
+  ['office', 'BSLato', { fontVariantCaps: 'small-caps', lang: 'el' }, []],
+  ['Straße STRASSE', 'BSOswald', { fontVariantCaps: 'small-caps', lang: 'de' }, []],
+  ['Straße', 'BSSerif', { fontVariantCaps: 'all-small-caps' }, []],
+  ['éàB Ab', 'BSOswald', { fontVariantCaps: 'small-caps' }, []],
+  ['q\u0301x Q\u0301X', 'BSSerif', { fontVariantCaps: 'small-caps' }, ['script']],
+  ['q\u0301x Q\u0301X', 'BSGar', { fontVariantCaps: 'all-small-caps' }, ['script']],
+  ['\u0301\u0308', 'BSOswald', { fontVariantCaps: 'all-small-caps' }, ['script', 'caps-marks']],
+  // RTL base: the words are placed in reverse for the marks' y offsets.
+  ['a \u0301\u0308b', 'BSOswald', { fontVariantCaps: 'small-caps' }, ['script', 'rtl-yoffset']],
+  ['Hello World', 'BSLato', { fontVariantCaps: 'small-caps', letterSpacing: '5px' }, ['ls-cluster']],
+  ['Hello World', 'BSLato', { fontVariantCaps: 'all-small-caps', wordSpacing: '7px' }, ['ws-rule']],
+  ['abc سلام def', 'BSHarm, BSLato', { fontVariantCaps: 'small-caps' }, ['script', 'bidi', 'family-fallback']],
+  ['ab中cd Ef', 'BSLato, BSHan', { fontVariantCaps: 'small-caps' }, ['script', 'family-fallback']],
+  ['Hello World', 'BSLato', { fontVariantCaps: 'small-caps', fontFeatureSettings: '"smcp" 0' }, []],
+  ['Hello World', 'BSSerif', { fontVariantCaps: 'small-caps', fontFeatureSettings: '"smcp" 0' }, []],
+  ['AVATAR Hello', 'BSLato', { fontVariantCaps: 'small-caps', fontKerning: 'none' }, []],
+]
+
 // One property changed at a time on a few texts.
 const SETTINGS = [
   [{ fontKerning: 'none' }, []],
@@ -354,10 +434,27 @@ function cases() {
         out.push({ renderer, text, font: `40px ${families}`, ctx: settings, tags, draw: true })
       }
     }
+    for (const [text, families, settings, tags] of CAPS) {
+      for (const direction of ['ltr', 'rtl']) {
+        out.push({ renderer, text, font: `40px ${families}`, ctx: { ...settings, direction }, tags, draw: false })
+      }
+      out.push({ renderer, text, font: `30px ${families}`, ctx: settings, tags, draw: true })
+    }
     for (const [settings, settingTags] of SETTINGS) {
       for (const text of SETTING_TEXTS) {
         const families = TEXTS.find(([t]) => t === text)[1]
         const tags = [...TEXTS.find(([t]) => t === text)[2], ...settingTags]
+        // Lato has no İ, ş or ğ: the standard font (the family list's last
+        // entry) draws them. On Windows that is Times New Roman 7, which has
+        // smcp (macOS's Times New Roman 5.01 and Times do not), so the new
+        // path shapes "şğ" with smcp at 40px where the old path synthesized
+        // them from Lato (uppercase at 28px): caps-per-font. Chrome 157 with
+        // a fallback font that has smcp (stages/S5/tr-chrome.json): 40px
+        // "BSLato, BSSerif" small-caps "İstanbul ılık şğü" 268.0798645019531,
+        // the new path's width (old path 257.4719).
+        if ('fontVariantCaps' in settings && text === 'İstanbul ılık şğü') {
+          tags.push('caps-per-font')
+        }
         out.push({ renderer, text, font: `40px ${families}`, ctx: settings, tags, draw: false })
       }
     }
@@ -367,9 +464,10 @@ function cases() {
 
 // Whether the new path must lay a case out in this stage: plain text in the
 // registered fonts, no caps or font-size-adjust, and every character in a
-// family (no fallback tag). Letter and word spacing are laid out since S4.
+// family (no fallback tag). Letter and word spacing are laid out since S4,
+// font-variant-caps since S5.
 function mustAccept(c) {
-  const blocked = ['fontVariantCaps', 'fontSizeAdjust']
+  const blocked = ['fontSizeAdjust']
   if (blocked.some((p) => p in c.ctx)) {
     return false
   }
@@ -608,6 +706,19 @@ function compare(oldFile, newFile, limit) {
     }
     if (width > 256 && Math.max(shift, moved(c.text, a.dump, b.dump)) <= 1e-5 * width) {
       tags.push('long')
+    }
+    // The runs but their clusters, and how far their glyphs moved.
+    const runs = (row) => JSON.parse(row.dump).runs
+    const unclustered = (row) => JSON.stringify(runs(row).map(({ clusters: _clusters, x, ...run }) => [run, x.length]))
+    const xs = (row) => runs(row).flatMap((run) => run.x)
+    const rounding = width > 256 ? 1e-5 * width : 0
+    if (
+      'fontVariantCaps' in c.ctx &&
+      a.pixels === b.pixels &&
+      unclustered(a) === unclustered(b) &&
+      Math.max(shift, ...xs(a).map((x, i) => Math.abs(x - xs(b)[i]))) <= rounding
+    ) {
+      tags.push('caps-clusters')
     }
     const why = tags.filter((t) => ALLOWED.has(t))
     ;(why.length ? allowed : failures).push(`${label} [${tags.join(',')}]: ${diffs.join('; ')}`)
