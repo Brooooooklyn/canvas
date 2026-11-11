@@ -123,6 +123,10 @@ std::string Fold(std::string_view name) {
   return folded;
 }
 
+std::string FoldFamilyName(std::string_view name) {
+  return Fold(name);
+}
+
 bool EqualsIgnoringAsciiCase(std::string_view a, std::string_view b) {
   if (a.size() != b.size()) {
     return false;
@@ -232,6 +236,11 @@ bool HasInstalledFamily(std::string_view name) {
 }
 #endif
 
+// The faces FamilyResolver::Faces gives a tagged name: the family's
+// installed faces ("\x01i\x01"), its web faces ("\x01w\x01"), or every face
+// of a family with no installed face ("\x01a\x01").
+enum class FaceKind { kInstalled, kWeb, kAll };
+
 class FamilyResolver {
  public:
   explicit FamilyResolver(skiac_font_collection* c_collection)
@@ -258,6 +267,31 @@ class FamilyResolver {
     }
     *out = it->second.front();
     return true;
+  }
+
+  // The spelling of `name` that `assets` lists, matched case-insensitively
+  // (the exact spelling first), as Find gives canvas text: an installed
+  // family matches in any case (Chrome 157: "helvetica" draws Helvetica in
+  // canvas and SVG text; FontFaceCreationParams hashes the family
+  // case-folded).
+  bool FindListed(std::string_view name, std::string* out) const {
+    auto it = c_collection_->folded_families.find(Fold(name));
+    if (it == c_collection_->folded_families.end()) {
+      return false;
+    }
+    if (std::find(it->second.begin(), it->second.end(), name) !=
+            it->second.end() &&
+        HasAssetsFamily(std::string(name))) {
+      *out = std::string(name);
+      return true;
+    }
+    for (const auto& spelling : it->second) {
+      if (HasAssetsFamily(spelling)) {
+        *out = spelling;
+        return true;
+      }
+    }
+    return false;
   }
 
   bool IsRegistered(std::string_view name) const {
@@ -347,12 +381,24 @@ class FamilyResolver {
   // "bold 40px Helvetica" is Lato, 47.64; FontFace "Helvetica" with
   // local(Arial) (setAlias('Arial', 'Helvetica')): bold is Arial made bold,
   // 48.93.
+  // A family with no installed face in `assets` is one CapabilitiesSet
+  // over all its spellings (FontFaceCache keys families case-folded), under
+  // the tagged name "\x01a\x01" + family: Chrome 157, Lato FontFace
+  // "Brand" and a bold one "brand": "40px BRAND" is Lato, 47.64, and
+  // "bold 40px Brand" the bold face, 53.28. A family whose faces are the
+  // installed ones and registrations of its own files (registerFromPath
+  // with no alias) keeps the provider's set (S14 deviation 2).
   bool FindWebFont(std::string_view name, std::string* out) const {
     if (!Find(name, out)) {
       return false;
     }
-    if (Kinds(*out) & kInstalledFaces) {
+    const uint8_t kinds = Kinds(*out);
+    if (kinds & kInstalledFaces) {
       *out = std::string(kWebTag) + *out;
+      return true;
+    }
+    if (!(kinds & kOwnInstalledFaces)) {
+      *out = std::string(kAllTag) + *out;
       return true;
     }
     // `assets` matches a name case-sensitively: the spelling it has when
@@ -370,19 +416,24 @@ class FamilyResolver {
     return true;
   }
 
-  // The faces of a tagged name (MakeSplitFamily): `web` the family's web
-  // faces, in registration order, else its installed faces in `assets`.
-  // `elsewhere` gets the installed family outside `assets` when there is
-  // none in it.
-  // The provider lists each spelling's faces in the order they were
-  // registered under it; with several spellings the faces are merged by
-  // the order of the registrations and setAlias calls that listed them, so
-  // the spelling a font is registered under does not change which face
-  // comes first (installed Helvetica, EB Garamond as "helvetica", then Lato
-  // as "Helvetica": EB Garamond, as with Lato as "helvetica").
+  // The faces of a tagged name (MakeSplitFamily): kWeb the family's web
+  // faces, kAll every face `assets` lists under any of its spellings, else
+  // (kInstalled) its installed faces in `assets`. `elsewhere` gets the
+  // installed family outside `assets` when there is none in it.
+  // Web faces are FontFaces: CSSSegmentedFontFace lists the faces of one
+  // style newest first (css_segmented_font_face.cc GetFontData,
+  // ForEachReverse), and FontFaceCache folds the spellings into one
+  // family, so the faces are sorted by the latest registration or setAlias
+  // call that listed them under any spelling, newest first (Chrome 157,
+  // Lato FontFace "Brand", then Oswald "brand": "40px BRAND" is Oswald,
+  // 37.32). A registration of the same file again moves its face to the
+  // front (relist). Installed faces keep the earliest listing, oldest
+  // first: with several spellings by the order of the registrations that
+  // listed them, else the provider's order.
   std::vector<sk_sp<SkTypeface>> Faces(std::string_view name,
-                                       bool web,
+                                       FaceKind kind,
                                        sk_sp<SkFontStyleSet>* elsewhere) const {
+    const bool web = kind != FaceKind::kInstalled;
     std::vector<sk_sp<SkTypeface>> faces;
     const std::string folded = Fold(name);
     std::vector<SkTypefaceID> aliases;
@@ -420,19 +471,23 @@ class FamilyResolver {
           // An installed face is a web face of a name a registration gave
           // it (AliasArg).
           const bool keep =
-              web ? alias || (!own && (!system ||
-                                       AliasArg(spelling, folded, face.get())))
-                  : system && own;
+              kind == FaceKind::kAll ? true
+              : web ? alias || (!own && (!system || AliasArg(spelling, folded,
+                                                             face.get())))
+                    : system && own;
           if (keep) {
             const uint64_t order =
-                merge ? Order(spelling, face->uniqueID()) : 0;
+                web     ? Order(spelling, face->uniqueID(), true)
+                : merge ? Order(spelling, face->uniqueID(), false)
+                        : 0;
             listed.emplace_back(order, std::move(face));
           }
         }
       }
-      std::stable_sort(
-          listed.begin(), listed.end(),
-          [](const auto& a, const auto& b) { return a.first < b.first; });
+      std::stable_sort(listed.begin(), listed.end(),
+                       [web](const auto& a, const auto& b) {
+                         return web ? a.first > b.first : a.first < b.first;
+                       });
       for (auto& [order, face] : listed) {
         if (std::find(faces.begin(), faces.end(), face) == faces.end()) {
           faces.push_back(std::move(face));
@@ -448,17 +503,27 @@ class FamilyResolver {
  private:
   static constexpr char kInstalledTag[] = "\x01i\x01";
   static constexpr char kWebTag[] = "\x01w\x01";
+  // ("\x01" "a": \x01a would be one hex escape.)
+  static constexpr char kAllTag[] =
+      "\x01"
+      "a"
+      "\x01";
   static constexpr uint8_t kWebFaces = 1;
   static constexpr uint8_t kInstalledFaces = 2;
   static constexpr uint8_t kInstalledElsewhere = 4;
+  // Installed faces of the family itself in `assets`, with web faces or
+  // not.
+  static constexpr uint8_t kOwnInstalledFaces = 8;
 
   // Which kinds of faces the family `name` has, all its spellings
   // together (FontFaceCache folds case): web faces (a registered face of
   // another family, or the face a setAlias call names), installed faces in
   // `assets` (an installed face of that family: loadSystemFonts,
   // loadFontsFromDir), and an installed family outside `assets` (CoreText's
-  // match with the system renderer, else the asset font manager's). Only a
-  // family `assets` has can have web faces; cached per families_generation.
+  // match with the system renderer, else the asset font manager's), and
+  // (kOwnInstalledFaces) installed faces in `assets` without web faces too.
+  // Only a family `assets` has can have web faces; cached per
+  // families_generation.
   uint8_t Kinds(std::string_view name) const {
     if (!IsRegistered(name)) {
       return 0;
@@ -475,9 +540,13 @@ class FamilyResolver {
       return found->second;
     }
     uint8_t kinds = 0;
-    if (!Faces(name, true, nullptr).empty()) {
+    const bool installed = !Faces(name, FaceKind::kInstalled, nullptr).empty();
+    if (installed) {
+      kinds |= kOwnInstalledFaces;
+    }
+    if (!Faces(name, FaceKind::kWeb, nullptr).empty()) {
       kinds |= kWebFaces;
-      if (!Faces(name, false, nullptr).empty()) {
+      if (installed) {
         kinds |= kInstalledFaces;
       } else if (InstalledElsewhere(name)) {
         kinds |= kInstalledElsewhere;
@@ -504,12 +573,16 @@ class FamilyResolver {
   }
 
   // When the provider listed the face `id` under `spelling`: the earliest
-  // registration (a font's name) or active setAlias call that did.
-  uint64_t Order(const std::string& spelling, SkTypefaceID id) const {
-    uint64_t order = c_collection_->assets->orderOf(spelling, id);
+  // (`latest`: the latest) registration (a font's name, or the same font
+  // registered again) or active setAlias call that did.
+  uint64_t Order(const std::string& spelling,
+                 SkTypefaceID id,
+                 bool latest) const {
+    uint64_t order = c_collection_->assets->orderOf(spelling, id, latest);
     for (const auto& entry : c_collection_->set_aliases) {
       if (entry.active && entry.face_id == id && entry.alias == spelling) {
-        order = std::min(order, entry.order);
+        order = latest ? std::max(order, entry.order)
+                       : std::min(order, entry.order);
       }
     }
     return order;
@@ -1160,6 +1233,68 @@ int HanScriptForLocale(std::string_view lang) {
   return USCRIPT_SIMPLIFIED_HAN;
 }
 
+namespace {
+
+// "\x01s\x01" k "\x01" + base (ResolveFontFamilies): the face `rank` k of
+// the style the base set matches, in the base set's order (newest first),
+// or none. Blink's FontFallbackIterator walks every face of the matched
+// CSSSegmentedFontFace before the next family (font_fallback_iterator.cc),
+// so a character the newest face lacks comes from an older face of the
+// same style; FontCollection skips a family with no match.
+class SegmentStyleSet : public SkFontStyleSet {
+ public:
+  SegmentStyleSet(sk_sp<SkFontStyleSet> base, int rank)
+      : base_(std::move(base)), rank_(rank) {}
+  int count() override { return base_->count(); }
+  void getStyle(int index, SkFontStyle* style, SkString* name) override {
+    base_->getStyle(index, style, name);
+  }
+  sk_sp<SkTypeface> createTypeface(int index) override {
+    return base_->createTypeface(index);
+  }
+  sk_sp<SkTypeface> matchStyle(const SkFontStyle& pattern) override {
+    const sk_sp<SkTypeface> best = base_->matchStyle(pattern);
+    if (!best) {
+      return nullptr;
+    }
+    int rank = 0;
+    for (int i = 0; i < base_->count(); ++i) {
+      sk_sp<SkTypeface> face = base_->createTypeface(i);
+      if (face && face->fontStyle() == best->fontStyle() && rank++ == rank_) {
+        return face;
+      }
+    }
+    return nullptr;
+  }
+
+ private:
+  sk_sp<SkFontStyleSet> base_;
+  int rank_;
+};
+
+constexpr char kSiblingTag[] = "\x01s\x01";
+
+// The most faces of one style in `set`.
+int SameStyleDepth(const sk_sp<SkFontStyleSet>& set) {
+  std::vector<std::pair<SkFontStyle, int>> styles;
+  int depth = 0;
+  for (int i = 0; set && i < set->count(); ++i) {
+    SkFontStyle style;
+    set->getStyle(i, &style, nullptr);
+    auto it =
+        std::find_if(styles.begin(), styles.end(),
+                     [&](const auto& entry) { return entry.first == style; });
+    if (it == styles.end()) {
+      styles.emplace_back(style, 0);
+      it = styles.end() - 1;
+    }
+    depth = std::max(depth, ++it->second);
+  }
+  return depth;
+}
+
+}  // namespace
+
 std::vector<SkString> ResolveFontFamilies(skiac_font_collection* c_collection,
                                           const skiac_text_request& request,
                                           std::vector<bool>* generic,
@@ -1216,6 +1351,7 @@ std::vector<SkString> ResolveFontFamilies(skiac_font_collection* c_collection,
     std::string name;
     bool found;
     bool registered = false;
+    bool web = false;
     if (family.generic) {
       found =
           ResolveGeneric(resolver, family.generic,
@@ -1227,9 +1363,11 @@ std::vector<SkString> ResolveFontFamilies(skiac_font_collection* c_collection,
       // FontFallbackList does not ask the system for an empty name. A web
       // font comes from FontFaceCache, before the font cache.
       const std::string_view named(family.name, family.name_len);
+      web = !named.empty() && named.front() != '\x01' &&
+            resolver.IsWebFont(named);
       found = !named.empty() && named.front() != '\x01' &&
-              (resolver.IsWebFont(named) ? resolver.FindWebFont(named, &name)
-                                         : resolver.FindSystem(named, &name));
+              (web ? resolver.FindWebFont(named, &name)
+                   : resolver.FindSystem(named, &name));
     }
     if (found) {
       // A -webkit-body that is not the description's generic family is
@@ -1240,6 +1378,17 @@ std::vector<SkString> ResolveFontFamilies(skiac_font_collection* c_collection,
       // family, as one registered under serif does.
       add(name, family.generic != kNamed &&
                     !(locale && family.generic == kWebkitBody && !registered));
+      // The older faces of the style the request matches, each a family of
+      // its own right after it (SegmentStyleSet): as many as the family has
+      // faces of one style, less one. Not per style, as the resolved
+      // families are cached per family list.
+      if (web && !name.empty() && name.front() == '\x01') {
+        const int depth =
+            SameStyleDepth(c_collection->assets->matchFamily(name.c_str()));
+        for (int k = 1; k < depth; ++k) {
+          add(kSiblingTag + std::to_string(k) + "\x01" + name, false);
+        }
+      }
     }
   }
   // The standard font comes through the font selector as a generic family
@@ -1513,16 +1662,44 @@ bool skiac_font_collection_default_font_units(
 
 sk_sp<SkFontStyleSet> MakeSplitFamily(skiac_font_collection* c_collection,
                                       std::string_view tagged) {
-  // "\x01" kind "\x01" family (FamilyResolver::FindSystem, FindWebFont).
+  // "\x01" kind "\x01" family (FamilyResolver::FindSystem, FindWebFont), or
+  // "\x01s\x01" k "\x01" + a tagged family (ResolveFontFamilies).
   if (tagged.size() < 4 || tagged[0] != '\x01' || tagged[2] != '\x01' ||
-      (tagged[1] != 'i' && tagged[1] != 'w')) {
+      (tagged[1] != 'i' && tagged[1] != 'w' && tagged[1] != 'a' &&
+       tagged[1] != 's')) {
     return nullptr;
+  }
+  if (tagged[1] == 's') {
+    const size_t end = tagged.find('\x01', 3);
+    if (end == std::string_view::npos || end == 3) {
+      return nullptr;
+    }
+    int rank = 0;
+    for (size_t i = 3; i < end; ++i) {
+      if (tagged[i] < '0' || tagged[i] > '9') {
+        return nullptr;
+      }
+      rank = rank * 10 + (tagged[i] - '0');
+    }
+    const std::string base(tagged.substr(end + 1));
+    if (base.empty() || base.front() != '\x01') {
+      return nullptr;
+    }
+    sk_sp<SkFontStyleSet> set = c_collection->assets->matchFamily(base.c_str());
+    if (!set) {
+      return nullptr;
+    }
+    return sk_make_sp<SegmentStyleSet>(std::move(set), rank);
   }
   const std::string_view name = tagged.substr(3);
   FamilyResolver resolver(c_collection);
   sk_sp<SkFontStyleSet> elsewhere;
   std::vector<sk_sp<SkTypeface>> faces =
-      resolver.Faces(name, tagged[1] == 'w', &elsewhere);
+      resolver.Faces(name,
+                     tagged[1] == 'w'   ? FaceKind::kWeb
+                     : tagged[1] == 'a' ? FaceKind::kAll
+                                        : FaceKind::kInstalled,
+                     &elsewhere);
   if (faces.empty()) {
     return elsewhere;
   }
@@ -1552,6 +1729,11 @@ sk_sp<SkTypeface> MatchNamedFamily(skiac_font_collection* c_collection,
             ? MakeSplitFamily(c_collection, name)
             : c_collection->assets->matchFamily(name.c_str());
     return set ? set->matchStyle(style) : nullptr;
+  }
+  // An installed family by the spelling `assets` lists, in any case, as
+  // FindSystem finds it for canvas text first.
+  if (family[0] && resolver.FindListed(family, &name)) {
+    return c_collection->assets->matchFamilyStyle(name.c_str(), style);
   }
   return c_collection->assets->matchFamilyStyle(family, style);
 }

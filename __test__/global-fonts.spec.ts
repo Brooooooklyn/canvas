@@ -892,10 +892,12 @@ const DEDUPED_PROBE = `
     out.states.push(FONTS.map(width))
     out.has.push(['A', 'B', 'C', 'D'].map((name) => GlobalFonts.has(name)))
   }
+  // EB Garamond first: the face added last under B (Lato) is the one B
+  // draws.
+  const garamond = register('EBGaramond-Regular.ttf', 'B')
   const lato = register('Lato-Regular.ttf', 'A')
   const again = register('Lato-Regular.ttf', 'B')
   out.sameKey = lato.typefaceId === again.typefaceId
-  const garamond = register('EBGaramond-Regular.ttf', 'B')
   out.aliases = [GlobalFonts.setAlias('B', 'C'), GlobalFonts.setAlias('C', 'D')]
   state()
   const removed = PROBE_TARGET === 'lato' ? lato : garamond
@@ -939,7 +941,7 @@ for (const renderer of ['portable', 'system'] as const) {
           const garamond = before[6]
           t.false(near(lato, garamond), `${at}: Lato ${lato}, EB Garamond ${garamond}`)
           // B has both fonts; the alias copies what text naming B draws:
-          // Lato, registered under B first.
+          // Lato, added to B last.
           for (const j of [0, 1, 2, 3]) {
             t.true(near(before[j], lato), `${at}, before: ${j} ${before[j]}, Lato ${lato}`)
           }
@@ -990,10 +992,16 @@ const CASE_ALIAS_PROBE = `
       BRAND: width('BRAND'),
       hasBRAND: GlobalFonts.has('BRAND'),
     })
+  const robotoMono = () =>
+    GlobalFonts.registerFromPath(PROBE_FONTS + '/RobotoMono-VariableFont_wght.ttf', 'lato') !== null
+  // PROBE_ORDER 'alias-first': Lato, setAlias('Lato', 'lato'), then Roboto
+  // Mono as 'lato'. 'font-first': Roboto Mono as 'lato', then Lato and
+  // setAlias('Lato', 'lato').
+  if (process.env.PROBE_ORDER === 'font-first') out.robotoMono = robotoMono()
   GlobalFonts.registerFromPath(PROBE_FONTS + '/Lato-Regular.ttf')
   GlobalFonts.registerFromPath(PROBE_FONTS + '/Lato-Regular.ttf', 'Brand')
   out.aliases = [GlobalFonts.setAlias('Lato', 'lato'), GlobalFonts.setAlias('Brand', 'BRAND')]
-  out.robotoMono = GlobalFonts.registerFromPath(PROBE_FONTS + '/RobotoMono-VariableFont_wght.ttf', 'lato') !== null
+  if (process.env.PROBE_ORDER !== 'font-first') out.robotoMono = robotoMono()
   state()
   GlobalFonts.remove(GlobalFonts.registerFromPath(PROBE_FONTS + '/Oswald.ttf', 'Unrelated'))
   state()
@@ -1003,41 +1011,54 @@ const CASE_ALIAS_PROBE = `
   console.log(JSON.stringify(out))`
 
 for (const renderer of ['portable', 'system'] as const) {
-  test.serial(`a case-only alias is listed at once, before a font later registered under it (${renderer})`, (t) => {
+  test.serial(`a case-only alias is listed at once, in the order of the calls (${renderer})`, (t) => {
     const near = (a: number, b: number) => Math.abs(a - b) <= 1e-3
-    const child = spawnSync(process.execPath, ['-e', CASE_ALIAS_PROBE], {
-      encoding: 'utf8',
-      timeout: 30_000,
-      env: {
-        ...process.env,
-        RENDERER: renderer,
-        PROBE_FONTS: join(__dirname, 'fonts'),
-        PROBE_INDEX: join(__dirname, '..', 'index.js'),
-      },
-    })
-    t.is(child.status, 0, child.stderr)
-    const out = JSON.parse(child.stdout)
-    t.deepEqual(out.aliases, [true, true])
-    t.true(out.robotoMono)
-    // Right after the calls, after an unrelated removal (a rebuild) and
-    // after a renderer switch: 'lato' lists the alias (Lato) before Roboto
-    // Mono, registered under 'lato' after it, and 'BRAND' is listed.
-    for (const [i, s] of out.states.entries()) {
-      const at = `state ${i}`
-      t.false(near(s.Lato, s.robotoMono), `${at}: Lato ${s.Lato}, Roboto Mono ${s.robotoMono}`)
-      t.true(near(s.lato, s.Lato), `${at}: lato ${s.lato}, Lato ${s.Lato}`)
-      // Roboto Mono has a wght axis, Lato none (no width match needed).
-      t.false(s.latoVariations, at)
-      t.true(near(s.BRAND, s.Lato), `${at}: BRAND ${s.BRAND}, Lato ${s.Lato}`)
-      t.true(s.hasBRAND, at)
+    for (const order of ['alias-first', 'font-first']) {
+      const child = spawnSync(process.execPath, ['-e', CASE_ALIAS_PROBE], {
+        encoding: 'utf8',
+        timeout: 30_000,
+        env: {
+          ...process.env,
+          RENDERER: renderer,
+          PROBE_ORDER: order,
+          PROBE_FONTS: join(__dirname, 'fonts'),
+          PROBE_INDEX: join(__dirname, '..', 'index.js'),
+        },
+      })
+      t.is(child.status, 0, child.stderr)
+      const out = JSON.parse(child.stdout)
+      t.deepEqual(out.aliases, [true, true], order)
+      t.true(out.robotoMono, order)
+      // Right after the calls, after an unrelated removal (a rebuild) and
+      // after a renderer switch. 'lato' and 'Lato' are one family (Chrome
+      // 157: FontFaceCache folds case), and the face added to it last
+      // draws: Roboto Mono when it is registered after the alias; Lato
+      // (the alias, listed at the call) when the alias comes after it.
+      // 'BRAND' is listed.
+      for (const [i, s] of out.states.entries()) {
+        const at = `${order}, state ${i}`
+        t.false(near(s.BRAND, s.robotoMono), `${at}: BRAND ${s.BRAND}, Roboto Mono ${s.robotoMono}`)
+        // Roboto Mono has a wght axis, Lato none (no width match needed).
+        if (order === 'alias-first') {
+          t.true(near(s.lato, s.robotoMono), `${at}: lato ${s.lato}, Roboto Mono ${s.robotoMono}`)
+          t.true(near(s.Lato, s.robotoMono), `${at}: Lato ${s.Lato}, Roboto Mono ${s.robotoMono}`)
+          t.true(s.latoVariations, at)
+        } else {
+          t.true(near(s.lato, s.BRAND), `${at}: lato ${s.lato}, Lato ${s.BRAND}`)
+          t.true(near(s.Lato, s.BRAND), `${at}: Lato ${s.Lato}, Lato ${s.BRAND}`)
+          t.false(s.latoVariations, at)
+        }
+        t.true(s.hasBRAND, at)
+      }
     }
   })
 }
 
 // Fonts registered under several spellings of an installed family: the face
 // text draws follows the order of the registrations and setAlias calls,
-// whatever spelling each used (EB Garamond first, then Roboto Mono: EB
-// Garamond, as with both under one spelling). And convertSVGTextToPath uses
+// whatever spelling each used. The face added last wins (EB Garamond, then
+// Roboto Mono: Roboto Mono, as with both under one spelling; Chrome 157
+// lists the faces of one style newest first). And convertSVGTextToPath uses
 // the face canvas text and SVG images use: Lato registered as the installed
 // family gives the same path bytes as Lato under its own name. Right after
 // the calls, after an unrelated removal (a rebuild) and a renderer switch.
@@ -1079,7 +1100,7 @@ const SPELLINGS_PROBE = `
 
 for (const renderer of ['portable', 'system'] as const) {
   test.serial(
-    `spellings of an installed family keep registration order, and SVG paths use the drawn face (${renderer})`,
+    `spellings of an installed family: the face added last wins, and SVG paths use the drawn face (${renderer})`,
     (t) => {
       const dir = mkdtempSync(join(tmpdir(), 'canvas-spellings-'))
       t.teardown(() => rmSync(dir, { recursive: true, force: true }))
@@ -1120,11 +1141,12 @@ for (const renderer of ['portable', 'system'] as const) {
           const at = `${steps} state ${i}`
           // Roboto Mono has a wght axis, EB Garamond and Source Serif Pro none.
           t.true(s.variations[3], at)
+          t.false(near(s.widths[2], s.widths[3]), `${at}: EB Garamond ${s.widths[2]}, Roboto Mono ${s.widths[3]}`)
           for (const j of [0, 1]) {
-            t.true(near(s.widths[j], s.widths[2]), `${at}: ${s.widths[j]}, EB Garamond ${s.widths[2]}`)
-            t.false(s.variations[j], at)
+            t.true(near(s.widths[j], s.widths[3]), `${at}: ${s.widths[j]}, Roboto Mono ${s.widths[3]}`)
+            t.true(s.variations[j], at)
             t.true(s.has[j], at)
-            t.is(s.paths[j], s.paths[2], at)
+            t.is(s.paths[j], s.paths[3], at)
           }
         }
       }
@@ -1217,4 +1239,299 @@ for (const renderer of ['portable', 'system'] as const) {
       t.true(near(s.latoBody, s.standard), `${at}: Lato, -webkit-body ${s.latoBody}, standard ${s.standard}`)
     }
   })
+}
+
+// Steps, separated by commas: reg:FONT[:NAME] (registerFromPath; buf: the
+// same with register(buffer)), alias:FAMILY:NAME, remove:FONT (its latest
+// registration), dir (loadFontsFromDir of PROBE_DIR), state, rebuild (an
+// unrelated font removed), switch (the other renderer and back). Each state
+// gives, per name of PROBE_NAMES: "Ag" and "Agक" measureText [width,
+// fontBoundingBoxAscent, fontBoundingBoxDescent] at 40px, "Ag" in bold, "Ag"
+// with font-variation-settings 'wght' 700 and 400 ([width, actual bounding
+// box left, right, ascent]), the convertSVGTextToPath bytes at
+// 400 and 700, hasVariations and getVariationAxes. At the end each font of
+// PROBE_REFS is registered under a name of its own (Ref + FONT), and its
+// state is given in `refs`.
+const FACE_ORDER_PROBE = `
+  const { readFileSync } = require('fs')
+  const { createCanvas, GlobalFonts, setTextRenderer, convertSVGTextToPath } = require(process.env.PROBE_INDEX)
+  const { RENDERER, PROBE_STEPS, PROBE_FONTS, PROBE_DIR } = process.env
+  const NAMES = JSON.parse(process.env.PROBE_NAMES)
+  const FILES = {
+    Lato: 'Lato-Regular.ttf',
+    Oswald: 'Oswald.ttf',
+    RM: 'RobotoMono-VariableFont_wght.ttf',
+    Deva: 'NotoSansDevanagari-subset.ttf',
+    CJK: 'NotoSansCJKjp-Regular-subset-halt.otf',
+    SHSBold: 'SourceHanSerifCN-Bold.ttf',
+    SSP: 'SourceSerifPro-Regular.ttf',
+  }
+  setTextRenderer(RENDERER)
+  const metrics = (font, text, settings) => {
+    const ctx = createCanvas(10, 10).getContext('2d')
+    ctx.font = font
+    if (settings) ctx.fontVariationSettings = settings
+    const m = ctx.measureText(text)
+    return settings
+      ? [m.width, m.actualBoundingBoxLeft, m.actualBoundingBoxRight, m.actualBoundingBoxAscent]
+      : [m.width, m.fontBoundingBoxAscent, m.fontBoundingBoxDescent]
+  }
+  const path = (family, weight) =>
+    convertSVGTextToPath(
+      '<svg xmlns="http://www.w3.org/2000/svg" width="200" height="60"><text x="5" y="45" font-size="40" font-weight="' +
+        weight + '" font-family="' + family + '">Ag</text></svg>',
+    ).toString('base64')
+  const of = (name) => ({
+    w: metrics('40px "' + name + '"', 'Ag'),
+    deva: metrics('40px "' + name + '"', 'Agक'),
+    wb: metrics('bold 40px "' + name + '"', 'Ag'),
+    fvs: metrics('40px "' + name + '"', 'Ag', "'wght' 700"),
+    ink: metrics('40px "' + name + '"', 'Ag', "'wght' 400"),
+    path400: path(name, 400),
+    path700: path(name, 700),
+    variations: GlobalFonts.hasVariations(name, 400, 5, 0),
+    axes: GlobalFonts.getVariationAxes(name, 400, 5, 0).map((axis) => axis.tag),
+  })
+  const register = (how, font, name) =>
+    how === 'buf'
+      ? GlobalFonts.register(readFileSync(PROBE_FONTS + '/' + FILES[font]), name)
+      : GlobalFonts.registerFromPath(PROBE_FONTS + '/' + FILES[font], name)
+  const out = { steps: [], states: [], refs: {} }
+  const keys = {}
+  for (const step of PROBE_STEPS.split(',')) {
+    const [kind, a, b] = step.split(':')
+    if (kind === 'reg' || kind === 'buf') {
+      keys[a] = register(kind, a, b)
+      out.steps.push(keys[a] !== null)
+    } else if (kind === 'alias') out.steps.push(GlobalFonts.setAlias(a, b))
+    else if (kind === 'remove') out.steps.push(GlobalFonts.remove(keys[a]))
+    else if (kind === 'dir') out.steps.push(GlobalFonts.loadFontsFromDir(PROBE_DIR) > 0)
+    else if (kind === 'rebuild')
+      GlobalFonts.remove(GlobalFonts.registerFromPath(PROBE_FONTS + '/EBGaramond-Regular.ttf', 'UnrelatedEBG'))
+    else if (kind === 'switch') {
+      setTextRenderer(RENDERER === 'system' ? 'portable' : 'system')
+      setTextRenderer(RENDERER)
+    } else out.states.push(Object.fromEntries(NAMES.map((name) => [name, of(name)])))
+  }
+  for (const font of JSON.parse(process.env.PROBE_REFS || '[]')) {
+    register('reg', font, 'Ref' + font)
+    out.refs[font] = of('Ref' + font)
+  }
+  out.refs.none = of('NoSuchFamily')
+  console.log(JSON.stringify(out))`
+
+function faceOrderProbe(
+  t: import('ava').ExecutionContext,
+  renderer: string,
+  steps: string[],
+  names: string[],
+  refs: string[],
+  dir?: string,
+) {
+  const child = spawnSync(process.execPath, ['-e', FACE_ORDER_PROBE], {
+    encoding: 'utf8',
+    timeout: 60_000,
+    env: {
+      ...process.env,
+      RENDERER: renderer,
+      PROBE_STEPS: [...steps, 'state', 'rebuild', 'state', 'switch', 'state'].join(','),
+      PROBE_NAMES: JSON.stringify(names),
+      PROBE_REFS: JSON.stringify(refs),
+      PROBE_DIR: dir ?? '',
+      PROBE_FONTS: join(__dirname, 'fonts'),
+      PROBE_INDEX: join(__dirname, '..', 'index.js'),
+    },
+  })
+  t.is(child.status, 0, child.stderr)
+  const out = JSON.parse(child.stdout)
+  t.true(
+    out.steps.every((ok: boolean) => ok),
+    `${steps}: ${out.steps}`,
+  )
+  t.is(out.states.length, 3)
+  return out
+}
+
+// Chrome 157 (fixtures/face-order.json): faces of one style under one family
+// name are listed newest first (CSSSegmentedFontFace::GetFontData walks the
+// faces in reverse). The face added last draws and gives the font metrics;
+// the older faces of that style are its fallback, before the next family
+// (FontFallbackIterator walks every face of the segmented font). Registering
+// a font again makes it the newest (a FontFace added again); removing the
+// newest gives the next one back.
+const FACE_ORDER = JSON.parse(readFileSync(join(__dirname, 'fixtures', 'face-order.json'), 'utf8'))
+// The face each row draws for regular text (registered alone as Ref + font).
+const FACE_ORDER_NEWEST: Record<string, string> = {
+  'two-faces': 'Oswald',
+  'two-faces-rev': 'Lato',
+  'three-faces': 'RM',
+  'var-last': 'RM',
+  'with-bold': 'Oswald',
+  'cjk-last': 'CJK',
+  'alias-last': 'Oswald',
+  'alias-first': 'Lato',
+  'sibling-glyphs': 'Deva',
+  'sibling-glyphs-rev': 'Lato',
+  'removed-last': 'Lato',
+  're-register': 'Lato',
+}
+const FACE_ORDER_SIBLINGS = new Set(['sibling-glyphs', 'sibling-glyphs-rev'])
+
+function faceOrderSteps(chrome: string[][], how: 'reg' | 'buf') {
+  return chrome.map(([kind, a, b]) => {
+    if (kind === 'reg') return [how, a, b].filter(Boolean).join(':')
+    if (kind === 'alias') return `alias:${a}:${b}`
+    // ['remove', 'reg:FONT:NAME']
+    return `remove:${a.split(':')[1]}`
+  })
+}
+
+for (const renderer of ['portable', 'system'] as const) {
+  test.serial(
+    `faces of one style under one name: the one added last draws, and the others are its fallback (${renderer})`,
+    (t) => {
+      const near = (a: number, b: number) => Math.abs(a - b) <= 1e-3
+      for (const [key, newest] of Object.entries(FACE_ORDER_NEWEST)) {
+        const row = FACE_ORDER.rows[key]
+        for (const how of ['reg', 'buf'] as const) {
+          const out = faceOrderProbe(t, renderer, faceOrderSteps(row.steps, how), [row.name], [newest])
+          const ref = out.refs[newest]
+          for (const [i, state] of out.states.entries()) {
+            const s = state[row.name]
+            const at = `${key} (${how}) state ${i}`
+            for (const [j, value] of row.w.Ag.entries()) {
+              t.true(near(s.w[j], value), `${at}: Ag ${s.w}, Chrome ${row.w.Ag}`)
+            }
+            // A character only an older face has comes from it, with the
+            // newest face's metrics.
+            if (FACE_ORDER_SIBLINGS.has(key)) {
+              for (const [j, value] of row.w['Agक'].entries()) {
+                t.true(near(s.deva[j], value), `${at}: Agक ${s.deva}, Chrome ${row.w['Agक']}`)
+              }
+            }
+            // Not where the newest regular face is variable: Chrome does not
+            // vary a FontFace with no weight descriptor for bold (a separate
+            // item).
+            if (newest !== 'Oswald' && newest !== 'RM') {
+              for (const [j, value] of row.wb.Ag.entries()) {
+                t.true(near(s.wb[j], value), `${at}: bold Ag ${s.wb}, Chrome ${row.wb.Ag}`)
+              }
+            }
+            // SVG paths and the variation queries take the newest face.
+            t.is(s.path400, ref.path400, `${at}: path`)
+            t.is(s.variations, ref.variations, `${at}: hasVariations`)
+            t.deepEqual(s.axes, ref.axes, `${at}: axes`)
+            // font-variation-settings reach the newest face, with its
+            // older face as a sibling in the same lists (where the newest
+            // face has the glyphs).
+            if (!FACE_ORDER_SIBLINGS.has(key)) {
+              for (const [j, value] of ref.fvs.entries()) {
+                t.true(near(s.fvs[j], value), `${at}: 'wght' 700 ${s.fvs}, alone ${ref.fvs}`)
+              }
+            }
+          }
+          if (key === 'var-last') {
+            t.true(ref.variations, `${key}: Roboto Mono varies`)
+            t.false(near(ref.fvs[2], ref.ink[2]), `${key}: 'wght' 700 ${ref.fvs}, 400 ${ref.ink}`)
+          }
+        }
+      }
+    },
+  )
+}
+
+// Chrome 157 (fixtures/text-fonts/family-spellings.json): FontFaceCache keys
+// families case-folded, so "Brand", "brand" and "BRAND" are one family, and
+// the face is picked by style over all its faces; of two faces of one style
+// the one added last draws ("ties"). A setAlias name is one more face of
+// that family. The SVG path and the variation queries use the same faces.
+const FAMILY_SPELLINGS = JSON.parse(
+  readFileSync(join(__dirname, 'fixtures', 'text-fonts', 'family-spellings.json'), 'utf8'),
+)
+
+for (const renderer of ['portable', 'system'] as const) {
+  test.serial(`spellings of a registered-only family are one family (${renderer})`, (t) => {
+    const near = (a: number, b: number) => Math.abs(a - b) <= 1e-3
+    const rows: [string, string[], Record<string, { w: number; wb: number }>, boolean][] = []
+    for (const [key, row] of Object.entries<any>({ ...FAMILY_SPELLINGS.pinned, ...FAMILY_SPELLINGS.ties })) {
+      const steps = row.faces.map(([name, font]: string[]) =>
+        // Source Serif Pro under its own name: no alias.
+        name === 'Source Serif Pro' ? `reg:${font}` : `reg:${font === 'RobotoMono' ? 'RM' : font}:${name}`,
+      )
+      rows.push([key, steps, row.names, key in FAMILY_SPELLINGS.pinned])
+    }
+    // A setAlias name of the family's spelling is a face of it too.
+    rows.push([
+      'b-alias',
+      ['reg:Lato:Brand', 'reg:SHSBold:Other', 'alias:Other:brand'],
+      FAMILY_SPELLINGS.pinned['b-style'].names,
+      true,
+    ])
+    for (const [key, steps, names, styled] of rows) {
+      const out = faceOrderProbe(t, renderer, steps, Object.keys(names), ['Lato', 'SHSBold', 'Oswald', 'RM', 'SSP'])
+      for (const [i, state] of out.states.entries()) {
+        for (const [name, chrome] of Object.entries(names)) {
+          const s = state[name]
+          const at = `${key} ${name} state ${i}`
+          t.true(near(s.w[0], chrome.w), `${at}: ${s.w[0]}, Chrome ${chrome.w}`)
+          // Ties are faces of one style: bold is that face (variable bold
+          // is a separate item, so only the style rows pin it).
+          if (styled) t.true(near(s.wb[0], chrome.wb), `${at}: bold ${s.wb[0]}, Chrome ${chrome.wb}`)
+          const regular =
+            key === 'b-own' ? 'SSP' : near(chrome.w, 47.64) ? 'Lato' : near(chrome.w, 37.32) ? 'Oswald' : 'RM'
+          t.is(s.path400, out.refs[regular].path400, `${at}: path 400 ${regular}`)
+          if (styled) t.is(s.path700, out.refs.SHSBold.path700, `${at}: path 700`)
+          t.is(s.variations, out.refs[regular].variations, `${at}: hasVariations`)
+        }
+      }
+    }
+  })
+}
+
+// An installed family (here from loadFontsFromDir) matches in any case for
+// convertSVGTextToPath, hasVariations, getVariationAxes and setAlias, as for
+// canvas text (Chrome 157: "helvetica" draws Helvetica in canvas and SVG
+// text).
+for (const renderer of ['portable', 'system'] as const) {
+  test.serial(
+    `a case-only spelling of an installed family is that family for SVG paths, variation queries and setAlias (${renderer})`,
+    (t) => {
+      const dir = mkdtempSync(join(tmpdir(), 'canvas-case-installed-'))
+      t.teardown(() => rmSync(dir, { recursive: true, force: true }))
+      copyFileSync(fontPath, join(dir, 'SourceSerifPro-Regular.ttf'))
+      copyFileSync(join(__dirname, 'fonts', 'RobotoMono-VariableFont_wght.ttf'), join(dir, 'RobotoMono.ttf'))
+      const near = (a: number, b: number) => Math.abs(a - b) <= 1e-3
+      const NAMES = [
+        'Source Serif Pro',
+        'source serif pro',
+        'SOURCE SERIF PRO',
+        'Roboto Mono',
+        'roboto mono',
+        'SspAlias',
+      ]
+      // Each font is also registered alone (RefSSP, RefRM) at the end, so a
+      // spelling's path is checked against that font itself. A check against
+      // the fallback path does not hold on a host with no fonts installed:
+      // there the fallback is one of these two fonts.
+      const out = faceOrderProbe(t, renderer, ['dir', 'alias:source serif pro:SspAlias'], NAMES, ['SSP', 'RM'], dir)
+      const WGHT = 0x77676874
+      for (const [i, s] of out.states.entries()) {
+        const at = `state ${i}`
+        for (const [spelling, exact, font] of [
+          ['source serif pro', 'Source Serif Pro', 'SSP'],
+          ['SOURCE SERIF PRO', 'Source Serif Pro', 'SSP'],
+          ['roboto mono', 'Roboto Mono', 'RM'],
+        ]) {
+          t.is(s[spelling].path400, s[exact].path400, `${at}: ${spelling} path`)
+          t.is(s[spelling].path400, out.refs[font].path400, `${at}: ${spelling} path is ${exact}`)
+          t.is(s[spelling].variations, s[exact].variations, `${at}: ${spelling} hasVariations`)
+          t.deepEqual(s[spelling].axes, s[exact].axes, `${at}: ${spelling} axes`)
+        }
+        t.true(s['roboto mono'].variations, at)
+        t.deepEqual(s['roboto mono'].axes, [WGHT], at)
+        t.true(near(s.SspAlias.w[0], s['Source Serif Pro'].w[0]), `${at}: SspAlias ${s.SspAlias.w[0]}`)
+        t.is(s.SspAlias.path400, s['Source Serif Pro'].path400, `${at}: SspAlias path`)
+      }
+    },
+  )
 }

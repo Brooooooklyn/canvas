@@ -233,6 +233,11 @@ struct RegisteredFont {
   // FontFace name (font_families.cpp FamilyResolver), also when the face is
   // an installed one (a file loadFontsFromDir loaded before the call).
   std::vector<bool> alias_args;
+  // When the same font was registered again under each name (parallel to
+  // aliases, shorter when none was; 0 for never): a FontFace added again
+  // is the newest of its style (font_families.cpp FamilyResolver::Faces).
+  // The provider's own sets keep the first listing.
+  std::vector<uint64_t> relists;
 };
 
 struct skiac_font_collection;
@@ -247,9 +252,22 @@ sk_sp<SkFontStyleSet> MakeSplitFamily(skiac_font_collection* c_collection,
 sk_sp<SkTypeface> MatchNamedFamily(skiac_font_collection* c_collection,
                                    const char* family,
                                    const SkFontStyle& style);
+// font_families.cpp: a family name case-folded as FontFaceCache keys it.
+std::string FoldFamilyName(std::string_view name);
 // text_metrics.cpp: an installed face, not a registered one.
 bool IsSystemTypeface(skiac_font_collection* c_collection,
                       SkTypeface* typeface);
+
+// The set lists the face (the exact family spelling, no case folding).
+inline bool ListsFace(const sk_sp<SkFontStyleSet>& set, SkTypefaceID id) {
+  for (int i = 0; set && i < set->count(); ++i) {
+    auto face = set->createTypeface(i);
+    if (face && face->uniqueID() == id) {
+      return true;
+    }
+  }
+  return false;
+}
 
 class TypefaceFontProviderCustom : public TypefaceFontProvider {
  public:
@@ -457,22 +475,60 @@ class TypefaceFontProviderCustom : public TypefaceFontProvider {
     return id;
   }
 
-  // When the face `typeface_id` was registered under `name` (the earliest
-  // such name of a registration, installed ones too), UINT64_MAX for never.
-  uint64_t orderOf(const std::string& name, SkTypefaceID typeface_id) const {
-    uint64_t order = UINT64_MAX;
+  // When the face `typeface_id` was registered under `name`: the earliest
+  // such name of a registration, installed ones too (UINT64_MAX for never),
+  // or with `latest` the latest, counting a registration again (relist; 0
+  // for never).
+  uint64_t orderOf(const std::string& name,
+                   SkTypefaceID typeface_id,
+                   bool latest) const {
+    uint64_t order = latest ? 0 : UINT64_MAX;
     for (const auto& [id, font_info] : registered_fonts) {
       if (!font_info.typeface ||
           font_info.typeface->uniqueID() != typeface_id) {
         continue;
       }
       for (size_t i = 0; i < font_info.aliases.size(); ++i) {
-        if (font_info.aliases[i] == name) {
+        if (font_info.aliases[i] != name) {
+          continue;
+        }
+        if (!latest) {
           order = std::min(order, font_info.orders[i]);
+          continue;
+        }
+        order = std::max(order, font_info.orders[i]);
+        if (i < font_info.relists.size()) {
+          order = std::max(order, font_info.relists[i]);
         }
       }
     }
     return order;
+  }
+
+  // The font `id` registered again under `name`, a name it has: as a
+  // FontFace added again, its face is the newest under that name
+  // (orderOf with `latest`). Nothing when the name was the last listing.
+  // Returns whether the order changed.
+  bool relist(uint32_t id, const std::string& name) {
+    auto it = registered_fonts.find(id);
+    if (it == registered_fonts.end()) {
+      return false;
+    }
+    RegisteredFont& font_info = it->second;
+    for (size_t i = 0; i < font_info.aliases.size(); ++i) {
+      if (font_info.aliases[i] != name ||
+          font_info.orders[i] == registrations ||
+          (i < font_info.relists.size() &&
+           font_info.relists[i] == registrations)) {
+        continue;
+      }
+      if (font_info.relists.size() <= i) {
+        font_info.relists.resize(i + 1, 0);
+      }
+      font_info.relists[i] = ++registrations;
+      return true;
+    }
+    return false;
   }
 
   // Whether a register / registerFromPath call gave the face `typeface_id`
@@ -1164,15 +1220,19 @@ struct skiac_font_collection {
     // A switch (relist_installed) flipped the mode before this rebuild.
     const int mode = SystemFontRenderer() ? 1 : 0;
     const int previous_mode = relist_installed ? 1 - mode : mode;
-    // {order, is a setAlias, font ID, alias index or set_aliases index}
-    std::vector<std::tuple<uint64_t, bool, uint32_t, size_t>> names;
+    // {order, kind, font ID, alias index or set_aliases index}
+    enum : uint8_t { kName, kSetAlias, kRelist };
+    std::vector<std::tuple<uint64_t, uint8_t, uint32_t, size_t>> names;
     for (const auto& [id, font_info] : old_fonts) {
       for (size_t i = 0; i < font_info.aliases.size(); ++i) {
-        names.emplace_back(font_info.orders[i], false, id, i);
+        names.emplace_back(font_info.orders[i], kName, id, i);
+        if (i < font_info.relists.size() && font_info.relists[i]) {
+          names.emplace_back(font_info.relists[i], kRelist, id, i);
+        }
       }
     }
     for (size_t i = 0; i < set_aliases.size(); ++i) {
-      names.emplace_back(set_aliases[i].order, true, 0, i);
+      names.emplace_back(set_aliases[i].order, kSetAlias, 0, i);
     }
     std::sort(names.begin(), names.end());
     // Each alias is made again in its turn (MatchNamedFamily sees only
@@ -1186,8 +1246,16 @@ struct skiac_font_collection {
     // Each font made again, by ID; null when it is not kept.
     std::map<uint32_t, sk_sp<SkTypeface>> made;
     [[maybe_unused]] bool relisted = false;
-    for (const auto& [order, is_set_alias, id, index] : names) {
-      if (is_set_alias) {
+    for (const auto& [order, kind, id, index] : names) {
+      if (kind == kRelist) {
+        // The same font registered again, in its turn.
+        auto it = made.find(id);
+        if (it != made.end() && it->second) {
+          new_assets->relist(id, old_fonts.at(id).aliases[index]);
+        }
+        continue;
+      }
+      if (kind == kSetAlias) {
 #if defined(__APPLE__)
         // setAlias lists the installed fonts first (prepareLookup).
         if (relist_installed && !relisted) {
@@ -1236,7 +1304,10 @@ struct skiac_font_collection {
         entry.active = typeface != nullptr;
         // The face made again for this provider.
         entry.face_id = typeface ? typeface->uniqueID() : 0;
-        if (typeface) {
+        // A face the alias name lists already is not listed twice (the
+        // entry's order makes it the newest: font_families.cpp Faces).
+        if (typeface && !ListsFace(new_assets->matchFamily(entry.alias.c_str()),
+                                   typeface->uniqueID())) {
           new_assets->registerTypeface(std::move(typeface),
                                        SkString(entry.alias.c_str()));
         }

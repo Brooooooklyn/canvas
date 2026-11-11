@@ -1,0 +1,208 @@
+{
+  "note": "Chrome 157.0.0.0 headless (desktop mode, --disable-gpu, en-US, DPR 1), one fresh page per row. reg = document.fonts.add(new FontFace(alias or the font's own name, bytes)) (SHSBold with weight 700, its own style), alias = FontFace(alias, the same bytes) for a registered family, else local(family); remove = document.fonts.delete. Values: canvas measureText [width, fontBoundingBoxAscent, fontBoundingBoxDescent] at 40px (\"w\") and bold 40px (\"wb\"). helv-* are macOS rows (installed Helvetica / Arial).",
+  "ua": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/157.0.0.0 Safari/537.36",
+  "rows": {
+    "two-faces": {
+      "steps": [
+        ["reg", "Lato", "Brand"],
+        ["reg", "Oswald", "Brand"]
+      ],
+      "name": "Brand",
+      "w": {
+        "Ag": [37.31999206542969, 48, 12],
+        "Agक": [68.11997985839844, 48, 12]
+      },
+      "wb": {
+        "Ag": [37.31999206542969, 48, 12]
+      }
+    },
+    "two-faces-rev": {
+      "steps": [
+        ["reg", "Oswald", "Brand"],
+        ["reg", "Lato", "Brand"]
+      ],
+      "name": "Brand",
+      "w": {
+        "Ag": [47.639984130859375, 39, 9],
+        "Agक": [78.43997192382812, 39, 9]
+      },
+      "wb": {
+        "Ag": [47.639984130859375, 39, 9]
+      }
+    },
+    "three-faces": {
+      "steps": [
+        ["reg", "Lato", "Brand"],
+        ["reg", "Oswald", "Brand"],
+        ["reg", "RM", "Brand"]
+      ],
+      "name": "Brand",
+      "w": {
+        "Ag": [48.0078125, 42, 11],
+        "Agक": [78.80780029296875, 42, 11]
+      },
+      "wb": {
+        "Ag": [48.0078125, 42, 11]
+      }
+    },
+    "var-last": {
+      "steps": [
+        ["reg", "Lato", "Brand"],
+        ["reg", "RM", "Brand"]
+      ],
+      "name": "Brand",
+      "w": {
+        "Ag": [48.0078125, 42, 11],
+        "Agक": [78.80780029296875, 42, 11]
+      },
+      "wb": {
+        "Ag": [48.0078125, 42, 11]
+      }
+    },
+    "with-bold": {
+      "steps": [
+        ["reg", "Lato", "Brand"],
+        ["reg", "SHSBold", "Brand"],
+        ["reg", "Oswald", "Brand"]
+      ],
+      "name": "Brand",
+      "w": {
+        "Ag": [37.31999206542969, 48, 12],
+        "Agक": [68.11997985839844, 48, 12]
+      },
+      "wb": {
+        "Ag": [53.28125, 46, 11]
+      }
+    },
+    "cjk-last": {
+      "steps": [
+        ["reg", "Lato", "Brand"],
+        ["reg", "CJK", "Brand"]
+      ],
+      "name": "Brand",
+      "w": {
+        "Ag": [46.87998962402344, 46, 12],
+        "Agक": [77.67997741699219, 46, 12]
+      },
+      "wb": {
+        "Ag": [46.87998962402344, 46, 12]
+      }
+    },
+    "alias-last": {
+      "steps": [
+        ["reg", "Oswald"],
+        ["reg", "Lato", "Brand"],
+        ["alias", "Oswald", "Brand"]
+      ],
+      "name": "Brand",
+      "w": {
+        "Ag": [37.31999206542969, 48, 12],
+        "Agक": [68.11997985839844, 48, 12]
+      },
+      "wb": {
+        "Ag": [37.31999206542969, 48, 12]
+      }
+    },
+    "alias-first": {
+      "steps": [
+        ["reg", "Oswald"],
+        ["alias", "Oswald", "Brand"],
+        ["reg", "Lato", "Brand"]
+      ],
+      "name": "Brand",
+      "w": {
+        "Ag": [47.639984130859375, 39, 9],
+        "Agक": [78.43997192382812, 39, 9]
+      },
+      "wb": {
+        "Ag": [47.639984130859375, 39, 9]
+      }
+    },
+    "sibling-glyphs": {
+      "steps": [
+        ["reg", "Lato", "Brand"],
+        ["reg", "Deva", "Brand"]
+      ],
+      "name": "Brand",
+      "w": {
+        "Ag": [47.639984130859375, 36, 16],
+        "Agक": [78.35997009277344, 36, 16]
+      },
+      "wb": {
+        "Ag": [47.639984130859375, 36, 16]
+      }
+    },
+    "sibling-glyphs-rev": {
+      "steps": [
+        ["reg", "Deva", "Brand"],
+        ["reg", "Lato", "Brand"]
+      ],
+      "name": "Brand",
+      "w": {
+        "Ag": [47.639984130859375, 39, 9],
+        "Agक": [78.35997009277344, 39, 9]
+      },
+      "wb": {
+        "Ag": [47.639984130859375, 39, 9]
+      }
+    },
+    "removed-last": {
+      "steps": [
+        ["reg", "Lato", "Brand"],
+        ["reg", "Oswald", "Brand"],
+        ["remove", "reg:Oswald:Brand"]
+      ],
+      "name": "Brand",
+      "w": {
+        "Ag": [47.639984130859375, 39, 9],
+        "Agक": [78.43997192382812, 39, 9]
+      },
+      "wb": {
+        "Ag": [47.639984130859375, 39, 9]
+      }
+    },
+    "re-register": {
+      "steps": [
+        ["reg", "Lato", "Brand"],
+        ["reg", "Oswald", "Brand"],
+        ["reg", "Lato", "Brand"]
+      ],
+      "name": "Brand",
+      "w": {
+        "Ag": [47.639984130859375, 39, 9],
+        "Agक": [78.43997192382812, 39, 9]
+      },
+      "wb": {
+        "Ag": [47.639984130859375, 39, 9]
+      }
+    },
+    "helv-alias": {
+      "steps": [
+        ["reg", "Lato", "Helvetica"],
+        ["alias", "Arial", "Helvetica"]
+      ],
+      "name": "Helvetica",
+      "w": {
+        "Ag": [48.92578125, 36, 8],
+        "Agक": [79.72576904296875, 36, 8]
+      },
+      "wb": {
+        "Ag": [48.92578125, 36, 8]
+      }
+    },
+    "helv-two": {
+      "steps": [
+        ["reg", "Lato", "Helvetica"],
+        ["reg", "Oswald", "Helvetica"]
+      ],
+      "name": "Helvetica",
+      "w": {
+        "Ag": [37.31999206542969, 48, 12],
+        "Agक": [68.11997985839844, 48, 12]
+      },
+      "wb": {
+        "Ag": [37.31999206542969, 48, 12]
+      }
+    }
+  }
+}

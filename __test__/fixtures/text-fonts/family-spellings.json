@@ -1,0 +1,177 @@
+{
+  "note": "Chrome 157.0.0.0 headless (desktop mode, --disable-gpu, en-US, DPR 1), one fresh page per scenario. Each face is document.fonts.add(new FontFace(family, bytes, descriptors)) in the order listed (SHSBold with weight 700, its own style). Values: canvas measureText(\"Ag\").width at 40px (\"w\") and bold 40px (\"wb\") for each spelling. Every spelling of a family draws the same faces; of two faces of one style the one added last draws (\"ties\").",
+  "ua": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/157.0.0.0 Safari/537.36",
+  "pinned": {
+    "b-style": {
+      "faces": [
+        ["Brand", "Lato"],
+        ["brand", "SHSBold"]
+      ],
+      "names": {
+        "Brand": {
+          "w": 47.639984130859375,
+          "wb": 53.28125
+        },
+        "brand": {
+          "w": 47.639984130859375,
+          "wb": 53.28125
+        },
+        "BRAND": {
+          "w": 47.639984130859375,
+          "wb": 53.28125
+        }
+      }
+    },
+    "b-style-rev": {
+      "faces": [
+        ["brand", "SHSBold"],
+        ["Brand", "Lato"]
+      ],
+      "names": {
+        "Brand": {
+          "w": 47.639984130859375,
+          "wb": 53.28125
+        },
+        "brand": {
+          "w": 47.639984130859375,
+          "wb": 53.28125
+        },
+        "BRAND": {
+          "w": 47.639984130859375,
+          "wb": 53.28125
+        }
+      }
+    },
+    "b-own": {
+      "faces": [
+        ["Source Serif Pro", "SSP"],
+        ["source serif pro", "SHSBold"]
+      ],
+      "names": {
+        "Source Serif Pro": {
+          "w": 47.27998352050781,
+          "wb": 53.28125
+        },
+        "source serif pro": {
+          "w": 47.27998352050781,
+          "wb": 53.28125
+        }
+      }
+    }
+  },
+  "ties": {
+    "b-same": {
+      "faces": [
+        ["Brand", "Lato"],
+        ["brand", "Oswald"]
+      ],
+      "names": {
+        "Brand": {
+          "w": 37.31999206542969,
+          "wb": 37.31999206542969
+        },
+        "brand": {
+          "w": 37.31999206542969,
+          "wb": 37.31999206542969
+        },
+        "BRAND": {
+          "w": 37.31999206542969,
+          "wb": 37.31999206542969
+        }
+      }
+    },
+    "b-same-rev": {
+      "faces": [
+        ["brand", "Oswald"],
+        ["Brand", "Lato"]
+      ],
+      "names": {
+        "Brand": {
+          "w": 47.639984130859375,
+          "wb": 47.639984130859375
+        },
+        "brand": {
+          "w": 47.639984130859375,
+          "wb": 47.639984130859375
+        },
+        "BRAND": {
+          "w": 47.639984130859375,
+          "wb": 47.639984130859375
+        }
+      }
+    },
+    "b-same-one": {
+      "faces": [
+        ["Brand", "Lato"],
+        ["Brand", "Oswald"]
+      ],
+      "names": {
+        "Brand": {
+          "w": 37.31999206542969,
+          "wb": 37.31999206542969
+        },
+        "brand": {
+          "w": 37.31999206542969,
+          "wb": 37.31999206542969
+        },
+        "BRAND": {
+          "w": 37.31999206542969,
+          "wb": 37.31999206542969
+        }
+      }
+    },
+    "b-var": {
+      "faces": [
+        ["Brand", "Lato"],
+        ["brand", "RobotoMono"]
+      ],
+      "names": {
+        "Brand": {
+          "w": 48.0078125,
+          "wb": 48.0078125
+        },
+        "brand": {
+          "w": 48.0078125,
+          "wb": 48.0078125
+        }
+      }
+    }
+  },
+  "installed": {
+    "Helvetica": {
+      "w": 48.92578125,
+      "wb": 53.3203125,
+      "svg": [48.9375, 53.328125]
+    },
+    "helvetica": {
+      "w": 48.92578125,
+      "wb": 53.3203125,
+      "svg": [48.9375, 53.328125]
+    },
+    "HELVETICA": {
+      "w": 48.92578125,
+      "wb": 53.3203125,
+      "svg": [48.9375, 53.328125]
+    },
+    "Arial": {
+      "w": 48.92578125,
+      "wb": 53.3203125,
+      "svg": [48.9375, 53.328125]
+    },
+    "arial": {
+      "w": 48.92578125,
+      "wb": 53.3203125,
+      "svg": [48.9375, 53.328125]
+    },
+    "Times New Roman": {
+      "w": 48.88671875,
+      "wb": 48.88671875,
+      "svg": [48.890625, 48.890625]
+    },
+    "times new roman": {
+      "w": 48.88671875,
+      "wb": 48.88671875,
+      "svg": [48.890625, 48.890625]
+    }
+  }
+}

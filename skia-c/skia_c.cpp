@@ -4589,6 +4589,36 @@ void skiac_font_collection_get_family(
   c_string->sk_string = name;
 }
 
+// register / registerFromPath of a font registered before (the same buffer
+// or path: the call returned its FontKey) is a FontFace added again: its
+// face becomes the newest under the call's name (the alias, else its own
+// family name). A font loadFontsFromDir or loadSystemFonts registered keeps
+// its place (an installed font, not a FontFace).
+static void RelistRegistered(skiac_font_collection* c_font_collection,
+                             uint32_t id,
+                             size_t registered,
+                             const sk_sp<SkTypeface>& typeface,
+                             const char* name_alias) {
+  const auto& fonts = c_font_collection->assets->getRegisteredFonts();
+  if (fonts.size() > registered ||
+      c_font_collection->system_font_ids.count(id)) {
+    return;
+  }
+  auto it = fonts.find(id);
+  if (it == fonts.end() || it->second.installed) {
+    return;
+  }
+  std::string name;
+  if (name_alias) {
+    name = name_alias;
+  } else {
+    SkString family;
+    typeface->getFamilyName(&family);
+    name.assign(family.c_str(), family.size());
+  }
+  c_font_collection->assets->relist(id, name);
+}
+
 uint32_t skiac_font_collection_register(
     skiac_font_collection* c_font_collection,
     const uint8_t* font,
@@ -4601,6 +4631,8 @@ uint32_t skiac_font_collection_register(
   if (!typeface) {
     return 0;
   }
+  const size_t registered =
+      c_font_collection->assets->getRegisteredFonts().size();
   uint32_t typeface_id;
   if (name_alias) {
     auto alias = SkString(name_alias);
@@ -4611,6 +4643,8 @@ uint32_t skiac_font_collection_register(
         typeface_data, typeface);
   }
   if (typeface_id) {
+    RelistRegistered(c_font_collection, typeface_id, registered, typeface,
+                     name_alias);
     c_font_collection->markCachesDirty();
   }
   return typeface_id;
@@ -4631,6 +4665,8 @@ uint32_t skiac_font_collection_register_from_path(
   }
 
   std::string path_str(font_path);
+  const size_t registered =
+      c_font_collection->assets->getRegisteredFonts().size();
   uint32_t typeface_id;
   if (name_alias) {
     auto alias = SkString(name_alias);
@@ -4643,6 +4679,8 @@ uint32_t skiac_font_collection_register_from_path(
             path_str, typeface);
   }
   if (typeface_id) {
+    RelistRegistered(c_font_collection, typeface_id, registered, typeface,
+                     name_alias);
     c_font_collection->markCachesDirty();
   }
   return typeface_id;
@@ -4701,17 +4739,6 @@ size_t skiac_font_collection_unregister_all(
   return removed_count;
 }
 
-// The set lists the face (the exact family spelling, no case folding).
-static bool ListsFace(const sk_sp<SkFontStyleSet>& set, SkTypefaceID id) {
-  for (int i = 0; set && i < set->count(); ++i) {
-    auto face = set->createTypeface(i);
-    if (face && face->uniqueID() == id) {
-      return true;
-    }
-  }
-  return false;
-}
-
 bool skiac_font_collection_set_alias(skiac_font_collection* c_font_collection,
                                      const char* family,
                                      const char* alias) {
@@ -4762,9 +4789,16 @@ bool skiac_font_collection_set_alias(skiac_font_collection* c_font_collection,
   c_font_collection->addSetAlias(family, alias, /*registered=*/true, installed,
                                  typeface->uniqueID());
 
-  // Register the alias - this will shadow any existing font with the same name
-  c_font_collection->assets->registerTypeface(std::move(typeface),
-                                              SkString(alias));
+  // Register the alias - this will shadow any existing font with the same
+  // name. A face the alias lists already is not listed twice: the new
+  // entry's order makes it the newest (a FontFace added again; Chrome 157,
+  // Oswald, setAlias('Oswald', 'Brand'), Lato as "Brand", then
+  // setAlias('Oswald', 'Brand') again: "Brand" is Oswald).
+  if (!ListsFace(c_font_collection->assets->matchFamily(alias),
+                 typeface->uniqueID())) {
+    c_font_collection->assets->registerTypeface(std::move(typeface),
+                                                SkString(alias));
+  }
   c_font_collection->markCachesDirty();
   return true;
 }
