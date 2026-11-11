@@ -195,6 +195,40 @@ hb_font_t* MakeParentFont(hb_face_t* face, SkTypeface* typeface) {
   return font;
 }
 
+// A face without a `cmap` table (one HarfBuzz cannot read as SFNT: a Type 1
+// font FreeType loads) maps characters with Skia, as the old path does
+// (SkShaper_harfbuzz.cpp skhb_nominal_glyph): a sub font of the parent with
+// SkTypeface::unicharToGlyph as its nominal glyph and HarfBuzz's own funcs
+// for the rest, where no variation glyph (no cmap 14) is found, as on the
+// old path. Every user of the parent font (the shaper, HbNominalGlyph) then
+// has the same mapping. An SFNT face keeps HarfBuzz's cmap. Takes over
+// `font`.
+hb_font_t* MapWithSkiaWithoutCmap(hb_font_t* font, SkTypeface* typeface) {
+  if (typeface->getTableSize(SkSetFourByteTag('c', 'm', 'a', 'p'))) {
+    return font;
+  }
+  static hb_font_funcs_t* const funcs = [] {
+    hb_font_funcs_t* f = hb_font_funcs_create();
+    hb_font_funcs_set_nominal_glyph_func(
+        f,
+        [](hb_font_t*, void* font_data, hb_codepoint_t unicode,
+           hb_codepoint_t* glyph, void*) -> hb_bool_t {
+          *glyph = static_cast<SkTypeface*>(font_data)->unicharToGlyph(
+              static_cast<SkUnichar>(unicode));
+          return *glyph != 0;
+        },
+        nullptr, nullptr);
+    hb_font_funcs_make_immutable(f);
+    return f;
+  }();
+  hb_font_t* sub_font = hb_font_create_sub_font(font);
+  hb_font_destroy(font);
+  typeface->ref();
+  hb_font_set_funcs(sub_font, funcs, typeface,
+                    [](void* ptr) { static_cast<SkTypeface*>(ptr)->unref(); });
+  return sub_font;
+}
+
 // The cached parent font of a typeface, made on first use.
 ShaperCaches::Parent& FindParent(skiac_font_collection* c_collection,
                                  SkTypeface* typeface) {
@@ -212,7 +246,8 @@ ShaperCaches::Parent& FindParent(skiac_font_collection* c_collection,
     caches.lru.pop_front();
   }
   auto& parent = caches.parents[id];
-  parent.font = HbFontRef(MakeParentFont(CreateHbFace(typeface), typeface));
+  parent.font = HbFontRef(MapWithSkiaWithoutCmap(
+      MakeParentFont(CreateHbFace(typeface), typeface), typeface));
   parent.trak = typeface->getTableSize(SkSetFourByteTag('t', 'r', 'a', 'k'));
   parent.sbix = typeface->getTableSize(SkSetFourByteTag('s', 'b', 'i', 'x'));
   parent.lru = caches.lru.insert(caches.lru.end(), id);

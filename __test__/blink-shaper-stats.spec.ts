@@ -1,8 +1,9 @@
-// The Blink shaper's accept and reject counters (DESIGN-SHAPER.md D40):
-// with NAPI_RS_CANVAS_SHAPER=blink, every request the current stage covers
-// is laid out by the shaper, and each request it does not cover yet is
-// counted under its reason and laid out by the old path. Also the guard that
-// the text caches never change while the shaper holds references into them.
+// The Blink shaper's counters (DESIGN-SHAPER.md D40): since stage S9 the
+// shaper is the default and lays out every request (it turns none down to
+// the old path any more), so each layout is counted as accepted. Also the
+// guard that the text caches never change while the shaper holds references
+// into them. NAPI_RS_CANVAS_SHAPER=skparagraph (the old path, in child
+// processes here) lays out nothing with the shaper.
 import { execFileSync } from 'node:child_process'
 import { createRequire } from 'node:module'
 import { dirname, join } from 'node:path'
@@ -26,23 +27,8 @@ function stats(): Stats {
   return JSON.parse(binding.__shaperStats(true))
 }
 
-// skia-c/shaper.hpp ShaperReject.
-const REASONS = [
-  'notImplemented',
-  'letterSpacing',
-  'wordSpacing',
-  'caps',
-  'faceSizes',
-  'fallback',
-  'variationSelector',
-  'localeFallback',
-]
-
-function rejected(s: Stats) {
-  return Object.fromEntries(s.rejected.flatMap((n, i) => (n ? [[REASONS[i] ?? String(i), n]] : [])))
-}
-
-const BLINK = process.env.NAPI_RS_CANVAS_SHAPER === 'blink'
+// No request is turned down since stage S9: every slot of `rejected` is 0.
+const NONE = Array.from({ length: 16 }, () => 0)
 
 for (const [family, file] of [
   ['StatsLato', 'Lato-Regular.ttf'],
@@ -99,12 +85,8 @@ test.serial(
     }
     setTextRenderer('system')
     const s = stats()
-    if (BLINK) {
-      t.deepEqual(rejected(s), {})
-      t.is(s.accepted, count)
-    } else {
-      t.deepEqual(s, { accepted: 0, rejected: Array.from({ length: 16 }, () => 0), cacheChanges: 0 })
-    }
+    t.deepEqual(s.rejected, NONE)
+    t.is(s.accepted, count)
     t.is(s.cacheChanges, 0)
   },
 )
@@ -122,8 +104,8 @@ test.serial('a character no family has is laid out by the shaper without a fallb
     for (const text of texts) {
       t.true(measure('40px StatsLato', text).width > 0, text)
       const s = stats()
-      t.deepEqual(rejected(s), {}, text)
-      t.is(s.accepted, BLINK ? 1 : 0, text)
+      t.deepEqual(s.rejected, NONE, text)
+      t.is(s.accepted, 1, text)
     }
   } finally {
     setTextRenderer('system')
@@ -166,10 +148,68 @@ test.serial('a character no family has keeps the old path width without a fallba
   const old = run('skparagraph')
   const blink = run('blink')
   t.is(old.stats.accepted, 0)
-  t.deepEqual(rejected(blink.stats), {})
+  t.deepEqual(blink.stats.rejected, NONE)
   t.is(blink.stats.accepted, blink.widths.length)
   t.true(blink.widths.every((w) => w > 0))
   t.deepEqual(blink.widths, old.widths)
+})
+
+// Stage S9: a process with no registered font and no installed fonts
+// (DISABLE_SYSTEM_FONTS_LOAD; on a host without fonts the same holds for the
+// portable renderer). The family matching still gives a face, the default
+// font manager's empty typeface (FontCollection::findTypefaces), so the
+// shaper lays the line out with it as its last resort font, as Blink's
+// FontFallbackList always ends in one: no request goes to the old path. The
+// empty typeface has no glyph and no ink, so both paths draw nothing; the
+// widths equal the old path's but where skparagraph leaves FLT_MIN
+// (1.1754943508222875e-38) for a line it found no glyph for (0 here).
+test.serial('a host without fonts is laid out by the shaper as the old path draws it', (t) => {
+  const script = `
+    const { createCanvas, setTextRenderer } = require(${JSON.stringify(join(__dirname, '..', 'index.js'))})
+    const binding = require(${JSON.stringify(join(__dirname, '..', 'js-binding.js'))})
+    const out = { rows: [], stats: null }
+    binding.__shaperStats(true)
+    for (const renderer of ['portable', 'system']) {
+      setTextRenderer(renderer)
+      for (const font of ['40px NoSuchFamily', '13px sans-serif', 'bold 20px serif']) {
+        for (const text of ['Hello', 'a\u6C34', '\uE000 x']) {
+          const canvas = createCanvas(120, 40)
+          const ctx = canvas.getContext('2d')
+          ctx.font = font
+          const m = ctx.measureText(text)
+          ctx.fillText(text, 5, 30)
+          const data = ctx.getImageData(0, 0, 120, 40).data
+          let ink = 0
+          for (let i = 3; i < data.length; i += 4) ink += data[i] ? 1 : 0
+          out.rows.push([renderer, font, text, m.width, m.actualBoundingBoxRight, m.fontBoundingBoxAscent, ink])
+        }
+      }
+    }
+    out.stats = JSON.parse(binding.__shaperStats(true))
+    console.log(JSON.stringify(out))`
+  const run = (shaper: string) =>
+    JSON.parse(
+      execFileSync(process.execPath, ['-e', script], {
+        env: { ...process.env, DISABLE_SYSTEM_FONTS_LOAD: '1', NAPI_RS_CANVAS_SHAPER: shaper },
+        encoding: 'utf8',
+        timeout: 20_000,
+      }),
+    ) as { rows: [string, string, string, number, number, number, number][]; stats: Stats }
+  const old = run('skparagraph')
+  const blink = run('')
+  t.is(old.stats.accepted, 0)
+  t.deepEqual(blink.stats.rejected, NONE)
+  t.is(blink.stats.accepted, blink.rows.length)
+  t.is(blink.stats.cacheChanges, 0)
+  const near = (a: number, b: number) => a === b || Math.abs(a - b) < 1e-30
+  for (const [i, row] of blink.rows.entries()) {
+    const was = old.rows[i]
+    t.deepEqual(row.slice(0, 3), was.slice(0, 3))
+    t.true(
+      row.slice(3).every((v, k) => near(v as number, was[3 + k] as number)),
+      `${row.slice(0, 3).join(' ')}: ${row.slice(3)} (old path ${was.slice(3)})`,
+    )
+  }
 })
 
 // A line whose characters alternate between the first family and the next
@@ -215,7 +255,7 @@ test.serial('a line of many runs is laid out in about the old path time', (t) =>
   const old = run('skparagraph')
   const blink = run('blink')
   t.is(old.stats.accepted, 0)
-  t.deepEqual(rejected(blink.stats), {})
+  t.deepEqual(blink.stats.rejected, NONE)
   t.is(blink.stats.accepted, 3)
   t.deepEqual(
     blink.lines.slice(0, 2).map((line) => line.width),
@@ -257,8 +297,8 @@ test.serial('letter and word spacing are laid out by the shaper', (t) => {
   }
   setTextRenderer('system')
   const s = stats()
-  t.deepEqual(rejected(s), {})
-  t.is(s.accepted, BLINK ? count : 0)
+  t.deepEqual(s.rejected, NONE)
+  t.is(s.accepted, count)
   t.is(s.cacheChanges, 0)
 })
 
@@ -298,8 +338,8 @@ test.serial('font-variant-caps is laid out by the shaper', (t) => {
   }
   setTextRenderer('system')
   const s = stats()
-  t.deepEqual(rejected(s), {})
-  t.is(s.accepted, BLINK ? count : 0)
+  t.deepEqual(s.rejected, NONE)
+  t.is(s.accepted, count)
   t.is(s.cacheChanges, 0)
 })
 
@@ -331,8 +371,8 @@ test.serial('per-face sizes and opsz are laid out by the shaper', (t) => {
   }
   setTextRenderer('system')
   const s = stats()
-  t.deepEqual(rejected(s), {})
-  t.is(s.accepted, BLINK ? count : 0)
+  t.deepEqual(s.rejected, NONE)
+  t.is(s.accepted, count)
   t.is(s.cacheChanges, 0)
 })
 
@@ -350,8 +390,8 @@ test.serial('variation selectors and system fallback are laid out by the shaper'
     t.true(measure('40px StatsLato, StatsHan', text).width > 0, text)
   }
   let s = stats()
-  t.deepEqual(rejected(s), {})
-  t.is(s.accepted, BLINK ? 3 : 0)
+  t.deepEqual(s.rejected, NONE)
+  t.is(s.accepted, 3)
   // U+2205 U+FE00 is a standardized variation sequence: a font with only the
   // base gives kUnmatchedVSGlyphId, and the second pass ignores the selector.
   const fallback = ['\uE000', '\uFFFE', 'שלום', '😀', '⌚\uFE0E', 'a☺️b', 'x\u3000y', 'こんにちは', '\u2205\uFE00']
@@ -359,8 +399,8 @@ test.serial('variation selectors and system fallback are laid out by the shaper'
     measure('40px StatsLato', text)
   }
   s = stats()
-  t.deepEqual(rejected(s), {})
-  t.is(s.accepted, BLINK ? fallback.length : 0)
+  t.deepEqual(s.rejected, NONE)
+  t.is(s.accepted, fallback.length)
   t.is(s.cacheChanges, 0)
 })
 
@@ -391,8 +431,8 @@ test.serial('a character the standard font of the lang has is laid out by the sh
     // Off macOS the standard font is not per script and the shaper has no
     // system fallback: a character no family has draws the first font's
     // .notdef (stage P2), also on the shaper.
-    t.deepEqual(rejected(s), {}, `${text} ${lang}`)
-    t.is(s.accepted, BLINK ? 1 : 0, `${text} ${lang}`)
+    t.deepEqual(s.rejected, NONE, `${text} ${lang}`)
+    t.is(s.accepted, 1, `${text} ${lang}`)
   }
 })
 
@@ -401,8 +441,8 @@ test.serial('text in two families is laid out by the shaper', (t) => {
   t.true(measure('40px StatsLato, StatsHan', 'Hamburgefonstiv水Hamburgefonstiv').width > 0)
   t.true(measure('40px StatsLato, StatsHan', '水 water').width > 0)
   const s = stats()
-  t.deepEqual(rejected(s), {})
-  t.is(s.accepted, BLINK ? 2 : 0)
+  t.deepEqual(s.rejected, NONE)
+  t.is(s.accepted, 2)
 })
 
 test.serial('the text caches never change during a layout, also when a layout passes the font argument budget', (t) => {
@@ -418,7 +458,77 @@ test.serial('the text caches never change during a layout, also when a layout pa
   }
   const s = stats()
   t.is(s.cacheChanges, 0)
-  t.deepEqual(rejected(s), {})
-  t.is(s.accepted, BLINK ? 300 : 0)
+  t.deepEqual(s.rejected, NONE)
+  t.is(s.accepted, 300)
   t.true(widths.every((w) => w > 0))
+})
+
+// A registered Type 1 font (FreeType loads it; it has no SFNT tables, so no
+// cmap for HarfBuzz): the shaper maps its characters with Skia, as the old
+// path does, and draws its glyphs, not the fallback font's. Chrome cannot
+// load such a font (OTS turns it down), so the old path is the reference:
+// the same widths, pixels and fonts, with both files (.pfa and .pfb) and
+// both renderers. The fixtures hold the characters of "HELLO, WORLD!" only.
+// At 30px every line is under 256px (no float sum rounding).
+test.serial('a registered Type 1 font keeps its glyphs on the shaper', (t) => {
+  const script = `
+    const { createHash } = require('node:crypto')
+    const { readFileSync } = require('node:fs')
+    const { createCanvas, GlobalFonts, setTextRenderer } = require(${JSON.stringify(join(__dirname, '..', 'index.js'))})
+    const binding = require(${JSON.stringify(join(__dirname, '..', 'js-binding.js'))})
+    GlobalFonts.registerFromPath(${JSON.stringify(join(__dirname, 'fonts', 'Roboto2-Regular.pfa'))}, 'StatsType1A')
+    GlobalFonts.register(readFileSync(${JSON.stringify(join(__dirname, 'fonts', 'Roboto2-Regular.pfb'))}), 'StatsType1B')
+    const out = { rows: [], stats: null }
+    binding.__shaperStats(true)
+    for (const renderer of ['portable', 'system']) {
+      setTextRenderer(renderer)
+      for (const family of ['StatsType1A', 'StatsType1B']) {
+        for (const [text, props] of [
+          ['H', {}],
+          ['WORLD!', {}],
+          ['HELLO, WORLD!', {}],
+          ['Hello World', {}],
+          ['HELLO', { letterSpacing: '3px' }],
+          ['Hello', { fontVariantCaps: 'small-caps' }],
+        ]) {
+          const canvas = createCanvas(260, 50)
+          const ctx = canvas.getContext('2d')
+          ctx.font = '30px ' + family
+          Object.assign(ctx, props)
+          const m = ctx.measureText(text)
+          ctx.fillText(text, 5, 35)
+          const pixels = createHash('sha1').update(ctx.getImageData(0, 0, 260, 50).data).digest('hex')
+          const families = [...new Set(JSON.parse(ctx.__debugTextLine(text)).runs.map((run) => run.family))]
+          out.rows.push([renderer, family, text, m.width, m.actualBoundingBoxAscent, m.actualBoundingBoxDescent, pixels, families.join('|')])
+        }
+      }
+    }
+    out.stats = JSON.parse(binding.__shaperStats(true))
+    console.log(JSON.stringify(out))`
+  const run = (shaper: string) =>
+    JSON.parse(
+      execFileSync(process.execPath, ['-e', script], {
+        env: { ...process.env, NAPI_RS_CANVAS_SHAPER: shaper },
+        encoding: 'utf8',
+        timeout: 20_000,
+      }),
+    ) as { rows: [string, string, string, number, number, number, string, string][]; stats: Stats }
+  const old = run('skparagraph')
+  const blink = run('')
+  t.is(old.stats.accepted, 0)
+  t.deepEqual(blink.stats.rejected, NONE)
+  t.is(blink.stats.accepted, blink.rows.length)
+  for (const [i, row] of blink.rows.entries()) {
+    t.deepEqual(row, old.rows[i], row.slice(0, 3).join(' '))
+  }
+  // "WORLD!" is all the Type 1 font's, and "H" is its glyph (22.02 px), not
+  // the fallback font's.
+  for (const [renderer, family, text, width, , , , families] of blink.rows) {
+    if (text === 'WORLD!') {
+      t.is(families, 'Roboto2', `${renderer} ${family} ${text}`)
+    }
+    if (text === 'H') {
+      t.true(Math.abs(width - 22.02) < 0.01, `${renderer} ${family} ${text}: ${width}`)
+    }
+  }
 })

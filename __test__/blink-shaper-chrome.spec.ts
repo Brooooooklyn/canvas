@@ -6,9 +6,9 @@
 // stage on; before it, the spec checks that it still differs (like
 // test.failing), so a row that moves is seen.
 //
-// S0a runs on the old path. From S1 to S8 the new path is behind
-// NAPI_RS_CANVAS_SHAPER=blink, so a flipped row is checked only with the
-// switch on, until S9 makes it the default.
+// S0a ran on the old path; S1 to S8 put the new path behind
+// NAPI_RS_CANVAS_SHAPER=blink. Since S9 the shaper is the default, so every
+// row whose stage has landed is checked.
 import './use-system-text-renderer'
 
 import { spawn, spawnSync } from 'node:child_process'
@@ -51,13 +51,12 @@ interface Row {
   flip?: string
   flipPortable?: string
   // The old path matches Chrome here by another route than Chrome's, and the
-  // shaper reaches Chrome only from this stage: with the switch on the row is
-  // not checked before it.
+  // shaper reaches Chrome only from this stage: the row is not checked
+  // before it.
   blinkFrom?: string
   // The row differs from Chrome for a reason outside the shaper that is
   // handed off (DESIGN-SHAPER.md 1.2: q5 S1 system-ui CJK font choice, q5 S3
-  // Hiragino Sans face choice); not checked with the switch on (the old path
-  // is still checked to differ, as for any row before its flip stage).
+  // Hiragino Sans face choice); not checked.
   handoff?: string
 }
 const FIXTURE: { darwin: string; fonts: Record<string, string>; cases: Record<string, Row> } = JSON.parse(
@@ -71,9 +70,8 @@ const UNREGISTERED = Object.entries(FIXTURE.fonts).flatMap(([family, file]) =>
 )
 
 // The last shaper stage on this branch.
-const LANDED = 'S8'
+const LANDED = 'S9'
 const STAGES = ['S0', 'S0a', 'S1', 'S2', 'S3', 'S4', 'S5', 'S6', 'S7', 'S8', 'S9', 'S10']
-const BLINK = process.env.NAPI_RS_CANVAS_SHAPER === 'blink'
 
 // Whether a row with this flip stage must match Chrome now.
 function landed(flip: string | undefined) {
@@ -85,10 +83,7 @@ function landed(flip: string | undefined) {
   if (at < 0) {
     throw new Error(`unknown stage ${flip}`)
   }
-  if (at > now) {
-    return false
-  }
-  return flip === 'S0a' || BLINK || now >= STAGES.indexOf('S9')
+  return at <= now
 }
 
 const DARWIN = process.platform === 'darwin'
@@ -292,10 +287,10 @@ function check({ renderer, rows, flip, widthOnly }: Check) {
   setTextRenderer(renderer)
   try {
     for (const [name, row] of rows) {
-      if (BLINK && row.blinkFrom && STAGES.indexOf(row.blinkFrom) > STAGES.indexOf(LANDED)) {
+      if (row.blinkFrom && STAGES.indexOf(row.blinkFrom) > STAGES.indexOf(LANDED)) {
         continue
       }
-      if (BLINK && row.handoff) {
+      if (row.handoff) {
         continue
       }
       const value = ours(row)
@@ -410,10 +405,6 @@ test.serial('rows still to flip differ from Chrome with the portable renderer', 
 // with 16000 marks, 3.989990234375 (the width of "a") with 16385. The old
 // path keeps the "b".
 test.serial('a cluster longer than kMaxGlyphs is cut as in Chrome', (t) => {
-  if (!BLINK) {
-    t.pass('the new path only')
-    return
-  }
   GlobalFonts.registerFromPath(join(__dirname, 'fonts', 'EBGaramond-Regular.ttf'), 'KMaxGaramond')
   const widths = (['system', 'portable'] as const).flatMap((renderer) => {
     setTextRenderer(renderer)
@@ -443,8 +434,8 @@ test.serial('a cluster longer than kMaxGlyphs is cut as in Chrome', (t) => {
 // each of 137 scripts in 40px Lato: 120 fonts on macOS 27.2. Chrome 157:
 // 3995.6025390625 (the old path: 4605.10693359375).
 test.serial('a line with more than 100 fallback faces is laid out like Chrome', (t) => {
-  if (!BLINK || !CAPTURE_DARWIN) {
-    t.pass('the new path with the macOS system fonts of the capture')
+  if (!CAPTURE_DARWIN) {
+    t.pass('the macOS system fonts of the capture')
     return
   }
   const text = [
@@ -477,8 +468,8 @@ test.serial('a line with more than 100 fallback faces is laid out like Chrome', 
 // ∅ alone gets Apple Symbols. Chrome 157, 40px Lato, [width,
 // actualBoundingBoxRight]; the old path keeps the Apple Symbols ∅.
 test.serial('a private use hint makes its neighbours .notdef as in Chrome', (t) => {
-  if (!BLINK || !CAPTURE_DARWIN) {
-    t.pass('the new path with the macOS system fonts of the capture')
+  if (!CAPTURE_DARWIN) {
+    t.pass('the macOS system fonts of the capture')
     return
   }
   const ctx = createCanvas(10, 10).getContext('2d')
@@ -798,8 +789,8 @@ test.serial('filter font units follow the lang like the text', async (t) => {
 // defaults, so these are headed captures. [lang (none: "inherit"), font,
 // width].
 test.serial('generic families follow the host language like Chrome', async (t) => {
-  if (!BLINK || !CAPTURE_DARWIN) {
-    t.pass('the new path with the macOS system fonts of the capture')
+  if (!CAPTURE_DARWIN) {
+    t.pass('the macOS system fonts of the capture')
     return
   }
   t.timeout(5 * CHILD_TIMEOUT, 'four child processes')
@@ -878,8 +869,8 @@ test.serial('generic families follow the host language like Chrome', async (t) =
 // "AppleMyungjo" (SourceHanSerifCN-Bold) 53.28125 for both. In a child
 // process, as the face would replace AppleMyungjo for the other rows.
 test.serial('a registered face keeps a family that is also installed under -webkit-body', async (t) => {
-  if (!BLINK || !CAPTURE_DARWIN) {
-    t.pass('the new path with the macOS system fonts of the capture')
+  if (!CAPTURE_DARWIN) {
+    t.pass('the macOS system fonts of the capture')
     return
   }
   t.timeout(2 * CHILD_TIMEOUT, 'one child process')
@@ -939,13 +930,14 @@ test.serial('a setAlias name keeps its family under -webkit-body', async (t) => 
     GlobalFonts.setAlias('Arial', 'Helvetica')
     const helvetica = width('40px Helvetica, -webkit-body', 'ja')
     console.log(JSON.stringify({ before, brand, helvetica }))`
-  const { before, brand, helvetica } = JSON.parse(
-    await runChild(t, script, hostEnv(BLINK ? 'blink' : '', { LANG: 'C' })),
-  ) as { before: number; brand: number[]; helvetica: number }
+  const { before, brand, helvetica } = JSON.parse(await runChild(t, script, hostEnv('', { LANG: 'C' }))) as {
+    before: number
+    brand: number[]
+    helvetica: number
+  }
   const ARIAL = 48.92578125
   const near = (a: number, b: number) => Math.abs(a - b) <= 1e-3
-  // The old path draws Helvetica's own face (as wide as Arial in "Ag").
-  t.true(near(before, BLINK ? 55.63999938964844 : ARIAL), `before: ${before}`)
+  t.true(near(before, 55.63999938964844), `before: ${before}`)
   t.true(
     brand.every((w) => near(w, ARIAL)),
     `BrandFont: ${brand}`,
@@ -977,9 +969,7 @@ test.serial('a setAlias call that adds no face keeps its name under -webkit-body
     const before = width()
     const set = GlobalFonts.setAlias('Arial', 'Arial')
     console.log(JSON.stringify({ before, set, after: width() }))`
-  const { before, set, after } = JSON.parse(
-    await runChild(t, script, hostEnv(BLINK ? 'blink' : '', { LANG: 'C' })),
-  ) as {
+  const { before, set, after } = JSON.parse(await runChild(t, script, hostEnv('', { LANG: 'C' }))) as {
     before: number
     set: boolean
     after: number
@@ -987,7 +977,7 @@ test.serial('a setAlias call that adds no face keeps its name under -webkit-body
   const ARIAL = 48.92578125
   const near = (a: number, b: number) => Math.abs(a - b) <= 1e-3
   t.true(set)
-  t.true(near(before, BLINK ? 55.63999938964844 : ARIAL), `before: ${before}`)
+  t.true(near(before, 55.63999938964844), `before: ${before}`)
   t.true(near(after, ARIAL), `after: ${after}`)
 })
 
@@ -1018,10 +1008,7 @@ test.serial('a setAlias family under -webkit-body is sized as a generic family',
     const body = width('40px BSLato, -webkit-body, sans-serif')
     GlobalFonts.setAlias('Arial', 'serif')
     console.log(JSON.stringify({ body, serif: width('40px BSLato, serif, sans-serif') }))`
-  const { body, serif } = JSON.parse(await runChild(t, script, hostEnv(BLINK ? 'blink' : '', { LANG: 'C' }))) as Record<
-    string,
-    number
-  >
+  const { body, serif } = JSON.parse(await runChild(t, script, hostEnv('', { LANG: 'C' }))) as Record<string, number>
   t.true(serif < 39, `serif: ${serif} (font-size-adjust sizes the alias)`)
   t.true(Math.abs(body - serif) <= 1e-3, `-webkit-body: ${body}, serif: ${serif}`)
 })

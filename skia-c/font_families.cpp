@@ -361,7 +361,8 @@ class FamilyResolver {
     auto it = matches.find(key);
     if (it == matches.end()) {
       std::string family;
-      // The old path (switch unset) keeps CoreText's own matching.
+      // The old path (NAPI_RS_CANVAS_SHAPER=skparagraph) keeps CoreText's own
+      // matching.
       sk_sp<SkFontStyleSet> set =
           !BlinkShaperOn() || HasInstalledFamily(name)
               ? manager->matchFamily(std::string(name).c_str())

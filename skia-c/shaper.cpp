@@ -33,15 +33,8 @@ extern "C" __declspec(dllimport) int __stdcall GetUserDefaultLocaleName(
 namespace {
 
 std::atomic<uint64_t> g_accepted{0};
-std::atomic<uint64_t> g_rejected[kShaperRejectSlots];
 std::atomic<uint64_t> g_text_caches_changes{0};
 std::atomic<uint64_t> g_cache_changes{0};
-
-bool Reject(ShaperReject reason) {
-  g_rejected[static_cast<size_t>(reason)].fetch_add(1,
-                                                    std::memory_order_relaxed);
-  return false;
-}
 
 constexpr const char* kOtShaperList[] = {"ot", nullptr};
 
@@ -133,7 +126,8 @@ class LineFonts {
   }
 
   // A family entry (Blink's SimpleFontData of a font-family font), at the
-  // family's own size and opsz (UsedSizes::face_sizes, face_opsz).
+  // family's own size and opsz (UsedSizes::face_sizes, face_opsz). False,
+  // and no entry, for a face without font data.
   bool AddFamily(sk_sp<SkTypeface> face,
                  SkTypeface* base,
                  float size,
@@ -216,7 +210,8 @@ class LineFonts {
   // the CoreText helper from the primary font (the font list's first font,
   // FontFallbackList::PrimarySimpleFontDataWithSpace).
   FontEntry* SystemFallback(uint32_t hint, Priority priority) {
-    if (!system_source_ || IsPrivateUseOrNonCharacter(hint)) {
+    if (!system_source_ || families_.empty() ||
+        IsPrivateUseOrNonCharacter(hint)) {
       return nullptr;
     }
 #if defined(__APPLE__)
@@ -1383,15 +1378,9 @@ FontResolution ResolveFontRequest(skiac_font_collection* c_collection,
   FontResolution fonts;
   if (!BlinkShaperOn()) {
     fonts.lang = std::string(lang);
-    fonts.paragraph_lang = fonts.lang;
     return fonts;
   }
   fonts.lang = ResolvedLanguage(request);
-  // A character without a font does not change the language of the rest of
-  // the line: skparagraph takes the host language for "inherit", as for an
-  // explicit lang. The line key keeps "inherit"; the host language is fixed
-  // per process.
-  fonts.paragraph_lang = lang == "inherit" ? fonts.lang : std::string(lang);
   // A generic family takes the setting of the locale's script
   // (FontSelector::FamilyNameFromSettings), and the last family is the
   // standard font of that script (FontFallbackList::GetFontData's
@@ -1407,12 +1396,12 @@ void NoteTextCachesChange() {
 bool BlinkShaperOn() {
   static const bool on = [] {
     const char* value = getenv("NAPI_RS_CANVAS_SHAPER");
-    return value && strcmp(value, "blink") == 0;
+    return !value || strcmp(value, "skparagraph") != 0;
   }();
   return on;
 }
 
-bool LayOutLineBlink(skiac_font_collection* c_collection,
+void LayOutLineBlink(skiac_font_collection* c_collection,
                      const skiac_text_request& request,
                      const FontResolution& resolution,
                      TextCaches::Line* line) {
@@ -1462,10 +1451,7 @@ bool LayOutLineBlink(skiac_font_collection* c_collection,
     scratch.empty = true;
     *line = std::move(scratch);
     g_accepted.fetch_add(1, std::memory_order_relaxed);
-    return true;
-  }
-  if (faces.empty()) {
-    return Reject(ShaperReject::kFallback);
+    return;
   }
   PreparedText prepared = PrepareText(request.text, request.text_len);
   // The system fallback source: CoreText's, with the system renderer and
@@ -1514,10 +1500,18 @@ bool LayOutLineBlink(skiac_font_collection* c_collection,
   // OneLineShaper builds, its synthetic styles, and the draw font.
   const TextRasterPolicy policy(request);
   LineFonts fonts(c_collection, request, policy, sizes);
+  // A face without font data is never a candidate (FontFallbackIterator::
+  // UniqueOrNext skips a font data without a typeface). The family matching
+  // always gives a face (FontCollection::findTypefaces ends with the default
+  // manager's empty typeface), so a list without one does not happen; if it
+  // did, Skia's empty typeface is its last resort font, which draws an
+  // inkless, zero-width .notdef, as a host without fonts draws today.
   for (const FamilyFace& family : family_faces) {
-    if (!fonts.AddFamily(family.face, family.base, family.size, family.opsz)) {
-      return Reject(ShaperReject::kFallback);
-    }
+    fonts.AddFamily(family.face, family.base, family.size, family.opsz);
+  }
+  if (fonts.families().empty()) {
+    fonts.AddFamily(SkTypeface::MakeEmpty(), nullptr, sizes.effective,
+                    sizes.opsz);
   }
   fonts.set_system_source(system_source);
   fonts.set_last_resort(last_resort_face, last_resort_base.get());
@@ -1570,7 +1564,6 @@ bool LayOutLineBlink(skiac_font_collection* c_collection,
   }
   *line = std::move(scratch);
   g_accepted.fetch_add(1, std::memory_order_relaxed);
-  return true;
 }
 
 extern "C" {
@@ -1582,10 +1575,9 @@ bool skiac_blink_shaper_on() {
 void skiac_debug_shaper_stats(skiac_shaper_stats* stats, bool reset) {
   stats->accepted = reset ? g_accepted.exchange(0, std::memory_order_relaxed)
                           : g_accepted.load(std::memory_order_relaxed);
-  for (size_t i = 0; i < kShaperRejectSlots; ++i) {
-    stats->rejected[i] =
-        reset ? g_rejected[i].exchange(0, std::memory_order_relaxed)
-              : g_rejected[i].load(std::memory_order_relaxed);
+  // No request is turned down since stage S9.
+  for (uint64_t& rejected : stats->rejected) {
+    rejected = 0;
   }
   stats->cache_changes =
       reset ? g_cache_changes.exchange(0, std::memory_order_relaxed)
