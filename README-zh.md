@@ -108,26 +108,37 @@ WebP、AVIF 和 GIF 会忽略这些选项。`toDataURL`、`toDataURLAsync`、`to
 
 ## 文字渲染
 
-默认情况下，文字在每个系统上看起来都一样。所有字体都用 FreeType 绘制，使用 Skia 默认的文字 gamma，不用 LCD（亚像素）文字，并且只有一张字体族表（Linux 用的那张）。同样的字体文件，在 macOS、Linux 和 Windows 上得到同样的像素和同样的 `measureText` 结果。
+默认情况下，文字在每个系统上都用同样的方式绘制。所有字体都用 FreeType 绘制，使用 Skia 默认的文字 gamma，不用 LCD（亚像素）文字，并且只有一张字体族表（Linux 用的那张）。
 
-想要每个系统上输出都一样，请用任何系统都不会安装的名字注册你自己的字体文件，并且只用这些名字绘制：
+下面这些条件都满足时，文字在 macOS、Linux 和 Windows 上得到同样的像素和同样的 `measureText` 结果：
+
+1. `ctx.font` 里只写你注册的字体。canvas 默认的 `10px sans-serif`、其他通用字体族和 `Arial` 这样的名字会用到已安装的字体，除非你用这个名字注册了字体。
+2. 你注册的字体包含你要画的每个字符。它们没有的字符会从已安装的字体里取。
+3. 你设置了 `ctx.lang`，例如 `'en'`。默认的 `'inherit'` 跟随主机的语言。
+4. 你用默认的 `'portable'` 渲染方式，没有调用 `setTextRenderer('system')`。
+5. 没有设置环境变量 `FREETYPE_PROPERTIES`。
+
+x64 和 arm64 的构建在一些边缘像素上仍然可能差 1 个色阶。
 
 ```js
 const { GlobalFonts } = require('@napi-rs/canvas')
 
+// 任何系统都不会安装的名字
 GlobalFonts.registerFromPath('./fonts/Lato-Regular.ttf', 'MyLato')
 ctx.font = '20px MyLato'
+ctx.lang = 'en'
 ```
 
 下面这些仍然和系统、机器有关：
 
 - 已安装的字体。`Arial`、`Helvetica` 这样的名字，以及通用字体族（`sans-serif`、`serif`、`monospace`、`system-ui`，还有 canvas 默认的 `10px sans-serif`）会用到机器上装的字体。
-- 注册字体里没有的字符。它们会从已安装的默认字体里取；默认字体也没有时画成方框。不会在所有已安装字体里查找。
+- 注册字体里没有的字符。它们会从有这个字符的已安装字体里取（`loadSystemFonts` 和 `loadFontsFromDir` 加载的字体，或者系统的字体目录），都没有时画成方框。和 Chrome 一样，用 `register` 或 `registerFromPath` 注册的字体不会用来补别的字体缺的字符：想给没有字体的主机一个回退字体，请用 `loadFontsFromDir` 加载它。
 - SVG 图片里的 `ex`、`ch`、`cap` 和行高单位使用一个已安装的默认字体。
 - Lottie（Skottie）里的文字使用已安装的字体。
 - PDF 的字体嵌入和编译目标有关。
 - x64 和 arm64 的构建在一些边缘像素上可能差 1 个色阶。
 - 环境变量 `FREETYPE_PROPERTIES` 会改变 FreeType 的 hinting。
+- 主机的语言。默认的 `ctx.lang`（`'inherit'`）和 Chrome 一样跟随系统界面语言（macOS 的语言列表、Windows 的用户 locale，其他系统上是 `LANGUAGE` / `LC_ALL` / `LC_MESSAGES` / `LANG`）。它会改变 `locl` 字形、大小写映射（`tr` 下的 `small-caps`）和 CJK 标点的间距。设置 `ctx.lang`（例如 `'en'`）可以固定它。
 
 设置 `DISABLE_SYSTEM_FONTS_LOAD=1` 可以让已安装的字体不出现在 `GlobalFonts.families` 里。默认情况下，在所有系统上它们仍然可以按名字找到。
 
@@ -144,7 +155,7 @@ getTextRenderer() // 'system'
 
 它作用于整个进程。请在启动时、创建 canvas 之前调用一次。`setTextRenderer('portable')` 切换回默认方式。传入其他值会抛出 `TypeError`。切换之前创建的 canvas 会保留原来的文字 gamma，直到你设置它的 width 或 height。切换之前设置的 `ctx.font` 值会保留它解析后的结果（`ex`、`ch` 等字体相关单位的字号，以及 macOS 上 `BlinkMacSystemFont` 到 `system-ui` 的改写），所以切换之后请重新设置 `ctx.font`。
 
-> **行为变化**（[#1402](https://github.com/Brooooooklyn/canvas/issues/1402)）：macOS 和 Linux 上的文字改为按 Windows 的方式绘制，所以像素和 `measureText` 结果和 1.0.12、1.0.13 不同。在 macOS 上，已安装的字体重新成为 FreeType 字体（和 1.0.11 一样），读取自 `/System/Library/Fonts`、`/Library/Fonts` 和 `~/Library/Fonts`；不再有 CoreText 的逐字符回退，`sans-serif`、`serif` 和 `monospace` 对应 Arial、Times New Roman 和 Linux 的等宽字体列表。在 macOS 上，`DISABLE_SYSTEM_FONTS_LOAD` 不再让按名字查找找不到已安装的字体，和 Linux、Windows 以及 1.0.12 之前一样；它只让这些字体不出现在 `GlobalFonts.families` 里。调用 `setTextRenderer('system')` 可以回到 1.0.12 / 1.0.13 的行为。
+> **行为变化**（[#1402](https://github.com/Brooooooklyn/canvas/issues/1402)）：macOS 和 Linux 上的文字改为按 Windows 的方式绘制，所以像素和 `measureText` 结果和 1.0.12、1.0.13 不同。在 macOS 上，已安装的字体重新成为 FreeType 字体（和 1.0.11 一样），读取自 `/System/Library/Fonts`、`/Library/Fonts` 和 `~/Library/Fonts`；不再有 CoreText 的逐字符回退，`sans-serif`、`serif` 和 `monospace` 对应 Arial、Times New Roman 和 Linux 的等宽字体列表。在 macOS 上，`DISABLE_SYSTEM_FONTS_LOAD` 不再让按名字查找找不到已安装的字体，和 Linux、Windows 以及 1.0.12 之前一样；它只让这些字体不出现在 `GlobalFonts.families` 里。调用 `setTextRenderer('system')` 可以和 1.0.12、1.0.13 一样，再用各系统自己的字体渲染器和已安装的字体绘制。两种渲染方式现在都按 Chrome 的方式排版文字，所以输出和 1.0.12、1.0.13 不完全一样。
 
 ## Emoji 文字
 
