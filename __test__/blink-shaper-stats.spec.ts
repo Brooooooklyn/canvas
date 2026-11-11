@@ -26,7 +26,16 @@ function stats(): Stats {
 }
 
 // skia-c/shaper.hpp ShaperReject.
-const REASONS = ['notImplemented', 'letterSpacing', 'wordSpacing', 'caps', 'faceSizes', 'fallback', 'variationSelector']
+const REASONS = [
+  'notImplemented',
+  'letterSpacing',
+  'wordSpacing',
+  'caps',
+  'faceSizes',
+  'fallback',
+  'variationSelector',
+  'localeFallback',
+]
 
 function rejected(s: Stats) {
   return Object.fromEntries(s.rejected.flatMap((n, i) => (n ? [[REASONS[i] ?? String(i), n]] : [])))
@@ -101,23 +110,111 @@ test.serial(
 
 test.serial('each request the shaper cannot lay out yet is counted under its reason', (t) => {
   stats()
+  // A character no family has goes to the old path where the shaper has no
+  // system fallback source: always with the portable renderer.
+  setTextRenderer('portable')
   const cases: [string, string, Record<string, string>, string][] = [
     ['40px StatsLato', 'Hello', { letterSpacing: '2px' }, 'letterSpacing'],
     ['40px StatsLato', 'Hello', { wordSpacing: '2px' }, 'wordSpacing'],
     ['40px StatsLato', 'Hello', { fontVariantCaps: 'small-caps' }, 'caps'],
     ['40px StatsLato, StatsHan', 'Hello', { fontSizeAdjust: '0.5' }, 'faceSizes'],
-    ['40px StatsLato', '', {}, 'fallback'],
-    ['40px StatsLato', 'a️b', {}, 'variationSelector'],
+    ['40px StatsLato', '\uE000', {}, 'fallback'],
+    ['40px StatsLato', '\u{10FFFD}', {}, 'fallback'],
   ]
-  for (const [font, text, props, reason] of cases) {
-    measure(font, text, props)
-    const s = stats()
-    if (BLINK) {
-      t.deepEqual(rejected(s), { [reason]: 1 }, reason)
-      t.is(s.accepted, 0, reason)
-    } else {
-      t.deepEqual(rejected(s), {}, reason)
+  try {
+    for (const [font, text, props, reason] of cases) {
+      measure(font, text, props)
+      const s = stats()
+      if (BLINK) {
+        t.deepEqual(rejected(s), { [reason]: 1 }, reason)
+        t.is(s.accepted, 0, reason)
+      } else {
+        t.deepEqual(rejected(s), {}, reason)
+      }
     }
+  } finally {
+    setTextRenderer('system')
+  }
+})
+
+// Stage S3: the fallback stages. A variation selector the family fonts can
+// shape (also the second pass that ignores it) is laid out by the shaper
+// everywhere. With the system renderer on macOS, a character no family has
+// goes to CoreText's fallback (or, for private use and non-characters, to the
+// first font's .notdef), so nothing is turned down; elsewhere it still is.
+test.serial('variation selectors and system fallback are laid out by the shaper', (t) => {
+  stats()
+  // A selector after a character it makes no variation sequence with is not
+  // looked at (Character::IsVariationSequence).
+  for (const text of ['a\uFE0Fb', 'a\uFE0Eb', '水\uFE00']) {
+    t.true(measure('40px StatsLato, StatsHan', text).width > 0, text)
+  }
+  let s = stats()
+  t.deepEqual(rejected(s), {})
+  t.is(s.accepted, BLINK ? 3 : 0)
+  // U+2205 U+FE00 is a standardized variation sequence: a font with only the
+  // base gives kUnmatchedVSGlyphId, and the second pass ignores the selector.
+  const fallback = ['\uE000', '\uFFFE', 'שלום', '😀', '⌚\uFE0E', 'a☺️b', 'x\u3000y', 'こんにちは', '\u2205\uFE00']
+  for (const text of fallback) {
+    measure('40px StatsLato', text)
+  }
+  s = stats()
+  const apple = process.platform === 'darwin'
+  if (!BLINK) {
+    t.deepEqual(rejected(s), {})
+  } else if (apple) {
+    t.deepEqual(rejected(s), {})
+    t.is(s.accepted, fallback.length)
+  } else {
+    t.true((rejected(s).fallback ?? 0) > 0)
+  }
+  t.is(s.cacheChanges, 0)
+})
+
+// Chrome's last family is the standard font of the lang's script
+// (-webkit-standard, GenericFontFamilySettings::Standard): on macOS Hiragino
+// Kaku Gothic ProN for Japanese, Apple SD Gothic Neo for Korean, PingFang
+// SC / TC for Han, Devanagari MT for Devanagari. The shaper's family list has
+// the common one (Times) until stage S8, so a character no family has goes
+// to the old path when that font has it, and to CoreText's fallback when it
+// does not (Hiragino has no 这们 and no Thai: Chrome 157 gives the no-lang
+// values there).
+test.serial('a character the standard font of the lang has goes to the old path', (t) => {
+  stats()
+  const cases: [string, string, boolean][] = [
+    ['直骨', 'ja', true],
+    ['ア', 'ja', true],
+    ['直骨', 'ko', true],
+    ['直骨', 'zh-CN', true],
+    ['这们', 'zh-Hant', true],
+    ['नम', 'hi', true],
+    ['直骨', 'en-Jpan', true],
+    ['直骨', 'ja-Cyrl', false],
+    ['这们', 'ja', false],
+    ['กข', 'ja', false],
+    ['直骨', 'th', false],
+    ['直骨', 'inherit', false],
+    ['Hello', 'ja', false],
+  ]
+  const apple = process.platform === 'darwin'
+  for (const [text, lang, old] of cases) {
+    measure('40px StatsLato', text, { lang })
+    const s = stats()
+    if (!BLINK) {
+      t.deepEqual(rejected(s), {}, `${text} ${lang}`)
+    } else if (apple) {
+      t.deepEqual(rejected(s), old ? { localeFallback: 1 } : {}, `${text} ${lang}`)
+      t.is(s.accepted, old ? 0 : 1, `${text} ${lang}`)
+    }
+  }
+  // With the portable renderer there is no system fallback source.
+  setTextRenderer('portable')
+  try {
+    measure('40px StatsLato', '直骨', { lang: 'ja' })
+    const s = stats()
+    t.deepEqual(rejected(s), BLINK ? { fallback: 1 } : {})
+  } finally {
+    setTextRenderer('system')
   }
 })
 

@@ -25,7 +25,7 @@ const __dirname = dirname(fileURLToPath(import.meta.url))
 const require = createRequire(import.meta.url)
 
 // The stage this branch has landed, and the classes it may change.
-const STAGE = 'S2'
+const STAGE = 'S3'
 const ALLOWED = new Set([
   // PR-D10: no forced liga 0 (letter spacing is still turned down in S2).
   'd10',
@@ -57,6 +57,29 @@ const ALLOWED = new Set([
   // The trailing spaces' glyphs are drawn (no ink), as Chrome draws them;
   // skparagraph's visit() leaves them out.
   'trailing-space',
+  // S3, the system fallback on Apple (CoreText from the primary font at
+  // ComputedPixelSize, no language, Blink's stages and hint rule, the range
+  // shaped with the whole item as context). Chrome 157 (blink-shaper.json):
+  // "fallback: 这们 ja" (L -2.44, the no-language value) and
+  // "spacing: ls0.he_niqqud" (90.80078125).
+  'system-fallback',
+  // S3, emoji presentation (VS16, or an emoji segment) from Apple Color
+  // Emoji. Chrome 157: "emoji: \"☺️\"" and "emoji: \"☃️\"" (40, color),
+  // "spacing: ls0.vs16" and "emoji: \"a©️b\"" (82.64).
+  'vs16',
+  // S3, text presentation (VS15) of an emoji from Apple Symbols, drawn
+  // without color. Chrome 157: "emoji: \"⌚︎\"" (23.125) and
+  // "emoji: \"⭐︎\"" (32.52), both without color.
+  'vs15',
+  // S3, a selector after a character it makes no variation sequence with
+  // is not looked at (Character::IsVariationSequence) and stays in its
+  // base's cluster (HarfBuzz's default cluster level, D8). Chrome 157, 40px
+  // Lato: "a\uFE0Fb" 42.64 (stages/S3/vs-chrome.json).
+  'vs-ignored',
+  // S3, a private use or non-character has no fallback font: the first
+  // font's .notdef. Chrome 157: "pua: 16px \"g_d0_f1\", sans-serif" rows
+  // (10.140625 for U+E000, U+F8FF, U+100000, U+FFFE).
+  'pua',
 ])
 
 const FONTS = {
@@ -74,7 +97,27 @@ const FONTS = {
   BSMono: 'RobotoMono-VariableFont_wght.ttf',
   BSOswald: 'Oswald.ttf',
   BSNews: 'Newsreader-opsz-only.ttf',
+  BSArA: 'ArA.ttf',
+  BSArB: 'ArB.ttf',
 }
+
+// One letter of each of these scripts, most of which no font in the
+// corpus has: on macOS each falls back to its own system font.
+const FACES = [
+  0x0531, 0x05d0, 0x0710, 0x0780, 0x07ca, 0x0800, 0x0840, 0x0905, 0x0985, 0x0a05, 0x0a85, 0x0b05, 0x0b85, 0x0c05,
+  0x0c85, 0x0d05, 0x0d85, 0x0e01, 0x0e81, 0x0f40, 0x1000, 0x10d0, 0x1100, 0x1200, 0x13a0, 0x1401, 0x1681, 0x16a0,
+  0x1700, 0x1720, 0x1740, 0x1760, 0x1780, 0x1820, 0x1900, 0x1950, 0x1980, 0x1a00, 0x1a20, 0x1b05, 0x1b83, 0x1bc0,
+  0x1c00, 0x1c5a, 0x2c00, 0x2c80, 0x2d30, 0x3041, 0x30a1, 0x3105, 0x4e00, 0xa000, 0xa4d0, 0xa500, 0xa6a0, 0xa800,
+  0xa840, 0xa882, 0xa8f2, 0xa90a, 0xa930, 0xa984, 0xaa00, 0xaa80, 0xabc0, 0xac00, 0x10000, 0x10280, 0x102a0, 0x10300,
+  0x10330, 0x10380, 0x103a0, 0x10400, 0x10450, 0x10480, 0x10500, 0x10530, 0x10600, 0x10800, 0x10840, 0x10900, 0x10920,
+  0x10980, 0x109a0, 0x10a00, 0x10a60, 0x10b00, 0x10b40, 0x10b60, 0x10c00, 0x11003, 0x11083, 0x110d0, 0x11103, 0x11183,
+  0x11680, 0x12000, 0x13000, 0x16800, 0x16a40, 0x16f00, 0x1b001, 0x1e800, 0x1e900, 0x10860, 0x10880, 0x108e0, 0x10a80,
+  0x10ac0, 0x10b80, 0x10c80, 0x10d00, 0x10f30, 0x11150, 0x11200, 0x11280, 0x112b0, 0x11305, 0x11400, 0x11480, 0x11580,
+  0x11600, 0x11700, 0x11800, 0x118a0, 0x11a00, 0x11ac0, 0x11c00, 0x11d00, 0x14400, 0x16ad0, 0x16b00, 0x16e40, 0x1bc00,
+  0x1e100, 0x1e2c0,
+]
+  .map((c) => String.fromCodePoint(c))
+  .join('')
 
 // [text, font families, tags]
 const TEXTS = [
@@ -134,6 +177,43 @@ const TEXTS = [
   // glyphs (ShapeResultRun::LimitNumGlyphs).
   ['ā'.repeat(20000), 'BSGar', ['long', 'max-glyphs']],
   ['NoSuchFamily text', 'NoSuchFamily, BSLato', []],
+  // Arabic joining across two families (the S2 flip, fixture "arabic:
+  // split none").
+  ['بلبل', 'BSArA, BSArB', ['script', 'family-fallback']],
+  ['ببلبب', 'BSArA, BSArB', ['script', 'family-fallback']],
+  // Turkish dotted and dotless i (and with lang tr in SETTINGS).
+  ['İstanbul ılık şğü', 'BSLato', []],
+  // Variation selectors the family fonts shape: none makes a variation
+  // sequence with its base, so it is not looked at.
+  ['a\uFE0Fb', 'BSLato', ['vs-ignored']],
+  // "1" is an emoji: "1\uFE0F" is drawn from Apple Color Emoji. Chrome 157,
+  // 40px Lato: 90.36 for the whole text, 40 for "1\uFE0F" alone.
+  ['a\uFE0Eb 1\uFE0F', 'BSLato', ['vs-ignored', 'vs16']],
+  // S3: characters no family has (system fallback on macOS with the system
+  // renderer; elsewhere the old path lays them out).
+  ['שָׁלוֹם', 'BSLato', ['system-fallback']],
+  ['这们', 'BSLato', ['system-fallback']],
+  ['漢字かな', 'BSLato', ['system-fallback']],
+  // A run that starts with Common punctuation (the hint rule).
+  ['「漢字」', 'BSLato', ['system-fallback']],
+  ['abc سلام def', 'BSLato', ['script', 'bidi', 'system-fallback']],
+  ['Hamburgefonstiv\u0E2A\u0E27\u0E31\u0E2A\u0E14\u0E35Hamburgefonstiv', 'BSLato', ['system-fallback']],
+  ['AV漢AV To', 'BSLato', ['system-fallback']],
+  ['News 漢字', 'BSNews', ['system-fallback']],
+  ['x\u3000y', 'BSLato', ['system-fallback']],
+  ['😀', 'BSLato', ['emoji', 'vs16']],
+  ['a☺️b', 'BSLato', ['emoji', 'vs16']],
+  ['a©️b', 'BSLato', ['emoji', 'vs16']],
+  ['☃️', 'BSLato', ['emoji', 'vs16']],
+  ['⌚︎', 'BSLato', ['emoji', 'vs15']],
+  ['⭐︎', 'BSLato', ['emoji', 'vs15']],
+  ['\u2205\uFE00', 'BSLato', ['system-fallback']],
+  ['\uE000', '"g_d0_f1", sans-serif', ['pua']],
+  ['\uFFFE', '"g_d0_f1", sans-serif', ['pua']],
+  ['\u{100000}', '"g_d0_f2", serif', ['pua']],
+  // More than 100 system fallback faces in one line (HbFont lifetime): one
+  // letter of each script below.
+  [FACES, 'BSLato', ['script', 'system-fallback', 'faces100']],
 ]
 
 // One property changed at a time on a few texts.
@@ -154,7 +234,15 @@ const SETTINGS = [
   [{ fontVariantCaps: 'small-caps' }, []],
   [{ fontSizeAdjust: '0.5' }, []],
 ]
-const SETTING_TEXTS = ['Hello world', 'AVATAR Ta To We', 'office affine fi fl ffi', 'سلام', '水 water']
+const SETTING_TEXTS = [
+  'Hello world',
+  'AVATAR Ta To We',
+  'office affine fi fl ffi',
+  'سلام',
+  '水 water',
+  'İstanbul ılık şğü',
+  '这们',
+]
 
 // Font shorthands: weight, style and size; fractional sizes floor to 1/100 px.
 const SIZES = [
@@ -182,6 +270,16 @@ function cases() {
         out.push({ renderer, text, font: `40px ${families}`, ctx: {}, tags, draw: true })
         out.push({ renderer, text, font: `40px ${families}`, ctx: { direction: 'rtl' }, tags, draw: true })
       }
+      // paint_y = y + baseline_y: small fractional y, top and alphabetic.
+      if (text.length <= 20) {
+        for (const [y, baseline] of [
+          [0.3, 'top'],
+          [0.5, 'top'],
+          [40.3, 'alphabetic'],
+        ]) {
+          out.push({ renderer, text, font: `40px ${families}`, ctx: {}, tags, draw: true, y, baseline })
+        }
+      }
     }
     for (const [settings, settingTags] of SETTINGS) {
       for (const text of SETTING_TEXTS) {
@@ -201,6 +299,12 @@ function mustAccept(c) {
   const blocked = ['letterSpacing', 'wordSpacing', 'fontVariantCaps', 'fontSizeAdjust']
   if (blocked.some((p) => p in c.ctx)) {
     return false
+  }
+  // S3: with the system renderer on macOS, a character no family has (and
+  // a private use one) is laid out by the shaper.
+  const fallback = ['system-fallback', 'vs16', 'vs15', 'pua']
+  if (process.platform === 'darwin' && c.renderer === 'system' && c.tags.some((t) => fallback.includes(t))) {
+    return !c.font.includes('NoSuchFamily')
   }
   if (c.tags.some((t) => ['emoji', 'family-fallback'].includes(t))) {
     return false
@@ -260,8 +364,8 @@ async function run(file, limit) {
       const draw = canvas.getContext('2d')
       draw.font = c.font
       Object.assign(draw, c.ctx)
-      draw.textBaseline = 'top'
-      draw.fillText(c.text, 20, 10.3)
+      draw.textBaseline = c.baseline ?? 'top'
+      draw.fillText(c.text, 20, c.y ?? 10.3)
       const data = draw.getImageData(0, 0, w, 80).data
       row.pixels = createHash('sha1').update(data).digest('hex')
       row.inked = data.some((v, i) => i % 4 === 3 && v !== 0)
@@ -376,7 +480,8 @@ function compare(oldFile, newFile, limit) {
   for (const c of all) {
     const a = before.get(c.id)
     const b = after.get(c.id)
-    const label = `#${c.id} ${c.renderer} ${c.font} ${JSON.stringify(c.ctx)} ${JSON.stringify(c.text.slice(0, 40))}`
+    const at = c.y === undefined ? '' : ` y ${c.y} ${c.baseline}`
+    const label = `#${c.id} ${c.renderer} ${c.font} ${JSON.stringify(c.ctx)}${at} ${JSON.stringify(c.text.slice(0, 40))}`
     if (!a || !b) {
       failures.push(`${label}: missing`)
       continue

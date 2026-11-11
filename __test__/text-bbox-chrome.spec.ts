@@ -46,6 +46,12 @@ const FIXTURE: Fixture =
 // so on another macOS version the painted pixels are not compared.
 const PIXEL_PINS = process.platform !== 'darwin' || Number.parseInt(release(), 10) === 27
 
+// With NAPI_RS_CANVAS_SHAPER=blink a character LatoT does not have (U+3000)
+// comes from CoreText's system fallback, as in Chrome, and that fallback ships
+// with the OS: macOS 26 gives another font (20.42px for U+3000 at 20px)
+// than the macOS 27 capture (20px). Such rows are pinned on macOS 27 only.
+const FALLBACK_PINS = PIXEL_PINS || process.env.NAPI_RS_CANVAS_SHAPER !== 'blink'
+
 const FONTS: Record<string, string> = {
   LatoT: 'Lato-Regular.ttf',
   HanT: 'SourceHanSerifCN-Bold.ttf',
@@ -161,6 +167,9 @@ test('text without ink keeps the box of its last word like Chrome', (t) => {
   const out: string[] = []
   for (const [key, row] of Object.entries(FIXTURE.emptyUnion)) {
     const [, direction, align, text] = /^(ltr|rtl) (\w+?)2? (".*")$/.exec(key)!
+    if (!FALLBACK_PINS && JSON.parse(text).includes('\u3000')) {
+      continue
+    }
     const ctx = createCanvas(10, 10).getContext('2d')
     ctx.font = '20px LatoT'
     ctx.direction = direction as CanvasDirection

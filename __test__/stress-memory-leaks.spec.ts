@@ -15,6 +15,7 @@ import {
   SvgExportFlag,
   SvgCanvas,
   convertSVGTextToPath,
+  setTextRenderer,
 } from '../index'
 
 const shouldSkip = process.env.RUN_STRESS_TESTS !== 'true'
@@ -344,4 +345,205 @@ serialTest('stress: failed AVIF decodes do not leak', async (t) => {
   // Round 0 warms up the allocator; base grew 36 MB from round 1 to 3.
   // Serial: RSS is process-wide, so a concurrent async test would add its own memory.
   t.true(rss[3] - rss[1] < 25, `RSS MB per round: ${rss.map((v) => v.toFixed(1)).join(', ')}`)
+})
+
+// ============================================================================
+// Text layout: the line cache, the shaper's HarfBuzz fonts and its system
+// fallback cache stay within their budgets
+// Exercises: LayOutLine / LayOutLineBlink (NAPI_RS_CANVAS_SHAPER=blink) with
+// font-variation instances, family fallback and, on macOS, system fallback
+// Risk: a cache that keeps every font or line it saw (DESIGN-SHAPER.md 6.2)
+// ============================================================================
+serialTest('stress: text layout with fallback does not grow from N to 2N lines', async (t) => {
+  GlobalFonts.registerFromPath(join(__dirname, 'fonts', 'RobotoMono-VariableFont_wght.ttf'), 'StressMono')
+  GlobalFonts.registerFromPath(join(__dirname, 'fonts', 'SourceHanSerifCN-Bold.ttf'), 'StressHan')
+  setFlagsFromString('--expose-gc')
+  const gc = runInNewContext('gc') as () => void
+  // Hebrew, Thai and Devanagari have no family font: system fallback on
+  // macOS, the first font's .notdef elsewhere. PUA has no fallback anywhere.
+  const tails = ['水', 'שלום', 'สวัสดี', 'नमस्ते', '😀', '⌚︎', '\uE000', 'a☺️b']
+  setTextRenderer('system')
+  try {
+    const ctx = createCanvas(200, 50).getContext('2d')
+    let line = 0
+    const round = async (n: number) => {
+      for (let i = 0; i < n; i++, line++) {
+        ctx.font = `${100 + (line % 600)} 16px StressMono, StressHan`
+        ctx.measureText(`line ${line} ${tails[line % tails.length]} ${line * 7}`)
+        ctx.fillText(`d${line}${tails[(line + 3) % tails.length]}`, 10, 30)
+        if (i % 100 === 0) await new Promise(setImmediate)
+      }
+      gc()
+      return process.memoryUsage().rss / 1048576
+    }
+    // Round 0 warms up the caches; then N lines, then 2N more.
+    const rss = [await round(3000), await round(3000), await round(6000)]
+    t.true(rss[2] - rss[1] < 25, `RSS MB after warm-up, N, 2N: ${rss.map((v) => v.toFixed(1)).join(', ')}`)
+  } finally {
+    setTextRenderer('portable')
+  }
+})
+
+// ============================================================================
+// Text layout: more system fallback keys than the results cache holds
+// Exercises: the shaper's system fallback cache (NAPI_RS_CANVAS_SHAPER=blink,
+// macOS) under eviction while the font arguments' caches drop and remake the
+// primary instances
+// Risk: CoreText keeps about 4 KB for each CTFont it found a fallback from;
+// asking again with a remade instance grew RSS by about 4 MB per 1000 lines
+// ============================================================================
+serialTest('stress: system fallback past its cache budget does not grow from N to 2N lines', async (t) => {
+  GlobalFonts.registerFromPath(join(__dirname, 'fonts', 'RobotoMono-VariableFont_wght.ttf'), 'StressFallbackMono')
+  setFlagsFromString('--expose-gc')
+  const gc = runInNewContext('gc') as () => void
+  setTextRenderer('system')
+  try {
+    const ctx = createCanvas(200, 50).getContext('2d')
+    let line = 0
+    const round = async (n: number) => {
+      for (let i = 0; i < n; i++, line++) {
+        // 1025 weights, each a fallback key for the Thai text and a font
+        // argument list (past the 256 that drop the caches).
+        ctx.font = `${100 + (line % 1025) / 2} 16px StressFallbackMono`
+        ctx.measureText(`สวัสดี ${line}`)
+        if (i % 100 === 0) await new Promise(setImmediate)
+      }
+      gc()
+      return process.memoryUsage().rss / 1048576
+    }
+    // Round 0 warms up the caches; then N lines, then 2N more.
+    const rss = [await round(3075), await round(3000), await round(6000)]
+    t.true(rss[2] - rss[1] < 10, `RSS MB after warm-up, N, 2N: ${rss.map((v) => v.toFixed(1)).join(', ')}`)
+  } finally {
+    setTextRenderer('portable')
+  }
+})
+
+// ============================================================================
+// Text layout: system fallback results dropped while a few primary fonts stay
+// in use
+// Exercises: the CoreText input the shaper keeps per primary font made from
+// data (family face and axes), NAPI_RS_CANVAS_SHAPER=blink on macOS
+// Risk: 60 weights x 73 code points (4380 keys) cycle through the results,
+// and 4000 more weights on the cold lines drop the font arguments' caches
+// (past 256 lists) and push the hot instances out of skia's caches; asking
+// CoreText with each remade instance kept about 4 KB per instance
+// ============================================================================
+serialTest('stress: system fallback with remade primary instances does not grow from N to 2N lines', async (t) => {
+  GlobalFonts.registerFromPath(join(__dirname, 'fonts', 'RobotoMono-VariableFont_wght.ttf'), 'StressFallbackMono')
+  setFlagsFromString('--expose-gc')
+  const gc = runInNewContext('gc') as () => void
+  const chars: string[] = []
+  for (const [first, last] of [
+    [0x0e01, 0x0e2e],
+    [0x05d0, 0x05ea],
+  ]) {
+    for (let c = first; c <= last; c++) chars.push(String.fromCodePoint(c))
+  }
+  setTextRenderer('system')
+  try {
+    const ctx = createCanvas(200, 50).getContext('2d')
+    let line = 0
+    const round = async (n: number) => {
+      for (let i = 0; i < n; i++, line++) {
+        ctx.font = `${100 + (line % 60)} 16px StressFallbackMono`
+        ctx.measureText(`${chars[Math.floor(line / 60) % chars.length]} ${line}`)
+        for (const cold of [0, 1]) {
+          ctx.font = `${300 + ((2 * line + cold) % 4000) / 10} 16px StressFallbackMono`
+          ctx.measureText(`cold ${line}`)
+        }
+        if (i % 100 === 0) await new Promise(setImmediate)
+      }
+      gc()
+      return process.memoryUsage().rss / 1048576
+    }
+    // Round 0 warms up the caches; then N lines, then 2N more.
+    const rss = [await round(4380), await round(8760), await round(17520)]
+    t.true(rss[2] - rss[1] < 14, `RSS MB after warm-up, N, 2N: ${rss.map((v) => v.toFixed(1)).join(', ')}`)
+  } finally {
+    setTextRenderer('portable')
+  }
+})
+
+// ============================================================================
+// Text layout: system fallback past both of its old budgets (64 primary
+// fonts kept as CoreText inputs, 4096 results)
+// Exercises: the CoreText input of a primary font made from data
+// (NAPI_RS_CANVAS_SHAPER=blink on macOS) when every result lookup misses and
+// the primary instances are remade
+// Risk: 65 weights x 73 code points (4745 keys) miss every time, and the cold
+// lines remake the hot instances; asking CoreText with a remade instance kept
+// about 4 KB per call (RSS +25 MB from N to 2N, the old path +4 MB)
+// ============================================================================
+serialTest('stress: system fallback past both cache budgets does not grow from N to 2N lines', async (t) => {
+  GlobalFonts.registerFromPath(join(__dirname, 'fonts', 'RobotoMono-VariableFont_wght.ttf'), 'StressFallbackMono')
+  setFlagsFromString('--expose-gc')
+  const gc = runInNewContext('gc') as () => void
+  const chars: string[] = []
+  for (const [first, last] of [
+    [0x0e01, 0x0e2e],
+    [0x05d0, 0x05ea],
+  ]) {
+    for (let c = first; c <= last; c++) chars.push(String.fromCodePoint(c))
+  }
+  setTextRenderer('system')
+  try {
+    const ctx = createCanvas(200, 50).getContext('2d')
+    let line = 0
+    const round = async (n: number) => {
+      for (let i = 0; i < n; i++, line++) {
+        ctx.font = `${100 + (line % 65)} 16px StressFallbackMono`
+        ctx.measureText(`${chars[Math.floor(line / 65) % chars.length]} ${line}`)
+        for (const cold of [0, 1]) {
+          ctx.font = `${300 + ((2 * line + cold) % 4000) / 10} 16px StressFallbackMono`
+          ctx.measureText(`cold ${line}`)
+        }
+        if (i % 100 === 0) await new Promise(setImmediate)
+      }
+      gc()
+      return process.memoryUsage().rss / 1048576
+    }
+    // Round 0 warms up the caches; then N lines, then 2N more.
+    const rss = [await round(4745), await round(9490), await round(18980)]
+    t.true(rss[2] - rss[1] < 12, `RSS MB after warm-up, N, 2N: ${rss.map((v) => v.toFixed(1)).join(', ')}`)
+  } finally {
+    setTextRenderer('portable')
+  }
+})
+
+// ============================================================================
+// Text layout: system fallback with a new primary variation on every line
+// Exercises: the CGFonts the shaper keeps as CoreText inputs per primary font
+// made from data (NAPI_RS_CANVAS_SHAPER=blink on macOS), past their budget
+// of 1024
+// Risk: one kept CGFont per variation, never dropped (RSS +14 MB over 800
+// weights). CoreText's own part, about 5 KB for every new CGFont it finds a
+// fallback from, stays: any input that is the real variation is a new CGFont
+// (+4.5 MB over 800 weights; the old path +1 MB)
+// ============================================================================
+serialTest('stress: system fallback with a new primary variation per line stays within its budget', async (t) => {
+  GlobalFonts.registerFromPath(join(__dirname, 'fonts', 'RobotoMono-VariableFont_wght.ttf'), 'StressFallbackMono')
+  setFlagsFromString('--expose-gc')
+  const gc = runInNewContext('gc') as () => void
+  setTextRenderer('system')
+  try {
+    const ctx = createCanvas(200, 50).getContext('2d')
+    let line = 0
+    const round = async (n: number) => {
+      for (let i = 0; i < n; i++, line++) {
+        // A weight step of 0.25 (FontSelectionValue) is a new variation.
+        ctx.font = `${100 + line / 4} 16px StressFallbackMono`
+        ctx.measureText(`สวัสดี ${line}`)
+        if (i % 100 === 0) await new Promise(setImmediate)
+      }
+      gc()
+      return process.memoryUsage().rss / 1048576
+    }
+    // Round 0 fills the 1024 kept CGFonts; then N new weights, then 2N more
+    // (weights 100 to 700).
+    const rss = [await round(1200), await round(400), await round(800)]
+    t.true(rss[2] - rss[1] < 10, `RSS MB after warm-up, N, 2N: ${rss.map((v) => v.toFixed(1)).join(', ')}`)
+  } finally {
+    setTextRenderer('portable')
+  }
 })

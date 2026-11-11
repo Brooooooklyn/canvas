@@ -49,6 +49,11 @@ interface Row {
   chrome: Value
   flip?: string
   flipPortable?: string
+  // The old path matches Chrome here by another route than Chrome's, and the
+  // shaper reaches Chrome only from this stage: with the switch on the row is
+  // not checked before it. ("fallback: han-ja", Chrome's standard font for
+  // Japanese, is now turned down to the old path: reason localeFallback.)
+  blinkFrom?: string
 }
 const FIXTURE: { darwin: string; fonts: Record<string, string>; cases: Record<string, Row> } = JSON.parse(
   readFileSync(join(__dirname, 'fixtures', 'text-fonts', 'blink-shaper.json'), 'utf8'),
@@ -61,7 +66,7 @@ const UNREGISTERED = Object.entries(FIXTURE.fonts).flatMap(([family, file]) =>
 )
 
 // The last shaper stage on this branch.
-const LANDED = 'S2'
+const LANDED = 'S3'
 const STAGES = ['S0', 'S0a', 'S1', 'S2', 'S3', 'S4', 'S5', 'S6', 'S7', 'S8', 'S9', 'S10']
 const BLINK = process.env.NAPI_RS_CANVAS_SHAPER === 'blink'
 
@@ -203,6 +208,9 @@ function check({ renderer, rows, flip, widthOnly }: Check) {
   setTextRenderer(renderer)
   try {
     for (const [name, row] of rows) {
+      if (BLINK && row.blinkFrom && STAGES.indexOf(row.blinkFrom) > STAGES.indexOf(LANDED)) {
+        continue
+      }
       const value = ours(row)
       const invalid = invalidOutput(row, value)
       if (invalid) {
@@ -338,5 +346,66 @@ test.serial('a cluster longer than kMaxGlyphs is cut as in Chrome', (t) => {
     [9.139984130859375, 3.989990234375, 9.139984130859375, 3.989990234375].concat([
       9.139984130859375, 3.989990234375, 9.139984130859375, 3.989990234375,
     ]),
+  )
+})
+
+// More than 100 system fallback faces in one line (DESIGN-SHAPER.md 2.9: an
+// entry keeps its HarfBuzz font alive past the LRU of 100). One letter of
+// each of 137 scripts in 40px Lato: 120 fonts on macOS 27.2. Chrome 157:
+// 3995.6025390625 (the old path: 4605.10693359375).
+test.serial('a line with more than 100 fallback faces is laid out like Chrome', (t) => {
+  if (!BLINK || !CAPTURE_DARWIN) {
+    t.pass('the new path with the macOS system fonts of the capture')
+    return
+  }
+  const text = [
+    0x0531, 0x05d0, 0x0710, 0x0780, 0x07ca, 0x0800, 0x0840, 0x0905, 0x0985, 0x0a05, 0x0a85, 0x0b05, 0x0b85, 0x0c05,
+    0x0c85, 0x0d05, 0x0d85, 0x0e01, 0x0e81, 0x0f40, 0x1000, 0x10d0, 0x1100, 0x1200, 0x13a0, 0x1401, 0x1681, 0x16a0,
+    0x1700, 0x1720, 0x1740, 0x1760, 0x1780, 0x1820, 0x1900, 0x1950, 0x1980, 0x1a00, 0x1a20, 0x1b05, 0x1b83, 0x1bc0,
+    0x1c00, 0x1c5a, 0x2c00, 0x2c80, 0x2d30, 0x3041, 0x30a1, 0x3105, 0x4e00, 0xa000, 0xa4d0, 0xa500, 0xa6a0, 0xa800,
+    0xa840, 0xa882, 0xa8f2, 0xa90a, 0xa930, 0xa984, 0xaa00, 0xaa80, 0xabc0, 0xac00, 0x10000, 0x10280, 0x102a0, 0x10300,
+    0x10330, 0x10380, 0x103a0, 0x10400, 0x10450, 0x10480, 0x10500, 0x10530, 0x10600, 0x10800, 0x10840, 0x10900, 0x10920,
+    0x10980, 0x109a0, 0x10a00, 0x10a60, 0x10b00, 0x10b40, 0x10b60, 0x10c00, 0x11003, 0x11083, 0x110d0, 0x11103, 0x11183,
+    0x11680, 0x12000, 0x13000, 0x16800, 0x16a40, 0x16f00, 0x1b001, 0x1e800, 0x1e900, 0x10860, 0x10880, 0x108e0, 0x10a80,
+    0x10ac0, 0x10b80, 0x10c80, 0x10d00, 0x10f30, 0x11150, 0x11200, 0x11280, 0x112b0, 0x11305, 0x11400, 0x11480, 0x11580,
+    0x11600, 0x11700, 0x11800, 0x118a0, 0x11a00, 0x11ac0, 0x11c00, 0x11d00, 0x14400, 0x16ad0, 0x16b00, 0x16e40, 0x1bc00,
+    0x1e100, 0x1e2c0,
+  ]
+    .map((c) => String.fromCodePoint(c))
+    .join('')
+  const ctx = createCanvas(10, 10).getContext('2d')
+  ctx.font = '40px BSLato'
+  t.is(ctx.measureText(text).width, 3995.6025390625)
+  const line = JSON.parse((ctx as unknown as { __debugTextLine(text: string): string }).__debugTextLine(text))
+  t.true(new Set(line.runs.map((run: { family: string }) => run.family)).size > 100)
+})
+
+// A private use character picked as the hint (ChooseHintIndex: the first
+// hint after the first with a likely script; PUA's script is Unknown) gets
+// no system font (FontCache::FallbackFontForCharacter returns none for
+// private use), so the iterator goes on to the last resort font and then the
+// first candidate: the ∅ next to it is drawn with Lato's .notdef too, though
+// ∅ alone gets Apple Symbols. Chrome 157, 40px Lato, [width,
+// actualBoundingBoxRight]; the old path keeps the Apple Symbols ∅.
+test.serial('a private use hint makes its neighbours .notdef as in Chrome', (t) => {
+  if (!BLINK || !CAPTURE_DARWIN) {
+    t.pass('the new path with the macOS system fonts of the capture')
+    return
+  }
+  const ctx = createCanvas(10, 10).getContext('2d')
+  ctx.font = '40px BSLato'
+  t.deepEqual(
+    ['∅', '∅', '∅', '∅∅', 'a∅b', ''].map((text) => {
+      const metrics = ctx.measureText(text)
+      return [metrics.width, metrics.actualBoundingBoxRight]
+    }),
+    [
+      [28.69140625, 25.8984375],
+      [42.519989013671875, 41.63999557495117],
+      [42.519989013671875, 41.63999557495117],
+      [63.77998352050781, 62.899993896484375],
+      [92.59140014648438, 91.15140533447266],
+      [21.259994506835938, 20.380001068115234],
+    ],
   )
 })

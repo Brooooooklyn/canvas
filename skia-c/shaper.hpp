@@ -53,10 +53,20 @@ enum class ShaperReject : uint32_t {
   kCaps,
   // A family has its own size or opsz (UsedSizes::faces: stage S6).
   kFaceSizes,
-  // A character that no family's face draws (system fallback: stage S3).
+  // A character that no family's face draws, where the shaper has no system
+  // fallback source: off Apple, with the portable renderer, or before the
+  // system fonts are loaded (Linux and Windows system fallback is not part
+  // of this work). The Apple system renderer lays it out since stage S3.
   kFallback,
-  // A variation selector (the VS fallback pass: stage S3).
+  // Kept so the slot numbers stay: variation selectors are laid out since
+  // stage S3 (the second pass that ignores them).
   kVariationSelector,
+  // A character no family has, which the standard font of the lang's script
+  // has (Japanese, Korean, Han, Devanagari on macOS): Chrome tries that font
+  // (-webkit-standard by LocaleOrDefault's script) before the system
+  // fallback, and the shaper's family list has the common standard font
+  // only (stage S8).
+  kLocaleFallback,
   kCount,
 };
 
@@ -271,6 +281,97 @@ PlacedLine PlaceItems(const std::vector<ShapedItem>& items,
                       const PreparedText& prepared,
                       bool contains_rtl,
                       bool rtl_base);
+
+// ---- fallback (shaper_chars.cpp, shaper_fallback_mac.cpp, shaper_font.cpp)
+
+// Character::IsVariationSequence: an emoji, standardized or ideographic
+// variation sequence.
+bool IsVariationSequence(uint32_t character, uint32_t selector);
+// Character::IsPrivateUse || Character::IsNonCharacter: FontCache gives such
+// a character no fallback font.
+bool IsPrivateUseOrNonCharacter(uint32_t c);
+// Character::IsCommonOrInheritedScript.
+bool IsCommonOrInheritedScript(uint32_t c);
+// Character::HasLikelyScript (with ScriptBasedOnUnicodeBlock).
+bool HasLikelyScript(uint32_t c);
+
+// A system fallback font and the synthetic styles it is drawn with; no face
+// when the system has none for the character.
+struct SystemFallbackFont {
+  sk_sp<SkTypeface> face;
+  SyntheticStyle synthetic = {false, false};
+};
+
+#if defined(__APPLE__)
+// font_cache_mac.mm GetAlternateFontPlatformData: CoreText's font for
+// `character` from `base`'s CTFont (Times when it has none) at
+// `computed_pixel_size`, with no language; the Apple Symbols swap for an
+// emoji without emoji presentation; the trait and weight refinement; the
+// synthetic styles from the traits.
+// For a `base` made from data, CoreText is asked with the same font from
+// `inputs` (MacFallbackInputs) by the key's primary font; `base` still gives
+// the traits.
+struct SystemFallbackKey;
+struct MacFallbackInputs;
+SystemFallbackFont MacAlternateFont(SkTypeface* base,
+                                    MacFallbackInputs* inputs,
+                                    const SystemFallbackKey& key,
+                                    SyntheticStyle base_synthetic,
+                                    uint32_t character,
+                                    int css_weight,
+                                    bool italic,
+                                    float computed_pixel_size);
+// The CoreText fonts the system fallback asks with for primary fonts made
+// from data (as the registered fonts are), by the key's primary font (family
+// face and axes): the CGFont of the first instance given, for the 1024 most
+// recently asked until the assets are rebuilt, and a CTFont made from it for
+// the 64 most recently asked. CoreText keeps about 4 KB for every CGFont of a
+// font made from data that it found a fallback from, after that CGFont is
+// freed, and an instance remade after the font arguments' caches drop has a
+// new CGFont. A CTFont made again from a kept CGFont adds nothing and gives
+// the same fallback fonts; it only takes CoreText about 1 ms to set up. A
+// kept CGFont costs about 26 KB while it lives, so past 1024 primary fonts
+// in use a dropped one asked again adds CoreText's 4 KB once more. An
+// installed font (one with a URL) is asked with its own CTFont: its remade
+// instances add nothing.
+MacFallbackInputs* CreateMacFallbackInputs();
+void DestroyMacFallbackInputs(MacFallbackInputs* inputs);
+// CreateFontPlatformData's synthetic styles for a font matched by family.
+SyntheticStyle MacMatchedFontSynthetic(SkTypeface* face,
+                                       float css_weight,
+                                       bool italic);
+#endif
+
+// The system fallback results of a collection
+// (skiac_font_collection::system_fallbacks, kept across the drops of
+// TextCaches), by code point, emoji presentation, primary font (family face
+// and axes), weight, slope and ComputedPixelSize. At most 4096, the least
+// recently used dropped first.
+struct SystemFallbackKey {
+  uint32_t code_point;
+  bool emoji_presentation;
+  SkTypefaceID primary;
+  uint64_t primary_axes;
+  uint32_t weight_bits;
+  uint32_t slope_bits;
+  int pixel_size;
+  bool operator==(const SystemFallbackKey&) const = default;
+};
+const SystemFallbackFont* FindSystemFallback(
+    skiac_font_collection* c_collection,
+    const SystemFallbackKey& key);
+void StoreSystemFallback(skiac_font_collection* c_collection,
+                         const SystemFallbackKey& key,
+                         SystemFallbackFont font);
+#if defined(__APPLE__)
+// The collection's MacFallbackInputs, kept with the results.
+MacFallbackInputs* SystemFallbackInputs(skiac_font_collection* c_collection);
+#endif
+// A system fallback face at an opsz (FontPlatformDataFromCTFont), cached by
+// typeface and opsz.
+sk_sp<SkTypeface> SystemFallbackInstance(skiac_font_collection* c_collection,
+                                         sk_sp<SkTypeface> face,
+                                         float opsz);
 
 // ---- debug entry points (cargo tests and the harness) ----
 

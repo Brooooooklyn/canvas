@@ -24,6 +24,23 @@ std::vector<SkString> ResolveFontFamilies(skiac_font_collection* c_collection,
                                           const skiac_text_request& request,
                                           std::vector<bool>* generic = nullptr);
 
+// FontCache::GetLastResortFallbackFont's family for `request`: on macOS with
+// the system renderer Times (else Lucida Grande); empty when none resolves
+// (font_families.cpp).
+std::string LastResortFamily(skiac_font_collection* c_collection,
+                             const skiac_text_request& request);
+
+// The standard font of the request's language, where it is not the common
+// one: FontFallbackList::GetFontData's -webkit-standard, which
+// FontSelector::FamilyNameFromSettings takes from the settings for
+// LocaleOrDefault's script (GenericFontFamilySettings::Standard). On macOS
+// with the system renderer, for a lang whose script is Japanese, Korean,
+// Simplified or Traditional Han, or Devanagari; else empty, also for none or
+// "inherit" (font_families.cpp). ResolveFontFamilies does not use it yet: its
+// standard font is the common one (stage S8).
+std::string LocaleStandardFamily(skiac_font_collection* c_collection,
+                                 const skiac_text_request& request);
+
 // The primary font's metrics TextMetrics reads, in px, y up
 // (text_metrics.cpp).
 struct PrimaryFontMetrics {

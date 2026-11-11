@@ -567,6 +567,146 @@ bool ResolveStandard(const FamilyResolver& resolver,
          ResolveLastResort(resolver, description_generic, out);
 }
 
+#if defined(__APPLE__)
+// The scripts macOS Chrome has a standard font of their own for
+// (locale_settings_mac.grd IDS_STANDARD_FONT_FAMILY_*); the others use the
+// common one, Times.
+enum class StandardScript {
+  kCommon,
+  kJapanese,
+  kKorean,
+  kSimplifiedHan,
+  kTraditionalHan,
+  kDevanagari,
+};
+
+// locale_to_script_mapping.cc LocaleToScriptCodeForFontSelection, telling
+// only the scripts above apart. Its list's other entries are all a bare
+// language, so they end the search where the tag has no subtag left anyway.
+StandardScript LocaleStandardScript(std::string_view lang) {
+  struct Subtag {
+    const char* subtag;
+    StandardScript script;
+  };
+  static constexpr Subtag kLocaleScripts[] = {
+      {"hi", StandardScript::kDevanagari},
+      {"ja", StandardScript::kJapanese},
+      {"ko", StandardScript::kKorean},
+      {"kok", StandardScript::kDevanagari},
+      {"mai", StandardScript::kDevanagari},
+      {"mr", StandardScript::kDevanagari},
+      {"ne", StandardScript::kDevanagari},
+      {"sa", StandardScript::kDevanagari},
+      {"zh", StandardScript::kSimplifiedHan},
+      {"cdo", StandardScript::kSimplifiedHan},
+      {"cjy", StandardScript::kSimplifiedHan},
+      {"cmn", StandardScript::kSimplifiedHan},
+      {"cpx", StandardScript::kSimplifiedHan},
+      {"czh", StandardScript::kSimplifiedHan},
+      {"czo", StandardScript::kSimplifiedHan},
+      {"gan", StandardScript::kSimplifiedHan},
+      {"hsn", StandardScript::kSimplifiedHan},
+      {"mnp", StandardScript::kSimplifiedHan},
+      {"wuu", StandardScript::kSimplifiedHan},
+      {"hak", StandardScript::kTraditionalHan},
+      {"lzh", StandardScript::kTraditionalHan},
+      {"nan", StandardScript::kTraditionalHan},
+      {"yue", StandardScript::kTraditionalHan},
+      {"zh-cdo", StandardScript::kSimplifiedHan},
+      {"zh-cjy", StandardScript::kSimplifiedHan},
+      {"zh-cmn", StandardScript::kSimplifiedHan},
+      {"zh-cpx", StandardScript::kSimplifiedHan},
+      {"zh-czh", StandardScript::kSimplifiedHan},
+      {"zh-czo", StandardScript::kSimplifiedHan},
+      {"zh-gan", StandardScript::kSimplifiedHan},
+      {"zh-hsn", StandardScript::kSimplifiedHan},
+      {"zh-mnp", StandardScript::kSimplifiedHan},
+      {"zh-wuu", StandardScript::kSimplifiedHan},
+      {"zh-hak", StandardScript::kTraditionalHan},
+      {"zh-lzh", StandardScript::kTraditionalHan},
+      {"zh-nan", StandardScript::kTraditionalHan},
+      {"zh-yue", StandardScript::kTraditionalHan},
+      {"zh-hk", StandardScript::kTraditionalHan},
+      {"zh-mo", StandardScript::kTraditionalHan},
+      {"zh-tw", StandardScript::kTraditionalHan},
+  };
+  // ScriptNameToCode: a 4-letter subtag naming one of these scripts (every
+  // name of its list but "zzzz", USCRIPT_UNKNOWN) ends the search.
+  static constexpr Subtag kScriptNames[] = {
+      {"zyyy", StandardScript::kCommon},
+      {"qaai", StandardScript::kCommon},
+      {"arab", StandardScript::kCommon},
+      {"armn", StandardScript::kCommon},
+      {"beng", StandardScript::kCommon},
+      {"bopo", StandardScript::kCommon},
+      {"cher", StandardScript::kCommon},
+      {"copt", StandardScript::kCommon},
+      {"cyrl", StandardScript::kCommon},
+      {"dsrt", StandardScript::kCommon},
+      {"deva", StandardScript::kDevanagari},
+      {"egyh", StandardScript::kCommon},
+      {"egyp", StandardScript::kCommon},
+      {"geok", StandardScript::kCommon},
+      {"hans", StandardScript::kSimplifiedHan},
+      {"hant", StandardScript::kTraditionalHan},
+      {"hmng", StandardScript::kCommon},
+      {"hung", StandardScript::kCommon},
+      {"inds", StandardScript::kCommon},
+      {"java", StandardScript::kCommon},
+      {"kali", StandardScript::kCommon},
+      {"latf", StandardScript::kCommon},
+      {"latg", StandardScript::kCommon},
+      {"lepc", StandardScript::kCommon},
+      {"lina", StandardScript::kCommon},
+      {"mand", StandardScript::kCommon},
+      {"maya", StandardScript::kCommon},
+      {"mero", StandardScript::kCommon},
+      {"nkoo", StandardScript::kCommon},
+      {"orkh", StandardScript::kCommon},
+      {"perm", StandardScript::kCommon},
+      {"phag", StandardScript::kCommon},
+      {"phnx", StandardScript::kCommon},
+      {"plrd", StandardScript::kCommon},
+      {"roro", StandardScript::kCommon},
+      {"sara", StandardScript::kCommon},
+      {"syre", StandardScript::kCommon},
+      {"syrj", StandardScript::kCommon},
+      {"syrn", StandardScript::kCommon},
+      {"teng", StandardScript::kCommon},
+      {"vaii", StandardScript::kCommon},
+      {"visp", StandardScript::kCommon},
+      {"xsux", StandardScript::kCommon},
+      {"jpan", StandardScript::kJapanese},
+      {"kore", StandardScript::kKorean},
+      {"zxxx", StandardScript::kCommon},
+  };
+  // BCP 47's '-', also for ICU's '_'.
+  std::string tag(lang);
+  std::replace(tag.begin(), tag.end(), '_', '-');
+  std::string_view view(tag);
+  while (!view.empty()) {
+    for (const Subtag& entry : kLocaleScripts) {
+      if (EqualsIgnoringAsciiCase(view, entry.subtag)) {
+        return entry.script;
+      }
+    }
+    const size_t pos = view.rfind('-');
+    if (pos == std::string_view::npos) {
+      break;
+    }
+    if (view.size() - (pos + 1) == 4) {
+      for (const Subtag& entry : kScriptNames) {
+        if (EqualsIgnoringAsciiCase(view.substr(pos + 1), entry.subtag)) {
+          return entry.script;
+        }
+      }
+    }
+    view = view.substr(0, pos);
+  }
+  return StandardScript::kCommon;
+}
+#endif
+
 }  // namespace
 
 std::vector<SkString> ResolveFontFamilies(skiac_font_collection* c_collection,
@@ -614,6 +754,68 @@ std::vector<SkString> ResolveFontFamilies(skiac_font_collection* c_collection,
     add(standard, true);
   }
   return resolved;
+}
+
+std::string LastResortFamily(skiac_font_collection* c_collection,
+                             const skiac_text_request& request) {
+  FamilyResolver resolver(c_collection);
+  // The description's generic family, as ResolveFontFamilies finds it.
+  int description_generic = kNamed;
+  for (size_t i = 0; i < request.family_count; ++i) {
+    const int generic = request.families[i].generic;
+    if (generic && generic != kSystemUi && generic != kMath) {
+      description_generic = generic;
+    }
+  }
+  std::string name;
+  if (!ResolveLastResort(resolver, description_generic, &name)) {
+    name.clear();
+  }
+  return name;
+}
+
+std::string LocaleStandardFamily(skiac_font_collection* c_collection,
+                                 const skiac_text_request& request) {
+#if defined(__APPLE__)
+  FamilyResolver resolver(c_collection);
+  const std::string_view lang(request.lang ? request.lang : "",
+                              request.lang ? request.lang_len : 0);
+  if (!resolver.system() || lang.empty() || lang == "inherit") {
+    return {};
+  }
+  // GenericFontFamilySettings::Standard: a list (a leading ',') is its first
+  // available family (FontCache::FirstAvailableOrFirst).
+  std::vector<const char*> names;
+  switch (LocaleStandardScript(lang)) {
+    case StandardScript::kJapanese:
+      names = {"Hiragino Kaku Gothic ProN"};
+      break;
+    case StandardScript::kKorean:
+      names = {"Apple SD Gothic Neo"};
+      break;
+    case StandardScript::kSimplifiedHan:
+      names = {"PingFang SC", "STHeiti"};
+      break;
+    case StandardScript::kTraditionalHan:
+      names = {"PingFang TC", "Heiti TC"};
+      break;
+    case StandardScript::kDevanagari:
+      names = {"Devanagari MT"};
+      break;
+    case StandardScript::kCommon:
+      break;
+  }
+  std::string name;
+  for (const char* candidate : names) {
+    if (resolver.FindSystem(candidate, &name)) {
+      return name;
+    }
+  }
+#else
+  (void)c_collection;
+  (void)request;
+#endif
+  return {};
 }
 
 // The canvas parses `font` against a 10px `sans-serif` style made without a

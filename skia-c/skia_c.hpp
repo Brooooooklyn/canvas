@@ -661,6 +661,12 @@ struct skiac_svg_surface {
   skiac_canvas* canvas;
 };
 
+// The Blink shaper's system fallback results (shaper_font.cpp).
+struct SystemFallbackCache;
+struct SystemFallbackCacheDeleter {
+  void operator()(SystemFallbackCache* cache) const;
+};
+
 // text.cpp: the laid out lines of recent requests and other text work,
 // kept by the font collection.
 struct TextCaches;
@@ -748,6 +754,13 @@ struct skiac_font_collection {
   // text.cpp: the resolved families, primary font metrics and laid out lines
   // of recent requests; dropped with the match caches.
   std::unique_ptr<TextCaches, TextCachesDeleter> text_caches;
+  // shaper_font.cpp: the Blink shaper's system fallback results, kept when
+  // text_caches is dropped. They depend on the system fonts only, and asking
+  // CoreText again with a remade instance's CTFont after each drop grows
+  // CoreText's own fallback tables. With them, the CGFonts CoreText is asked
+  // with for registered fonts: dropped by rebuildAssets, which removes fonts.
+  std::unique_ptr<SystemFallbackCache, SystemFallbackCacheDeleter>
+      system_fallbacks;
 #if defined(__APPLE__)
   // loadSystemFonts turned the installed fonts on (kept across renderer
   // switches); they are registered the first time a font is looked up or
@@ -986,6 +999,7 @@ struct skiac_font_collection {
     caps_features.clear();
     font_arguments.clear();
     text_caches.reset();
+    system_fallbacks.reset();
     caches_dirty = false;
     ++families_generation;
 

@@ -38,52 +38,366 @@ constexpr const char* kOtShaperList[] = {"ot", nullptr};
 constexpr uint32_t kMaxCharacterIndex = (1u << 15) - 1;
 constexpr uint32_t kMaxGlyphs = 1u << 15;
 
-bool IsUnicodeVariationSelector(char16_t unit) {
-  return (unit >= 0x180B && unit <= 0x180D) ||
-         (unit >= 0xFE00 && unit <= 0xFE0F);
+bool IsNonTextFallbackPriority(Priority priority) {
+  return priority == Priority::kEmojiText ||
+         priority == Priority::kEmojiEmoji ||
+         priority == Priority::kEmojiTextWithVS ||
+         priority == Priority::kEmojiEmojiWithVS;
 }
 
-// Whether `text` has a variation selector (U+180B..U+180D, U+FE00..U+FE0F,
-// U+E0100..U+E01EF: lead surrogate U+DB40, trail U+DD00..U+DDEF).
-bool HasVariationSelector(const std::u16string& text) {
-  for (size_t i = 0; i < text.size(); ++i) {
-    if (IsUnicodeVariationSelector(text[i])) {
-      return true;
-    }
-    if (text[i] == 0xDB40 && i + 1 < text.size() && text[i + 1] >= 0xDD00 &&
-        text[i + 1] <= 0xDDEF) {
-      return true;
-    }
+bool IsEmojiPresentationEmoji(Priority priority) {
+  return priority == Priority::kEmojiEmoji ||
+         priority == Priority::kEmojiEmojiWithVS;
+}
+
+#if defined(__APPLE__)
+uint32_t FloatBits(float value) {
+  uint32_t bits;
+  memcpy(&bits, &value, sizeof(bits));
+  return bits;
+}
+
+// The variation design position of a typeface, as a hash.
+uint64_t VariationHash(SkTypeface* face) {
+  const int count = face->getVariationDesignPosition({});
+  if (count <= 0) {
+    return 0;
   }
-  return false;
+  std::vector<SkFontArguments::VariationPosition::Coordinate> coordinates(
+      count);
+  if (face->getVariationDesignPosition(coordinates) != count) {
+    return 0;
+  }
+  uint64_t hash = 0;
+  for (const auto& coordinate : coordinates) {
+    hash = hash * 1000003 + coordinate.axis;
+    hash = hash * 1000003 + FloatBits(coordinate.value);
+  }
+  return hash;
 }
+#endif
 
-// FontFallbackIterator's kFontGroupFonts stage: the family entries, each
-// typeface once (UniqueOrNext). The later stages (system fallback, the last
-// resort, the first candidate's .notdef) come with stage S3: when the
-// family entries run out, the request is turned down.
-class FallbackIterator {
+// The fonts of one line: Blink's FontFallbackList (the family entries),
+// the last resort font, and the system fallback fonts the line asked for.
+// Entries live in deques, so the runs' pointers to them stay valid.
+class LineFonts {
  public:
-  explicit FallbackIterator(std::vector<FontEntry>& entries)
-      : entries_(entries) {}
+  LineFonts(skiac_font_collection* c_collection,
+            const skiac_text_request& request,
+            const TextRasterPolicy& policy,
+            const UsedSizes& sizes)
+      : c_collection_(c_collection),
+        request_(request),
+        policy_(policy),
+        sizes_(sizes) {
+    policy_.ApplyToTextStyle(&flags_);
+  }
 
-  FontEntry* Next() {
-    while (index_ < entries_.size()) {
-      FontEntry& entry = entries_[index_++];
-      if (returned_.insert(entry.face->uniqueID()).second) {
+  // Fills `entry`'s fonts: the shaping font OneLineShaper builds, the draw
+  // font with the synthetic styles, and the HarfBuzz font. False when the
+  // typeface has no data.
+  bool Finish(FontEntry* entry) const {
+    SkFont font(entry->face, entry->size);
+    font.setEdging(flags_.getFontEdging());
+    font.setHinting(flags_.getFontHinting());
+    font.setSubpixel(flags_.getSubpixel());
+    font.setEmbolden(entry->synthetic.bold);
+    font.setSkewX(entry->synthetic.italic ? -SK_Scalar1 / 4 : 0);
+    entry->shaping_font = font;
+    entry->draw_font = policy_.DrawFont(font, nullptr);
+    entry->space_glyph = HbNominalGlyph(c_collection_, entry->face.get(), 0x20);
+    return MakeEntryFont(c_collection_, entry);
+  }
+
+  // A family entry (Blink's SimpleFontData of a font-family font).
+  bool AddFamily(sk_sp<SkTypeface> face, SkTypeface* base) {
+    FontEntry entry;
+    entry.face = std::move(face);
+    entry.base = base;
+    entry.size = sizes_.effective;
+    entry.opsz = sizes_.opsz;
+    entry.synthetic =
+        SynthesizeStyle(c_collection_, entry.face.get(), base, request_);
+    if (!Finish(&entry)) {
+      return false;
+    }
+    families_.push_back(std::move(entry));
+    return true;
+  }
+
+  std::deque<FontEntry>& families() { return families_; }
+
+  // Whether this host has a system fallback source the shaper ports: the
+  // CoreText one, with the system renderer once the installed fonts are on.
+  void set_system_source(bool system_source) { system_source_ = system_source; }
+  bool system_source() const { return system_source_; }
+
+  // The standard font of the lang's script where it is not the family
+  // list's own (LocaleStandardFamily), found before the layout takes any
+  // reference into the caches.
+  void set_locale_standard(sk_sp<SkTypeface> face) {
+    locale_standard_ = std::move(face);
+  }
+  SkTypeface* locale_standard() const { return locale_standard_.get(); }
+
+  // FontCache::GetLastResortFallbackFont through the family matching, found
+  // before the layout takes any reference into the caches.
+  void set_last_resort(sk_sp<SkTypeface> face, SkTypeface* base) {
+    last_resort_face_ = std::move(face);
+    last_resort_base_ = base;
+  }
+
+  FontEntry* LastResort() {
+    if (!last_resort_made_) {
+      last_resort_made_ = true;
+      if (last_resort_face_) {
+        FontEntry entry;
+        entry.face = last_resort_face_;
+        entry.base = last_resort_base_;
+        entry.size = sizes_.effective;
+        entry.opsz = sizes_.opsz;
+        entry.synthetic = SynthesizeStyle(c_collection_, entry.face.get(),
+                                          last_resort_base_, request_);
+        if (Finish(&entry)) {
+          others_.push_back(std::move(entry));
+          last_resort_ = &others_.back();
+        }
+      }
+    }
+    return last_resort_;
+  }
+
+  // FontCache::FallbackFontForCharacter: none for a private use or
+  // non-character; on Apple, Apple Color Emoji for emoji presentation, else
+  // the CoreText helper from the primary font (the font list's first font,
+  // FontFallbackList::PrimarySimpleFontDataWithSpace).
+  FontEntry* SystemFallback(uint32_t hint, Priority priority) {
+    if (!system_source_ || IsPrivateUseOrNonCharacter(hint)) {
+      return nullptr;
+    }
+#if defined(__APPLE__)
+    const FontEntry& primary = families_.front();
+    const bool emoji = IsEmojiPresentationEmoji(priority);
+    const bool italic = request_.slope != 0;
+    // The primary font by its family face and its axes, not by the
+    // instance's typeface ID: a dropped and remade instance (the font
+    // arguments' caches) is the same font, and a new CTFont per line would
+    // grow CoreText's per-font fallback tables.
+    const SystemFallbackKey key = {
+        hint, emoji,
+        primary.base ? primary.base->uniqueID() : primary.face->uniqueID(),
+        VariationHash(primary.face.get()), FloatBits(request_.weight),
+        FloatBits(request_.slope),
+        // FontDescription::ComputedPixelSize.
+        static_cast<int>(request_.size + 0.5f)};
+    SystemFallbackFont font;
+    if (const SystemFallbackFont* found =
+            FindSystemFallback(c_collection_, key)) {
+      font = *found;
+    } else {
+      if (emoji && c_collection_->font_mgr) {
+        const SkFontStyle style(
+            static_cast<int>(roundf(request_.weight)), request_.stretch,
+            static_cast<SkFontStyle::Slant>(request_.style));
+        font.face = c_collection_->font_mgr->matchFamilyStyle(
+            "Apple Color Emoji", style);
+        if (font.face) {
+          font.synthetic =
+              MacMatchedFontSynthetic(font.face.get(), request_.weight, italic);
+        }
+      }
+      if (!font.face) {
+        font = MacAlternateFont(
+            primary.face.get(), SystemFallbackInputs(c_collection_), key,
+            primary.synthetic, hint, static_cast<int>(request_.weight), italic,
+            static_cast<float>(key.pixel_size));
+      }
+      StoreSystemFallback(c_collection_, key, font);
+    }
+    if (!font.face) {
+      return nullptr;
+    }
+    // FontPlatformDataFromCTFont(..., EffectiveFontSize, SpecifiedSize, ...,
+    // no variation settings): opsz at the specified size, no request axes.
+    sk_sp<SkTypeface> face =
+        request_.optical_sizing == 0
+            ? SystemFallbackInstance(c_collection_, font.face, request_.size)
+            : font.face;
+    for (FontEntry& entry : others_) {
+      if (!entry.base && entry.face->uniqueID() == face->uniqueID() &&
+          entry.synthetic.bold == font.synthetic.bold &&
+          entry.synthetic.italic == font.synthetic.italic) {
         return &entry;
       }
     }
+    FontEntry entry;
+    entry.face = std::move(face);
+    entry.size = sizes_.effective;
+    entry.opsz = request_.size;
+    entry.synthetic = font.synthetic;
+    if (!Finish(&entry)) {
+      return nullptr;
+    }
+    others_.push_back(std::move(entry));
+    return &others_.back();
+#else
+    (void)priority;
     return nullptr;
+#endif
   }
 
  private:
-  std::vector<FontEntry>& entries_;
-  size_t index_ = 0;
-  std::unordered_set<SkTypefaceID> returned_;
+  skiac_font_collection* c_collection_;
+  const skiac_text_request& request_;
+  const TextRasterPolicy& policy_;
+  const UsedSizes& sizes_;
+  TextStyle flags_;
+  std::deque<FontEntry> families_;
+  std::deque<FontEntry> others_;
+  bool system_source_ = false;
+  sk_sp<SkTypeface> locale_standard_;
+  sk_sp<SkTypeface> last_resort_face_;
+  SkTypeface* last_resort_base_ = nullptr;
+  bool last_resort_made_ = false;
+  FontEntry* last_resort_ = nullptr;
 };
 
-enum class QueueAction { kNextFont, kRange };
+// FontFallbackIterator (font_fallback_iterator.cc) over a LineFonts: the
+// family entries, each typeface once (UniqueOrNext); for an emoji or symbol
+// segment one font for the first hint with the segment's priority; one
+// system font per call for the hint ChooseHintIndex picks, each hint asked
+// once; the last resort font; the first candidate, whose .notdef is drawn.
+// Without a system source (off Apple) the iterator stops after the family
+// entries and the request is turned down.
+class FallbackIterator {
+ public:
+  FallbackIterator(LineFonts& fonts, Priority priority)
+      : fonts_(fonts), priority_(priority) {}
+
+  bool HasNext() const { return stage_ != Stage::kOutOfLuck; }
+  bool needs_system_source() const { return needs_system_source_; }
+  // Next stopped after the family entries, before the system fonts, for the
+  // caller to tell whether the lang's standard font has a character still to
+  // shape; the next call goes on to the system fonts.
+  bool at_locale_standard() const { return at_locale_standard_; }
+
+  void Reset() {
+    index_ = 0;
+    stage_ = Stage::kFontGroupFonts;
+    locale_standard_asked_ = false;
+    asked_.clear();
+    returned_.clear();
+    first_candidate_ = nullptr;
+  }
+
+  FontEntry* Next(const std::vector<uint32_t>& hints) {
+    at_locale_standard_ = false;
+    switch (stage_) {
+      case Stage::kOutOfLuck:
+        return nullptr;
+      case Stage::kFallbackPriorityFonts:
+        stage_ = Stage::kSystemFonts;
+        if (FontEntry* font = fonts_.SystemFallback(hints[0], priority_)) {
+          return UniqueOrNext(font, hints);
+        }
+        return Next(hints);
+      case Stage::kSystemFonts:
+        if (FontEntry* font = UniqueSystemFontForHintList(hints)) {
+          return UniqueOrNext(font, hints);
+        }
+        stage_ = Stage::kFirstCandidateForNotdefGlyph;
+        return UniqueOrNext(fonts_.LastResort(), hints);
+      case Stage::kFirstCandidateForNotdefGlyph:
+        stage_ = Stage::kOutOfLuck;
+        return first_candidate_;
+      case Stage::kFontGroupFonts:
+        break;
+    }
+    std::deque<FontEntry>& families = fonts_.families();
+    if (index_ >= families.size()) {
+      if (!fonts_.system_source()) {
+        needs_system_source_ = true;
+        return nullptr;
+      }
+      // FontFallbackList::GetFontData: Chrome's last family is the standard
+      // font, unless a family entry already gave it.
+      if (SkTypeface* standard = fonts_.locale_standard();
+          standard && !locale_standard_asked_) {
+        locale_standard_asked_ = true;
+        if (!returned_.count(standard->uniqueID())) {
+          at_locale_standard_ = true;
+          return nullptr;
+        }
+      }
+      stage_ = IsNonTextFallbackPriority(priority_)
+                   ? Stage::kFallbackPriorityFonts
+                   : Stage::kSystemFonts;
+      return Next(hints);
+    }
+    return UniqueOrNext(&families[index_++], hints);
+  }
+
+ private:
+  enum class Stage {
+    kFontGroupFonts,
+    kFallbackPriorityFonts,
+    kSystemFonts,
+    kFirstCandidateForNotdefGlyph,
+    kOutOfLuck,
+  };
+
+  FontEntry* UniqueOrNext(FontEntry* candidate,
+                          const std::vector<uint32_t>& hints) {
+    if (!candidate) {
+      return Next(hints);
+    }
+    if (!returned_.insert(candidate->face->uniqueID()).second) {
+      return Next(hints);
+    }
+    if (!first_candidate_) {
+      first_candidate_ = candidate;
+    }
+    return candidate;
+  }
+
+  // ChooseHintIndex: with more than one hint, the first after the first
+  // with a likely script.
+  static size_t ChooseHintIndex(const std::vector<uint32_t>& hints) {
+    if (hints.size() <= 1) {
+      return 0;
+    }
+    for (size_t i = 1; i < hints.size(); ++i) {
+      if (HasLikelyScript(hints[i])) {
+        return i;
+      }
+    }
+    return 0;
+  }
+
+  FontEntry* UniqueSystemFontForHintList(const std::vector<uint32_t>& hints) {
+    if (hints.empty()) {
+      return nullptr;
+    }
+    const uint32_t hint = hints[ChooseHintIndex(hints)];
+    if (!hint || !asked_.insert(hint).second) {
+      return nullptr;
+    }
+    return fonts_.SystemFallback(hint, Priority::kText);
+  }
+
+  LineFonts& fonts_;
+  const Priority priority_;
+  Stage stage_ = Stage::kFontGroupFonts;
+  size_t index_ = 0;
+  std::unordered_set<uint32_t> asked_;
+  std::unordered_set<SkTypefaceID> returned_;
+  FontEntry* first_candidate_ = nullptr;
+  bool needs_system_source_ = false;
+  bool locale_standard_asked_ = false;
+  bool at_locale_standard_ = false;
+};
+
+enum class QueueAction { kNextFont, kRange, kReset };
 
 struct QueueItem {
   QueueAction action;
@@ -107,7 +421,7 @@ class ItemShaper {
              hb_buffer_t* buffer,
              const std::vector<hb_feature_t>& features,
              hb_language_t language,
-             std::vector<FontEntry>& entries,
+             LineFonts& fonts,
              ShapeResult* result)
       : text_(text),
         length_(length),
@@ -115,36 +429,61 @@ class ItemShaper {
         buffer_(buffer),
         features_(features),
         language_(language),
-        entries_(entries),
+        fonts_(fonts),
         result_(result) {}
 
-  // False when some characters are left that no family entry draws.
+  // HarfBuzzShaper::ShapeSegment. False when a character no family font
+  // has needs a system fallback font this host has no source for
+  // (ShaperReject::kFallback), or one the lang's standard font has, which
+  // the family list does not have yet (kLocaleFallback): reject_reason().
   bool ShapeSegment(const Segment& segment) {
-    FallbackIterator iterator(entries_);
+    FallbackIterator iterator(fonts_, segment.priority);
     queue_.clear();
     queue_.push_back({QueueAction::kNextFont, 0, 0});
     queue_.push_back(
         {QueueAction::kRange, segment.start, segment.end - segment.start});
     FontEntry* font = nullptr;
     bool font_cycle_queued = false;
+    stage_ = FallbackStage::kIntermediate;
+    // The canvas's font-variant-emoji is normal.
+    VariationSelectorMode mode = VariationSelectorMode::kUseSpecified;
     while (!queue_.empty()) {
       const QueueItem current = queue_.front();
       queue_.pop_front();
       if (current.action != QueueAction::kRange) {
-        // CollectFallbackHintChars needs a queued character, and the later
-        // stages read the hint; the family stage does not.
-        if (queue_.empty()) {
+        if (current.action == QueueAction::kReset) {
+          // The last font left variation sequences unshaped whose base
+          // characters a font has: shape them again from the first font,
+          // ignoring the selectors.
+          iterator.Reset();
+          stage_ = FallbackStage::kIntermediateIgnoreVS;
+          mode = VariationSelectorMode::kIgnore;
+        }
+        if (!CollectFallbackHintChars()) {
+          queue_.clear();
           break;
         }
-        font = iterator.Next();
-        if (!font) {
+        font = iterator.Next(hints_);
+        if (iterator.needs_system_source()) {
+          reject_reason_ = ShaperReject::kFallback;
           return false;
+        }
+        if (iterator.at_locale_standard()) {
+          if (QueuedRangesHaveGlyphs(fonts_.locale_standard())) {
+            reject_reason_ = ShaperReject::kLocaleFallback;
+            return false;
+          }
+          font = iterator.Next(hints_);
+        }
+        if (!font) {
+          break;
         }
         font_cycle_queued = false;
         continue;
       }
-      // FontFallbackIterator::HasNext stays true while the system stages
-      // are ahead, so no family font is the last to shape.
+      if (!iterator.HasNext()) {
+        stage_ = ChangeStageToLast(stage_);
+      }
       const uint32_t shape_start = current.start;
       const uint32_t shape_end =
           std::min(length_, current.start + current.num_characters);
@@ -155,7 +494,7 @@ class ItemShaper {
       hb_buffer_set_script(buffer_, IcuScriptToHbScript(segment.script));
       hb_buffer_set_direction(buffer_,
                               rtl_ ? HB_DIRECTION_RTL : HB_DIRECTION_LTR);
-      SetVariationSelectorMode(font, VariationSelectorMode::kUseSpecified);
+      SetVariationSelectorMode(font, mode);
       hb_shape_full(font->hb.get(), buffer_, features_.data(),
                     static_cast<unsigned int>(features_.size()), kOtShaperList);
       if (!font->draw_font.isSubpixel()) {
@@ -167,7 +506,100 @@ class ItemShaper {
     return true;
   }
 
+  ShaperReject reject_reason() const { return reject_reason_; }
+
  private:
+  // HarfBuzzShaper::FallbackFontStage.
+  enum class FallbackStage {
+    kIntermediate,
+    kIntermediateWithVS,
+    kIntermediateIgnoreVS,
+    kLast,
+    kLastWithVS,
+    kLastIgnoreVS,
+  };
+
+  bool IsLastFontToShape() const {
+    return stage_ == FallbackStage::kLast ||
+           stage_ == FallbackStage::kLastIgnoreVS;
+  }
+
+  static FallbackStage ChangeStageToLast(FallbackStage stage) {
+    switch (stage) {
+      case FallbackStage::kIntermediate:
+        return FallbackStage::kLast;
+      case FallbackStage::kIntermediateWithVS:
+        return FallbackStage::kLastWithVS;
+      case FallbackStage::kIntermediateIgnoreVS:
+        return FallbackStage::kLastIgnoreVS;
+      default:
+        return stage;
+    }
+  }
+
+  // ChangeStageToVS; the second pass ignores the selectors, so it never
+  // sees kUnmatchedVSGlyphId.
+  static FallbackStage ChangeStageToVS(FallbackStage stage) {
+    switch (stage) {
+      case FallbackStage::kIntermediate:
+        return FallbackStage::kIntermediateWithVS;
+      case FallbackStage::kLast:
+        return FallbackStage::kLastWithVS;
+      default:
+        return stage;
+    }
+  }
+
+  // CollectFallbackHintChars without a hint list (no font is segmented by
+  // unicode-range here): the code points of the queued ranges before the
+  // next font, up to the first that is not Common or Inherited.
+  bool CollectFallbackHintChars() {
+    if (queue_.empty()) {
+      return false;
+    }
+    hints_.clear();
+    for (const QueueItem& item : queue_) {
+      if (item.action != QueueAction::kRange) {
+        break;
+      }
+      const uint32_t end = std::min(length_, item.start + item.num_characters);
+      for (uint32_t i = item.start; i < end;) {
+        uint32_t c = text_[i++];
+        if (c >= 0xD800 && c <= 0xDBFF && i < end && text_[i] >= 0xDC00 &&
+            text_[i] <= 0xDFFF) {
+          c = 0x10000 + ((c - 0xD800) << 10) + (text_[i++] - 0xDC00);
+        }
+        hints_.push_back(c);
+        if (!IsCommonOrInheritedScript(c)) {
+          return true;
+        }
+      }
+    }
+    return !hints_.empty();
+  }
+
+  // Whether `face` has a glyph for a code point of the ranges queued for the
+  // next font.
+  bool QueuedRangesHaveGlyphs(SkTypeface* face) const {
+    for (const QueueItem& item : queue_) {
+      if (item.action != QueueAction::kRange) {
+        break;
+      }
+      const uint32_t end = std::min(length_, item.start + item.num_characters);
+      for (uint32_t i = item.start; i < end;) {
+        uint32_t c = text_[i++];
+        if (c >= 0xD800 && c <= 0xDBFF && i < end && text_[i] >= 0xDC00 &&
+            text_[i] <= 0xDFFF) {
+          c = 0x10000 + ((c - 0xD800) << 10) + (text_[i++] - 0xDC00);
+        }
+        if (face->unicharToGlyph(static_cast<SkUnichar>(c))) {
+          return true;
+        }
+      }
+    }
+    return false;
+  }
+
   // RoundHarfBuzzBufferPositions.
   void RoundBufferPositions() {
     unsigned int length = 0;
@@ -220,7 +652,10 @@ class ItemShaper {
 
   void QueueCharacters(bool* font_cycle_queued, const BufferSlice& slice) {
     if (!*font_cycle_queued) {
-      queue_.push_back({QueueAction::kNextFont, 0, 0});
+      queue_.push_back({stage_ == FallbackStage::kLastWithVS
+                            ? QueueAction::kReset
+                            : QueueAction::kNextFont,
+                        0, 0});
       *font_cycle_queued = true;
     }
     queue_.push_back({QueueAction::kRange, slice.start_character_index,
@@ -387,10 +822,13 @@ class ItemShaper {
       ClusterResult glyph_result;
       if (glyph_id == 0) {
         glyph_result = kNotDef;
-      } else if (glyph_id == space_glyph && text_[current_cluster] == 0x3000) {
-        // Never the last font to shape here (see ShapeSegment).
+      } else if (glyph_id == space_glyph && !IsLastFontToShape() &&
+                 text_[current_cluster] == 0x3000) {
+        // HarfBuzz draws U+3000 with the space glyph; Blink tries the next
+        // font for it (crbug.com/1193282).
         glyph_result = kNotDef;
       } else if (glyph_id == kUnmatchedVSGlyphId) {
+        stage_ = ChangeStageToVS(stage_);
         glyph_result = kNotDef;
       } else {
         glyph_result = kShaped;
@@ -401,7 +839,7 @@ class ItemShaper {
           const BufferSlice slice = ComputeSlice(
               current, glyph_info, num_glyphs, last_change_glyph_index,
               previous_cluster_start_glyph_index);
-          if (current_cluster_result == kShaped) {
+          if (current_cluster_result == kShaped && !IsLastFontToShape()) {
             QueueCharacters(font_cycle_queued, slice);
           } else {
             CommitGlyphs(font, script, slice);
@@ -420,7 +858,7 @@ class ItemShaper {
       }
     }
     if (current_cluster_result != previous_cluster_result &&
-        previous_cluster_result != kUnknown) {
+        previous_cluster_result != kUnknown && !IsLastFontToShape()) {
       if (current_cluster_result == kShaped) {
         QueueCharacters(font_cycle_queued,
                         ComputeSlice(current, glyph_info, num_glyphs,
@@ -443,7 +881,7 @@ class ItemShaper {
     } else {
       const BufferSlice slice = ComputeSlice(
           current, glyph_info, num_glyphs, last_change_glyph_index, num_glyphs);
-      if (current_cluster_result == kNotDef) {
+      if (current_cluster_result == kNotDef && !IsLastFontToShape()) {
         QueueCharacters(font_cycle_queued, slice);
       } else {
         CommitGlyphs(font, script, slice);
@@ -457,9 +895,12 @@ class ItemShaper {
   hb_buffer_t* buffer_;
   const std::vector<hb_feature_t>& features_;
   hb_language_t language_;
-  std::vector<FontEntry>& entries_;
+  LineFonts& fonts_;
   ShapeResult* result_;
   std::deque<QueueItem> queue_;
+  std::vector<uint32_t> hints_;
+  FallbackStage stage_ = FallbackStage::kIntermediate;
+  ShaperReject reject_reason_ = ShaperReject::kFallback;
 };
 
 // The HarfBuzz language of ctx.lang: "und" for none ("" or "inherit"; the
@@ -550,9 +991,46 @@ bool LayOutLineBlink(skiac_font_collection* c_collection,
     return Reject(ShaperReject::kFallback);
   }
   PreparedText prepared = PrepareText(request.text, request.text_len);
-  if (HasVariationSelector(prepared.text)) {
-    return Reject(ShaperReject::kVariationSelector);
+  // The system fallback source: CoreText's, with the system renderer and
+  // the installed fonts on (the old path's defaultFallback asks the same
+  // manager). Elsewhere a character no family has is turned down.
+  bool system_source = false;
+  sk_sp<SkTypeface> last_resort_face;
+  sk_sp<SkTypeface> last_resort_base;
+  sk_sp<SkTypeface> locale_standard;
+#if defined(__APPLE__)
+  system_source = SystemFontRenderer() && c_collection->font_mgr;
+  if (system_source) {
+    if (const std::string name = LocaleStandardFamily(c_collection, request);
+        !name.empty()) {
+      const std::vector<sk_sp<SkTypeface>> standard =
+          font_collection->findTypefaces({SkString(name.c_str(), name.size())},
+                                         font_style);
+      if (!standard.empty()) {
+        locale_standard = standard.front();
+      }
+    }
+    const std::string name = LastResortFamily(c_collection, request);
+    if (!name.empty()) {
+      const std::vector<SkString> last_resort = {
+          SkString(name.c_str(), name.size())};
+      const std::vector<sk_sp<SkTypeface>> base =
+          font_collection->findTypefaces(last_resort, font_style);
+      if (!base.empty()) {
+        last_resort_base = base.front();
+        last_resort_face = base.front();
+        if (font_args) {
+          const std::vector<sk_sp<SkTypeface>> instance =
+              font_collection->findTypefaces(last_resort, font_style,
+                                             font_args);
+          if (!instance.empty()) {
+            last_resort_face = instance.front();
+          }
+        }
+      }
+    }
   }
+#endif
 
   // From here the layout holds references into the caches (HarfBuzz fonts,
   // the buffer): none may be dropped before it ends.
@@ -567,33 +1045,17 @@ bool LayOutLineBlink(skiac_font_collection* c_collection,
   // The family entries (Blink's SimpleFontData): the shaping font
   // OneLineShaper builds, its synthetic styles, and the draw font.
   const TextRasterPolicy policy(request);
-  TextStyle flags;
-  policy.ApplyToTextStyle(&flags);
-  std::vector<FontEntry> entries;
-  entries.reserve(faces.size());
+  LineFonts fonts(c_collection, request, policy, sizes);
   for (size_t i = 0; i < faces.size(); ++i) {
-    FontEntry entry;
-    entry.face = faces[i];
-    entry.base = faces.size() == base_faces.size() ? base_faces[i].get()
-                                                   : faces[i].get();
-    entry.size = sizes.effective;
-    entry.opsz = sizes.opsz;
-    entry.synthetic =
-        SynthesizeStyle(c_collection, entry.face.get(), entry.base, request);
-    SkFont font(entry.face, entry.size);
-    font.setEdging(flags.getFontEdging());
-    font.setHinting(flags.getFontHinting());
-    font.setSubpixel(flags.getSubpixel());
-    font.setEmbolden(entry.synthetic.bold);
-    font.setSkewX(entry.synthetic.italic ? -SK_Scalar1 / 4 : 0);
-    entry.shaping_font = font;
-    entry.draw_font = policy.DrawFont(font, nullptr);
-    entry.space_glyph = HbNominalGlyph(c_collection, entry.face.get(), 0x20);
-    if (!MakeEntryFont(c_collection, &entry)) {
+    if (!fonts.AddFamily(faces[i], faces.size() == base_faces.size()
+                                       ? base_faces[i].get()
+                                       : faces[i].get())) {
       return Reject(ShaperReject::kFallback);
     }
-    entries.push_back(std::move(entry));
   }
+  fonts.set_system_source(system_source);
+  fonts.set_locale_standard(std::move(locale_standard));
+  fonts.set_last_resort(last_resort_face, last_resort_base.get());
 
   const bool word_by_word = CanShapeWordByWord(
       c_collection, faces, request,
@@ -613,12 +1075,12 @@ bool LayOutLineBlink(skiac_font_collection* c_collection,
     ShapedItem result{item, {}};
     const char16_t* text = prepared.text.data() + item.start;
     ItemShaper shaper(text, item.length, item.rtl, buffer, features, language,
-                      entries, &result.result);
+                      fonts, &result.result);
     for (const Segment& segment :
          SegmentItem(text, item.length, prepared.is_8bit)) {
       if (!shaper.ShapeSegment(segment)) {
         hb_buffer_reset(buffer);
-        return Reject(ShaperReject::kFallback);
+        return Reject(shaper.reject_reason());
       }
     }
     shaped.push_back(std::move(result));
