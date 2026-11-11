@@ -14,6 +14,11 @@
 #include "skia_c.hpp"
 
 #include <modules/svg/include/SkSVGAttributeParser.h>
+#include <src/core/SkPathEffectBase.h>
+#include <src/core/SkStrikeSpec.h>
+#include <src/core/SkTextBlobPriv.h>
+#include <src/core/SkTextFormatParams.h>
+#include <src/utils/SkFloatUtils.h>
 
 #include "svg_image.hpp"
 
@@ -4961,6 +4966,152 @@ void skiac_sk_w_stream_destroy(skiac_w_memory_stream* c_w_memory_stream) {
 
 namespace {
 
+// A synthetic bold glyph as SkScalerContext::internalGetPath makes it for a
+// mask: the plain outline (in the font's own space, the space SkSVGDevice
+// gives a text path to the paint's path effect) stroked and filled by
+// `width`, with the default paint's join and miter (useStrokeForFakeBold).
+class FakeBoldFill final : public SkPathEffectBase {
+ public:
+  explicit FakeBoldFill(SkScalar width) : width_(width) {}
+
+  bool computeFastBounds(SkRect*) const override { return false; }
+  Factory getFactory() const override { return nullptr; }
+  const char* getTypeName() const override { return "FakeBoldFill"; }
+
+ protected:
+  bool onFilterPath(SkPathBuilder* dst,
+                    const SkPath& src,
+                    SkStrokeRec*,
+                    const SkRect*,
+                    const SkMatrix&) const override {
+    const SkPaint defaults;
+    SkStrokeRec stroke(SkStrokeRec::kFill_InitStyle);
+    stroke.setStrokeStyle(width_, true);
+    stroke.setStrokeParams(defaults.getStrokeCap(), defaults.getStrokeJoin(),
+                           defaults.getStrokeMiter());
+    return stroke.applyToPath(dst, src);
+  }
+
+ private:
+  SkScalar width_;
+};
+
+// The canvas in front of convertSVGTextToPath's SkSVGCanvas. SkSVGDevice
+// writes a text draw as the glyph paths filled or stroked with the draw's
+// paint (onDrawGlyphRunList). A synthetic bold glyph's path is its outline
+// stroked and filled by the fake bold width, three contours
+// (SkScalerContextRec::useStrokeForFakeBold), so a stroke paint would stroke
+// each contour. A raster stroke drawn from glyph masks widens the stroke of
+// the plain outline by that width instead (useStrokeForFakeBold with a frame
+// width), so such a run is written that way. A run the raster draws as paths
+// (SkStrikeSpec::ShouldDrawAsPath: over 256 device pixels, a hairline,
+// perspective) strokes the fake bold contours (SkStrikeSpec::MakePath), as
+// written. The fake bold width is size * interp(size) (1/24 at 9px to 1/32
+// from 36px) of the font's own size, but SkSVGDevice takes the paths from
+// SkFont::getPaths, made at 64px (width size / 32). So a filled run drawn
+// from glyph masks is written as the raster's glyphs: the plain outline at
+// the font's size stroked and filled by that width
+// (SkScalerContext::internalGetPath).
+class TextToPathCanvas final : public SkNWayCanvas {
+ public:
+  explicit TextToPathCanvas(SkCanvas* target)
+      : SkNWayCanvas(target->getBaseLayerSize().width(),
+                     target->getBaseLayerSize().height()) {
+    this->addCanvas(target);
+  }
+
+ protected:
+  void onDrawTextBlob(const SkTextBlob* blob,
+                      SkScalar x,
+                      SkScalar y,
+                      const SkPaint& paint) override {
+    // The raster decides per glyph of an RSXform run, under the matrix with
+    // the glyph's RSXform (SkDevice::simplifyGlyphRunRSXFormAndRedraw).
+    const SkMatrix total = this->getTotalMatrix();
+    auto widen = [&](const SkTextBlobRunIterator& it, int glyph) {
+      SkMatrix matrix = total;
+      if (it.positioning() == SkTextBlobRunIterator::kRSXform_Positioning) {
+        matrix.preConcat(SkMatrix().setRSXform(it.xforms()[glyph]));
+      }
+      return it.font().isEmbolden() &&
+             !SkStrikeSpec::ShouldDrawAsPath(paint, it.font(), matrix);
+    };
+    auto per_glyph = [](const SkTextBlobRunIterator& it) {
+      return it.positioning() == SkTextBlobRunIterator::kRSXform_Positioning
+                 ? static_cast<int>(it.glyphCount())
+                 : 1;
+    };
+    bool any = false;
+    for (SkTextBlobRunIterator it(blob); !it.done(); it.next()) {
+      for (int i = 0; i < per_glyph(it); ++i) {
+        any = any || widen(it, i);
+      }
+    }
+    if (!any) {
+      SkNWayCanvas::onDrawTextBlob(blob, x, y, paint);
+      return;
+    }
+    for (SkTextBlobRunIterator it(blob); !it.done(); it.next()) {
+      // An RSXform run is drawn a glyph at a time, as the raster draws it.
+      const int parts = per_glyph(it);
+      const int count = parts > 1 ? 1 : static_cast<int>(it.glyphCount());
+      for (int i = 0; i < parts; ++i) {
+        SkFont font = it.font();
+        SkPaint run_paint = paint;
+        if (widen(it, i)) {
+          font.setEmbolden(false);
+          const SkScalar size = font.getSize();
+          const SkScalar extra =
+              size * SkFloatInterpFunc(size, kStdFakeBoldInterpKeys,
+                                       kStdFakeBoldInterpValues,
+                                       kStdFakeBoldInterpLength);
+          if (paint.getStyle() == SkPaint::kFill_Style) {
+            run_paint.setPathEffect(sk_make_sp<FakeBoldFill>(extra));
+          } else {
+            run_paint.setStrokeWidth(paint.getStrokeWidth() + extra);
+          }
+        }
+        SkTextBlobBuilder builder;
+        const SkTextBlobBuilder::RunBuffer* run = nullptr;
+        size_t scalars = 0;
+        switch (it.positioning()) {
+          case SkTextBlobRunIterator::kDefault_Positioning:
+            run = &builder.allocRun(font, count, it.offset().x(),
+                                    it.offset().y());
+            break;
+          case SkTextBlobRunIterator::kHorizontal_Positioning:
+            run = &builder.allocRunPosH(font, count, it.offset().y());
+            scalars = 1;
+            break;
+          case SkTextBlobRunIterator::kFull_Positioning:
+            run = &builder.allocRunPos(font, count);
+            scalars = 2;
+            break;
+          case SkTextBlobRunIterator::kRSXform_Positioning:
+            run = &builder.allocRunRSXform(font, count);
+            scalars = 4;
+            break;
+        }
+        memcpy(run->glyphs, it.glyphs() + i, count * sizeof(SkGlyphID));
+        if (scalars) {
+          memcpy(run->pos, it.pos() + i * scalars,
+                 count * scalars * sizeof(SkScalar));
+        }
+        if (sk_sp<SkTextBlob> rebuilt = builder.make()) {
+          SkNWayCanvas::onDrawTextBlob(rebuilt.get(), x, y, run_paint);
+        }
+      }
+    }
+  }
+
+  // Played back through this canvas, as SkSVGCanvas itself plays it.
+  void onDrawPicture(const SkPicture* picture,
+                     const SkMatrix* matrix,
+                     const SkPaint* paint) override {
+    SkCanvas::onDrawPicture(picture, matrix, paint);
+  }
+};
+
 // The document's paths, text as paths, in an SVG of `size`.
 void WriteTextToPath(SkSVGDOM* dom,
                      const SkSize& size,
@@ -4968,7 +5119,10 @@ void WriteTextToPath(SkSVGDOM* dom,
   SkDynamicMemoryWStream w_stream;
   auto canvas = SkSVGCanvas::Make(SkRect::MakeSize(size), &w_stream,
                                   SkSVGCanvas::kConvertTextToPaths_Flag);
-  dom->render(canvas.get());
+  {
+    TextToPathCanvas front(canvas.get());
+    dom->render(&front);
+  }
   canvas.reset();
   auto d = w_stream.detachAsData().release();
   output_data->data = reinterpret_cast<skiac_data*>(d);

@@ -151,6 +151,7 @@ These still depend on the OS and the machine:
 - PDF font embedding depends on the build target.
 - x64 and arm64 builds can differ by 1 color level on some edge pixels.
 - A `FREETYPE_PROPERTIES` env var changes FreeType's hinting.
+- The host language. The default `ctx.lang` (`'inherit'`) follows the OS UI language (the macOS language list, the Windows user locale, or `LANGUAGE` / `LC_ALL` / `LC_MESSAGES` / `LANG` elsewhere), as Chrome does. It changes `locl` glyphs, case mapping (`small-caps` under `tr`) and CJK punctuation spacing. Set `ctx.lang` (for example `'en'`) to pin it. The installed font picked for a Han character still follows the host language unless `ctx.lang` names a CJK language (for example `'ja'` or `'zh-Hans'`). On macOS with `setTextRenderer('system')`, the generic families also follow a `ja`, `ko`, `zh-CN`, `zh-TW`, `ar`, `he` or `fa` UI language whatever `ctx.lang` is, as in Chrome (`serif` is Hiragino Mincho ProN under a Japanese UI).
 
 Set `DISABLE_SYSTEM_FONTS_LOAD=1` to keep installed fonts out of `GlobalFonts.families`. By default they can still be found by name, on every OS.
 
@@ -172,6 +173,10 @@ It applies to the whole process. Call it once at startup, before you create canv
 > **Behavior change**: a character no font of the font list has is taken from an installed font, as Chrome's font cache takes it from the platform's fonts. This applies to the portable renderer on every OS and to the system renderer off macOS (on macOS, CoreText still picks first). The font is chosen the way Chrome on Windows chooses it: a bold or italic list first tries its first family at the normal style, then the font Windows names for the character's script (on macOS, the font Chrome's CoreText fallback names for it), then the first installed family, by name, that has the character. Before, such a character drew as a box (the first font's `.notdef`). Private use characters still draw as boxes.
 
 > **Behavior change**: SVG text (SVG images, the SVG images nested in them, and `convertSVGTextToPath`) takes a character its first font lacks from the next family of its `font-family` list, then from the system's fonts, as canvas text does. Chrome does the same. Before, the whole text used the first font, and a character it lacks drew as a box. Text with no such character draws the same as before. `convertSVGTextToPath` now reads the document the way an SVG image does (`<style>` sheets, `var()`, `<use>` and the other CSS rules), so its output matches what the SVG image draws. A document that is not well-formed UTF-8 XML is read as before, with only the first family of each `font-family` list.
+
+> **Behavior change**: the default `ctx.lang`, `'inherit'`, follows the host language, as Chrome does. Before, it meant no language. Text whose font has language-specific glyphs or spacing can draw and measure differently on hosts with different UI languages; set `ctx.lang` to pin it.
+
+> **Behavior change**: SVG text whose family lacks the bold or italic face it asks for draws a synthetic bold or italic, with the rules canvas text uses: a registered font is bolded at `font-weight` 600 and up and slanted for `italic` and `oblique` unless it has that face (or a `wght` axis above 400, or a `slnt` axis); an installed font follows its own faces. Chrome does the same. The advances do not change, so the text does not move; the glyphs are heavier or slanted, and `convertSVGTextToPath` outlines grow to match. Before, SVG text drew the regular face for every style.
 
 ## Emoji text
 

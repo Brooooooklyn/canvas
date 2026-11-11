@@ -1832,10 +1832,15 @@ struct skiac_svg_resource {
 };
 
 // A font-family list of a prepared SVG document, which its font-family
-// attributes name napi-font:K.
+// attributes name napi-font:K, its computed font-weight (the font-weight
+// attribute is rounded for SkSVG) and whether its font-synthesis lets the
+// fonts be a synthetic bold and italic.
 struct skiac_svg_font_list {
   const skiac_text_family* families;
   size_t count;
+  float weight;
+  bool synthetic_bold;
+  bool synthetic_italic;
 };
 
 // The text and the canvas text settings of one measureText, fillText or

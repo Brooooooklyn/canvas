@@ -250,12 +250,14 @@ for (const renderer of ['portable', 'system'] as const) {
     const { right, ink } = probeOf(renderer)
     // Right of A, the list row is Source Han Serif's 中 at 23.76.
     t.is(right.list, right.shs)
-    // Chrome bolds Lato's A (synthetic bold): its left edge is not compared.
+    // Lato's A is a synthetic bold. The portable renderer's raster of it
+    // starts a pixel right of Chrome's, so its left edge is not compared.
     // The ink is a macOS capture (FreeType hints the rows elsewhere).
     if (process.platform === 'darwin') {
       const chrome = CHROME['list.A中'].ink
       const box = ink['list.A中']!
-      t.deepEqual(box.slice(1), chrome.slice(1), `ink ${JSON.stringify(box)}`)
+      const from = renderer === 'system' ? 0 : 1
+      t.deepEqual(box.slice(from), chrome.slice(from), `ink ${JSON.stringify(box)}`)
     }
   })
 
@@ -339,14 +341,13 @@ for (const renderer of ['portable', 'system'] as const) {
 }
 
 // macOS 27, the system renderer: CoreText's font, as canvas text and Chrome
-// 157 (PingFang SC, Apple Color Emoji). The left edge of A is not compared
-// (Chrome bolds Lato's A).
+// 157 (PingFang SC, Apple Color Emoji), with Lato's A a synthetic bold.
 const darwinSystem = DARWIN === 27 ? test : test.skip
 darwinSystem('SVG text takes CoreText fallback fonts as Chrome 157 does (macOS 27, system)', (t) => {
   const { paths, ink, color } = probeOf('system')
   for (const id of ['lato.A中', 'lato.A😀']) {
     t.true(near(paths[id][1].x, CHROME[id].x[1]), `${id}: x ${paths[id][1].x}`)
-    t.deepEqual(ink[id]!.slice(1), CHROME[id].ink.slice(1), `${id}: ink ${JSON.stringify(ink[id])}`)
+    t.deepEqual(ink[id], CHROME[id].ink, `${id}: ink ${JSON.stringify(ink[id])}`)
   }
   t.true(color['lato.A😀'] > 100, `${color['lato.A😀']} color pixels`)
   // Arial lacks 中: Chrome's <img> draws PingFang SC.

@@ -17,7 +17,7 @@ use super::dom::{Doc, MAX_TREE_DEPTH, NodeData, NodeId, Ns};
 use super::props::{Mode, Prop, parse_value};
 use super::sheet::{Env, Sheet, eval_media_list};
 use super::values::*;
-use super::{Loaded, Shared};
+use super::{FontList, Loaded, Shared};
 use crate::svg_size::{SvgSizing, layout_floor, root_length};
 
 const SHAPES: &[&str] = &[
@@ -931,15 +931,24 @@ impl<'d> Builder<'d, '_, '_> {
       Value::Families(f) => f.clone(),
       _ => Rc::from(Vec::new()),
     };
-    let key = self.shared.family_key(&families);
+    let weight = match style.get(Prop::FontWeight) {
+      Value::Number(w) => *w,
+      _ => 400.0,
+    };
+    let key = self.shared.family_key(
+      &families,
+      FontList {
+        families: 0,
+        weight: weight.to_bits(),
+        synthetic_bold: keyword(Prop::FontSynthesisWeight) != "none",
+        synthetic_italic: keyword(Prop::FontSynthesisStyle) != "none",
+      },
+    );
     out.push(attr("font-family", format!("napi-font:{key}")));
     out.push(attr("font-size", num(style.font_size())));
     out.push(attr("font-style", keyword(Prop::FontStyle)));
     // SkSVG takes 100 to 900 in steps of 100.
-    let weight = match style.get(Prop::FontWeight) {
-      Value::Number(w) => ((w / 100.0).round() * 100.0).clamp(100.0, 900.0),
-      _ => 400.0,
-    };
+    let weight = ((weight / 100.0).round() * 100.0).clamp(100.0, 900.0);
     out.push(attr("font-weight", num(weight)));
     out.push(attr("text-anchor", keyword(Prop::TextAnchor)));
     out.push(attr(

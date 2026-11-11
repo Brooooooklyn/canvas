@@ -82,14 +82,15 @@ SystemFallbackFont CoreTextFallbackFont(skiac_font_collection* c_collection,
   // instance's typeface ID: a dropped and remade instance (the font
   // arguments' caches) is the same font, and a new CTFont per line would
   // grow CoreText's per-font fallback tables.
-  const SystemFallbackKey key = {
-      hint, emoji,
-      query.primary_base ? query.primary_base->uniqueID()
-                         : query.primary_face->uniqueID(),
-      VariationHash(query.primary_face), FloatBits(request.weight),
-      FloatBits(request.slope),
-      // FontDescription::ComputedPixelSize.
-      static_cast<int>(request.size + 0.5f)};
+  SystemFallbackKey key = {hint, emoji,
+                           query.primary_base ? query.primary_base->uniqueID()
+                                              : query.primary_face->uniqueID(),
+                           VariationHash(query.primary_face),
+                           FloatBits(request.weight), FloatBits(request.slope),
+                           // FontDescription::ComputedPixelSize.
+                           static_cast<int>(request.size + 0.5f)};
+  key.synthetic_bold = query.primary_synthetic.bold;
+  key.synthetic_italic = query.primary_synthetic.italic;
   if (const SystemFallbackFont* found = FindSystemFallback(c_collection, key)) {
     return *found;
   }

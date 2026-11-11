@@ -47,6 +47,9 @@ macro_rules! props {
 }
 
 const ALL_ELEMENTS: &[&str] = &[];
+/// No element: a property that is not a presentation attribute (Blink's
+/// SVGElement::IsPresentationAttribute list).
+const NO_ELEMENT: &[&str] = &[""];
 const XYWH: &[&str] = &["rect", "image", "svg", "foreignObject", "symbol"];
 
 props! {
@@ -67,6 +70,8 @@ props! {
   FontSize = "font-size", true, ALL_ELEMENTS;
   FontWeight = "font-weight", true, ALL_ELEMENTS;
   FontStyle = "font-style", true, ALL_ELEMENTS;
+  FontSynthesisWeight = "font-synthesis-weight", true, NO_ELEMENT;
+  FontSynthesisStyle = "font-synthesis-style", true, NO_ELEMENT;
   TextAnchor = "text-anchor", true, ALL_ELEMENTS;
   Visibility = "visibility", true, ALL_ELEMENTS;
   PaintOrder = "paint-order", true, ALL_ELEMENTS;
@@ -134,6 +139,7 @@ impl Prop {
       FontSize => Value::Len(Len::px(ROOT_FONT_SIZE)),
       FontWeight => Value::Number(400.0),
       FontStyle => Value::Keyword("normal"),
+      FontSynthesisWeight | FontSynthesisStyle => Value::Keyword("auto"),
       TextAnchor => Value::Keyword("start"),
       Visibility => Value::Keyword("visible"),
       PaintOrder => Value::Keyword("normal"),
@@ -281,6 +287,7 @@ pub(crate) fn parse_value(prop: Prop, text: &str, mode: Mode, ctx: &LenCtx) -> O
         .map(Value::Number)
     }
     FontStyle => keyword(p, &["normal", "italic", "oblique"]),
+    FontSynthesisWeight | FontSynthesisStyle => keyword(p, &["auto", "none"]),
     TextAnchor => keyword(p, &["start", "middle", "end"]),
     Visibility => keyword(p, &["visible", "hidden", "collapse"]),
     PaintOrder => {

@@ -325,6 +325,9 @@ pub mod ffi {
   pub struct skiac_svg_font_list {
     pub families: *const skiac_text_family,
     pub count: usize,
+    pub weight: f32,
+    pub synthetic_bold: bool,
+    pub synthetic_italic: bool,
   }
 
   /// text.hpp skiac_font_units.
@@ -5767,13 +5770,22 @@ fn svg_font_families(prepared: &crate::svg_doc::Prepared) -> Vec<Vec<ffi::skiac_
     .collect()
 }
 
-/// `napi-font:K` is `families[K]`; the lists point into `families`.
-fn svg_font_lists(families: &[Vec<ffi::skiac_text_family>]) -> Vec<ffi::skiac_svg_font_list> {
-  families
+/// `napi-font:K` is `prepared.fonts[K]`; the lists point into `families`,
+/// so fonts with one font-family list share its pointer (the C side keeps
+/// one copy of it).
+fn svg_font_lists(
+  prepared: &crate::svg_doc::Prepared,
+  families: &[Vec<ffi::skiac_text_family>],
+) -> Vec<ffi::skiac_svg_font_list> {
+  prepared
+    .fonts
     .iter()
-    .map(|list| ffi::skiac_svg_font_list {
-      families: list.as_ptr(),
-      count: list.len(),
+    .map(|font| ffi::skiac_svg_font_list {
+      families: families[font.families].as_ptr(),
+      count: families[font.families].len(),
+      weight: f32::from_bits(font.weight),
+      synthetic_bold: font.synthetic_bold,
+      synthetic_italic: font.synthetic_italic,
     })
     .collect()
 }
@@ -5845,7 +5857,7 @@ impl SvgDocument {
       })
       .collect();
     let families = svg_font_families(prepared);
-    let fonts = svg_font_lists(&families);
+    let fonts = svg_font_lists(prepared, &families);
     // The C side copies what it keeps.
     let document = unsafe {
       ffi::skiac_svg_document_make(
@@ -7248,7 +7260,7 @@ pub fn sk_svg_text_to_path_prepared(
   fc: &FontCollection,
 ) -> Option<SkiaDataRef> {
   let families = svg_font_families(prepared);
-  let fonts = svg_font_lists(&families);
+  let fonts = svg_font_lists(prepared, &families);
   let mut output_data = ffi::skiac_sk_data {
     ptr: ptr::null_mut(),
     data: ptr::null_mut(),

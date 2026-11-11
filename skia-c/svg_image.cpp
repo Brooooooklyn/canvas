@@ -7,7 +7,9 @@
 //   <image> SVG         the nested document as vectors, clipped to its box
 //                       (svg_image.cc:513-558)
 //   <text>              the platform's draw font and paint, as canvas text
-//                       draws (text_raster.hpp TextRasterPolicy)
+//                       draws (text_raster.hpp TextRasterPolicy), with
+//                       the font's synthetic bold and italic where
+//                       font-synthesis allows them
 //   font-family         Blink's font list: registered names, the per-OS
 //                       generic families, then the standard font
 //                       (font_families.cpp ResolveFontFamilies)
@@ -18,8 +20,10 @@
 
 #include "svg_image.hpp"
 
+#include <cstdint>
 #include <cstdlib>
 #include <cstring>
+#include <map>
 #include <memory>
 #include <optional>
 #include <string>
@@ -98,10 +102,14 @@ struct SvgFontRequest {
   // the one ResolveFont draws with).
   std::vector<sk_sp<SkTypeface>> faces;
   SkFontStyle style;
+  // The computed font-weight (style's is SkSVG's, rounded to 100s).
+  float weight = 400;
   // The request's families, for the system stage (the last resort family,
   // the monospace generic).
   std::vector<std::string> names;
   std::vector<int> generics;
+  // font-synthesis: whether a font may be a synthetic bold and italic.
+  SyntheticStyle allowed = {true, true};
 };
 
 // The font-family lists of a document. SkSVGText asks for a typeface by
@@ -117,14 +125,26 @@ class SvgFontMgr final : public SkFontMgr {
              size_t count,
              bool names = false)
       : c_collection_(c_collection), names_(names) {
+    // Fonts that differ only in weight or font-synthesis point at one
+    // family array (sk.rs svg_font_lists); it is copied once.
+    std::map<std::pair<const skiac_text_family*, size_t>, size_t> copied;
     lists_.resize(count);
     for (size_t i = 0; i < count; ++i) {
-      for (size_t j = 0; j < lists[i].count; ++j) {
-        const skiac_text_family& family = lists[i].families[j];
-        lists_[i].push_back(
-            {std::string(family.name ? family.name : "", family.name_len),
-             family.generic});
+      auto [it, added] = copied.try_emplace({lists[i].families, lists[i].count},
+                                            families_.size());
+      if (added) {
+        std::vector<Family>& families = families_.emplace_back();
+        families.reserve(lists[i].count);
+        for (size_t j = 0; j < lists[i].count; ++j) {
+          const skiac_text_family& family = lists[i].families[j];
+          families.push_back(
+              {std::string(family.name ? family.name : "", family.name_len),
+               family.generic});
+        }
       }
+      lists_[i].families = it->second;
+      lists_[i].weight = lists[i].weight;
+      lists_[i].allowed = {lists[i].synthetic_bold, lists[i].synthetic_italic};
     }
   }
 
@@ -190,6 +210,8 @@ class SvgFontMgr final : public SkFontMgr {
     request.faces.clear();
     request.names.clear();
     request.generics.clear();
+    request.weight = static_cast<float>(style.weight());
+    request.allowed = {true, true};
     if (names_) {
       sk_sp<SkTypeface> face =
           name ? MatchNamedFamily(c_collection_, name, style) : nullptr;
@@ -206,10 +228,16 @@ class SvgFontMgr final : public SkFontMgr {
       return face;
     }
     const long index = IndexAfter(name, kFontPrefix);
-    static const std::vector<Family> kNone;
-    const std::vector<Family>& list =
-        index >= 0 && static_cast<size_t>(index) < lists_.size() ? lists_[index]
-                                                                 : kNone;
+    static const List kNone;
+    const List& font = index >= 0 && static_cast<size_t>(index) < lists_.size()
+                           ? lists_[index]
+                           : kNone;
+    static const std::vector<Family> kNoFamilies;
+    const std::vector<Family>& list = font.families < families_.size()
+                                          ? families_[font.families]
+                                          : kNoFamilies;
+    request.weight = font.weight;
+    request.allowed = font.allowed;
     std::vector<skiac_text_family> families;
     families.reserve(list.size());
     for (const Family& family : list) {
@@ -234,6 +262,12 @@ class SvgFontMgr final : public SkFontMgr {
     std::string name;
     int generic;
   };
+  struct List {
+    // An index into families_; kNone's is past its end.
+    size_t families = SIZE_MAX;
+    float weight = 400;
+    SyntheticStyle allowed = {true, true};
+  };
 
   // The collection's current assets: a font registered or removed since the
   // document was made is seen, as by canvas text.
@@ -243,7 +277,8 @@ class SvgFontMgr final : public SkFontMgr {
 
   skiac_font_collection* c_collection_;
   bool names_;
-  std::vector<std::vector<Family>> lists_;
+  std::vector<std::vector<Family>> families_;
+  std::vector<List> lists_;
   mutable SvgFontRequest request_;
 };
 
@@ -251,6 +286,34 @@ class SvgFontMgr final : public SkFontMgr {
 // and the like draw nothing, so a font without them still covers a cluster.
 bool IsDefaultIgnorable(SkUnichar c) {
   return u_hasBinaryProperty(c, UCHAR_DEFAULT_IGNORABLE_CODE_POINT);
+}
+
+// The font request canvas text gives SynthesizeStyle, for a fragment's font
+// request: its computed weight, slope 14 for italic and oblique (Blink's
+// FontSelectionRequest), its stretch.
+skiac_text_request SvgStyleRequest(const SvgFontRequest& slot) {
+  const SkFontStyle& style = slot.style;
+  skiac_text_request request{};
+  request.weight = slot.weight;
+  request.slope = style.slant() == SkFontStyle::kUpright_Slant ? 0 : 14;
+  request.style = style.slant();
+  request.stretch = style.width();
+  request.stretch_pct = 100;
+  request.size_adjust_metric = -1;
+  return request;
+}
+
+// The synthetic styles font-synthesis allows (FontCache::
+// CreateFontPlatformData: SyntheticBoldAllowed, SyntheticItalicAllowed).
+SyntheticStyle Allowed(SyntheticStyle synthetic, SyntheticStyle allowed) {
+  return {synthetic.bold && allowed.bold, synthetic.italic && allowed.italic};
+}
+
+// FontPlatformData::CreateSkFont's synthetic bold and italic, as canvas
+// text sets them (shaper.cpp).
+void SetSynthetic(SkFont* font, SyntheticStyle synthetic) {
+  font->setEmbolden(synthetic.bold);
+  font->setSkewX(synthetic.italic ? -SK_Scalar1 / 4 : 0);
 }
 
 // SkSVG's Primitive shaper (SkShaper_primitive.cpp) with Blink's font
@@ -269,8 +332,11 @@ bool IsDefaultIgnorable(SkUnichar c) {
 // Primitive lays out its one run: one glyph per character, the font's
 // advances, no kerning. A fallback run draws the face at the fragment's
 // size and flags. A fragment that needs no fallback is shaped by Primitive
-// itself, so its output is the same. SkSVG keeps its own layout (chunks,
-// positions, textPath).
+// itself, so its output is the same. Each run's font gets its face's
+// synthetic bold and italic (CSSSegmentedFontFace::GetFontData, the system
+// font's traits), as canvas text's (SynthesizeStyle), where the font list's
+// font-synthesis allows them; the advances do not change. SkSVG keeps its
+// own layout (chunks, positions, textPath).
 class SvgRunShaper final : public SkShaper {
  public:
   SvgRunShaper(skiac_font_collection* c_collection, const SvgFontMgr* mgr)
@@ -326,14 +392,24 @@ class SvgRunShaper final : public SkShaper {
       font_runs.consume();
       primary = font_runs.currentFont();
     }
+    const bool ours = mgr_->request().active;
+    if (ours && primary.getTypeface()) {
+      // The list's first font is the family's face (findTypefaces with no
+      // font arguments, or MatchNamedFamily), so it is its own base.
+      const skiac_text_request request = SvgStyleRequest(mgr_->request());
+      SetSynthetic(&primary,
+                   Allowed(SynthesizeStyle(c_collection_, primary.getTypeface(),
+                                           primary.getTypeface(), request),
+                           mgr_->request().allowed));
+    }
     std::vector<Run> runs;
-    if (mgr_->request().active && !utf8.empty() && primary.getTypeface() &&
+    if (ours && !utf8.empty() && primary.getTypeface() &&
         options.width >= SK_ScalarMax && !Covers(primary.getTypeface(), utf8)) {
       runs = PickFonts(utf8, primary);
     }
     if (runs.empty() || (runs.size() == 1 && runs.front().font.getTypeface() ==
                                                  primary.getTypeface())) {
-      // Primitive's own output.
+      // Primitive's own output, with the first font's synthetic styles.
       TrivialFontRunIterator primary_runs(primary, utf8.size());
       primitive_->shape(utf8, primary_runs, bidi, script, language, features,
                         options, handler);
@@ -431,7 +507,7 @@ class SvgRunShaper final : public SkShaper {
     cluster_start[utf8.size()] = true;
 
     Fallback fallback(c_collection_, mgr_->request(), primary);
-    sk_sp<SkTypeface> previous = primary.refTypeface();
+    RunFont previous = {primary.refTypeface(), fallback.primary_synthetic()};
     size_t unit = 0;
     for (size_t i = 0; i < chars.size();) {
       // The cluster's characters [i, j).
@@ -445,13 +521,15 @@ class SvgRunShaper final : public SkShaper {
       for (size_t k = i; k < j; ++k) {
         unit += chars[k] > 0xFFFF ? 2 : 1;
       }
-      sk_sp<SkTypeface> face =
-          fallback.FontFor(&chars[i], j - i, priority, previous);
-      if (!runs.empty() && runs.back().font.getTypeface() == face.get()) {
+      RunFont face = fallback.FontFor(&chars[i], j - i, priority, previous);
+      if (!runs.empty() && runs.back().font.getTypeface() == face.face.get() &&
+          runs.back().font.isEmbolden() == face.synthetic.bold &&
+          (runs.back().font.getSkewX() != 0) == face.synthetic.italic) {
         runs.back().end = end;
       } else {
         SkFont font = primary;
-        font.setTypeface(face);
+        font.setTypeface(face.face);
+        SetSynthetic(&font, face.synthetic);
         runs.push_back({font, start, end});
       }
       previous = std::move(face);
@@ -459,6 +537,13 @@ class SvgRunShaper final : public SkShaper {
     }
     return runs;
   }
+
+  // A cluster's face and its synthetic styles (the SimpleFontData's
+  // FontPlatformData).
+  struct RunFont {
+    sk_sp<SkTypeface> face;
+    SyntheticStyle synthetic = {false, false};
+  };
 
   // FontFallbackIterator over the fragment's font request.
   class Fallback {
@@ -481,33 +566,40 @@ class SvgRunShaper final : public SkShaper {
         families_.push_back(
             {slot.names[i].data(), slot.names[i].size(), slot.generics[i]});
       }
+      request_ = SvgStyleRequest(slot);
       request_.families = families_.data();
       request_.family_count = families_.size();
       request_.size = primary.getSize();
-      request_.weight = static_cast<float>(slot.style.weight());
-      request_.slope =
-          slot.style.slant() == SkFontStyle::kUpright_Slant ? 0 : 14;
-      request_.style = slot.style.slant();
-      request_.stretch = slot.style.width();
-      request_.stretch_pct = 100;
-      request_.size_adjust_metric = -1;
+      // Each list face is its family's face, so its own base.
+      allowed_ = slot.allowed;
+      for (const sk_sp<SkTypeface>& face : list_) {
+        list_synthetic_.push_back(Allowed(
+            SynthesizeStyle(c_collection, face.get(), face.get(), request_),
+            allowed_));
+      }
       SkTypeface* first = list_.front().get();
       query_.request = &request_;
       query_.primary_face = first;
       query_.primary_base = first;
-      query_.primary_synthetic =
-          SynthesizeStyle(c_collection, first, first, request_);
+      // The system fallback is asked with the first font's synthetic styles
+      // after font-synthesis (GetAlternateFontPlatformData reads the
+      // FontPlatformData's, which CreateFontPlatformData masked), and its
+      // answer is masked too (FontFor). They are in SystemFallbackFor's
+      // cache key, so a masked query does not change later draws.
+      query_.primary_synthetic = list_synthetic_.front();
       query_.coretext = HasCoreTextFallbackSource(c_collection);
       query_.han_script = FallbackHanScript("");
       query_.monospace = FallbackMonospace(request_);
     }
 
+    SyntheticStyle primary_synthetic() const { return list_synthetic_.front(); }
+
     // The font of a cluster of `count` characters; one with only default
     // ignorables stays with the font before it.
-    sk_sp<SkTypeface> FontFor(const SkUnichar* chars,
-                              size_t count,
-                              Priority priority,
-                              const sk_sp<SkTypeface>& previous) {
+    RunFont FontFor(const SkUnichar* chars,
+                    size_t count,
+                    Priority priority,
+                    const RunFont& previous) {
       uint32_t hint = 0;
       for (size_t i = 0; i < count && !hint; ++i) {
         if (!IsDefaultIgnorable(chars[i])) {
@@ -526,47 +618,54 @@ class SvgRunShaper final : public SkShaper {
         }
         return true;
       };
-      for (const sk_sp<SkTypeface>& face : list_) {
-        if (covers(face.get())) {
-          return face;
+      for (size_t i = 0; i < list_.size(); ++i) {
+        if (covers(list_[i].get())) {
+          return {list_[i], list_synthetic_[i]};
         }
       }
       if (IsNonTextFallbackPriority(priority)) {
-        sk_sp<SkTypeface> face = SystemFont(hint, priority);
-        if (face && covers(face.get())) {
-          return face;
+        SystemFallbackFont font = SystemFont(hint, priority);
+        if (font.face && covers(font.face.get())) {
+          return {std::move(font.face), Allowed(font.synthetic, allowed_)};
         }
       }
-      if (sk_sp<SkTypeface> face = SystemFont(hint, Priority::kText);
-          face && covers(face.get())) {
-        return face;
+      if (SystemFallbackFont font = SystemFont(hint, Priority::kText);
+          font.face && covers(font.face.get())) {
+        return {std::move(font.face), Allowed(font.synthetic, allowed_)};
       }
       if (!last_resort_made_) {
         last_resort_made_ = true;
         const SkFontStyle style(
             static_cast<int>(request_.weight), request_.stretch,
             static_cast<SkFontStyle::Slant>(request_.style));
-        last_resort_ = LastResortFace(c_collection_, request_, style,
-                                      query_.coretext, std::nullopt)
-                           .face;
+        const LastResortFont font = LastResortFace(
+            c_collection_, request_, style, query_.coretext, std::nullopt);
+        if (font.face) {
+          last_resort_ = {
+              font.face, Allowed(SynthesizeStyle(c_collection_, font.face.get(),
+                                                 font.base.get(), request_),
+                                 allowed_)};
+        }
       }
-      if (last_resort_ && covers(last_resort_.get())) {
+      if (last_resort_.face && covers(last_resort_.face.get())) {
         return last_resort_;
       }
-      return list_.front();
+      return {list_.front(), list_synthetic_.front()};
     }
 
    private:
-    sk_sp<SkTypeface> SystemFont(uint32_t hint, Priority priority) {
-      return SystemFallbackFor(c_collection_, query_, hint, priority).face;
+    SystemFallbackFont SystemFont(uint32_t hint, Priority priority) {
+      return SystemFallbackFor(c_collection_, query_, hint, priority);
     }
 
     skiac_font_collection* c_collection_;
     std::vector<sk_sp<SkTypeface>> list_;
+    std::vector<SyntheticStyle> list_synthetic_;
+    SyntheticStyle allowed_ = {true, true};
     std::vector<skiac_text_family> families_;
     skiac_text_request request_{};
     SystemFallbackRequest query_;
-    sk_sp<SkTypeface> last_resort_;
+    RunFont last_resort_;
     bool last_resort_made_ = false;
   };
 
