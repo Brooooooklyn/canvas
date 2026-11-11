@@ -17,6 +17,7 @@
 mod build;
 mod cascade;
 mod dom;
+mod fallback;
 mod props;
 mod select;
 mod sheet;
@@ -38,6 +39,8 @@ pub(crate) const BROKEN_IMAGE: &[u8] = include_bytes!("broken_image.png");
 /// The most elements one SVG image (with every nested SVG image in it) may
 /// write. Chrome has no limit and hangs on `<use>` fan-outs past about 10^6
 /// elements; past this one the rest of the document is not drawn.
+/// convertSVGTextToPath has no such limit: a document past it is left to
+/// SkSVG, which converts all of it.
 pub(crate) const ELEMENT_BUDGET: usize = 1 << 18;
 
 /// The most pixels of one `<image>` raster; a larger one is not drawn
@@ -83,6 +86,13 @@ pub(crate) enum PrepareError {
   /// Not something this module reads (not UTF-8, not well-formed, not an
   /// SVG root): left to SkSVGDOM as before.
   Unsupported,
+  /// convertSVGTextToPath past `ELEMENT_BUDGET` or the reference check's
+  /// budget: left to SkSVGDOM, with the edits `fallback::clean` made (None:
+  /// as it is).
+  OverBudget(Option<Vec<u8>>),
+  /// The same, with a pattern cycle SkSVG would loop on that
+  /// `fallback::clean` could not break: convertSVGTextToPath fails.
+  Loops,
 }
 
 /// The root attributes that size an SVG image, as written.
@@ -92,16 +102,30 @@ pub(crate) struct RootAttributes {
   pub height: Option<String>,
   pub view_box: Option<String>,
   pub preserve_aspect_ratio: Option<String>,
+  /// An `<svg>` with only the root's width, height and `style=""` as
+  /// written, in document order. An SVG image's size does not read the
+  /// style (SVGSVGElement::IntrinsicWidth reads the attribute); SkSVG,
+  /// which sizes convertSVGTextToPath's output, reads all three in order
+  /// and keeps the last valid one, so it sizes this document.
+  pub sizing_svg: String,
 }
 
 impl RootAttributes {
   fn of(doc: &dom::Doc) -> Self {
     let attr = |name| doc.attr(doc.root, name).map(str::to_owned);
+    let mut sizing_svg = format!(r#"<svg xmlns="{}""#, dom::SVG_NS);
+    for a in doc.attrs(doc.root) {
+      if a.ns == dom::Ns::None && matches!(a.name.as_str(), "width" | "height" | "style") {
+        sizing_svg.push_str(&format!(r#" {}="{}""#, a.name, build::esc(&a.value)));
+      }
+    }
+    sizing_svg.push_str("/>");
     RootAttributes {
       width: attr("width"),
       height: attr("height"),
       view_box: attr("viewBox"),
       preserve_aspect_ratio: attr("preserveAspectRatio"),
+      sizing_svg,
     }
   }
 
@@ -132,6 +156,9 @@ pub(crate) struct Shared<'u> {
   prepared: Prepared,
   units: &'u FontUnits,
   elements_left: usize,
+  /// Whether a work budget left part of the document out: an element not
+  /// written, or a reference the cycle check ran out of steps on.
+  budget_hit: bool,
   /// Bytes of substituted var() text left (cascade::VAR_TEXT_BUDGET).
   var_budget: Rc<Cell<usize>>,
   raster_pixels: u64,
@@ -148,6 +175,7 @@ impl<'u> Shared<'u> {
       prepared: Prepared::default(),
       units,
       elements_left: ELEMENT_BUDGET,
+      budget_hit: false,
       var_budget: Rc::new(Cell::new(cascade::VAR_TEXT_BUDGET)),
       raster_pixels: 0,
       loaded: HashMap::new(),
@@ -161,6 +189,7 @@ impl<'u> Shared<'u> {
   /// One more element written; false once the budget is spent.
   fn take_element(&mut self) -> bool {
     if self.elements_left == 0 {
+      self.budget_hit = true;
       return false;
     }
     self.elements_left -= 1;
@@ -269,6 +298,31 @@ pub(crate) fn prepare(
   bytes: &[u8],
   units: &FontUnits,
 ) -> Result<(Prepared, RootAttributes), PrepareError> {
+  prepare_root(
+    bytes,
+    units,
+    None::<fn(&RootAttributes) -> Option<(f32, f32)>>,
+  )
+}
+
+/// `prepare` for convertSVGTextToPath: the root keeps its own viewBox (none
+/// is made from its width and height), so the output keeps the size and
+/// the coordinates SkSVG gives the document as written. `root_size` is
+/// the size the output's root gets (its `style=""` width and height
+/// first); the content is laid out at it.
+pub(crate) fn prepare_for_paths(
+  bytes: &[u8],
+  units: &FontUnits,
+  root_size: impl FnOnce(&RootAttributes) -> Option<(f32, f32)>,
+) -> Result<(Prepared, RootAttributes), PrepareError> {
+  prepare_root(bytes, units, Some(root_size))
+}
+
+fn prepare_root(
+  bytes: &[u8],
+  units: &FontUnits,
+  paths: Option<impl FnOnce(&RootAttributes) -> Option<(f32, f32)>>,
+) -> Result<(Prepared, RootAttributes), PrepareError> {
   let text = std::str::from_utf8(bytes).map_err(|_| PrepareError::Unsupported)?;
   let doc = dom::Doc::parse(text).map_err(|e| match e {
     dom::DomError::TooDeep => PrepareError::TooDeep,
@@ -276,12 +330,26 @@ pub(crate) fn prepare(
   })?;
   let root_attributes = RootAttributes::of(&doc);
   let mut shared = Shared::new(units);
-  let svg = build::emit_document(
-    &doc,
-    build::Root::Top(root_attributes.sizing(units)),
-    &mut shared,
-  )
-  .ok_or(PrepareError::Unsupported)?;
+  let sizing = root_attributes.sizing(units);
+  let for_paths = paths.is_some();
+  let root = match paths {
+    Some(root_size) => build::Root::Paths(match root_size(&root_attributes) {
+      Some((width, height)) => SvgSizing::fixed(width, height),
+      None => sizing,
+    }),
+    None => build::Root::Top(sizing),
+  };
+  let svg = build::emit_document(&doc, root, &mut shared).ok_or(PrepareError::Unsupported)?;
+  if for_paths && shared.budget_hit {
+    // What was written is not used: freed before the cleanup reads the
+    // document again.
+    drop(svg);
+    drop(shared);
+    return Err(match fallback::clean(&doc, text) {
+      Ok(text) => PrepareError::OverBudget(text),
+      Err(()) => PrepareError::Loops,
+    });
+  }
   let mut prepared = shared.prepared;
   prepared.svg = svg;
   Ok((prepared, root_attributes))
@@ -332,6 +400,9 @@ mod tests {
     let (prepared, _) = prepare(svg(&body).as_bytes(), &FontUnits::fallback()).unwrap();
     let written = start_tags(&prepared.svg);
     assert!(written <= ELEMENT_BUDGET, "{written} elements written");
+    // convertSVGTextToPath leaves it to SkSVG, which converts all of it.
+    let paths = prepare_for_paths(svg(&body).as_bytes(), &FontUnits::fallback(), |_| None);
+    assert!(matches!(paths.err(), Some(PrepareError::OverBudget(_))));
   }
 
   #[test]

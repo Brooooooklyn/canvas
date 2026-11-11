@@ -171,6 +171,8 @@ It applies to the whole process. Call it once at startup, before you create canv
 
 > **Behavior change**: a character no font of the font list has is taken from an installed font, as Chrome's font cache takes it from the platform's fonts. This applies to the portable renderer on every OS and to the system renderer off macOS (on macOS, CoreText still picks first). The font is chosen the way Chrome on Windows chooses it: a bold or italic list first tries its first family at the normal style, then the font Windows names for the character's script (on macOS, the font Chrome's CoreText fallback names for it), then the first installed family, by name, that has the character. Before, such a character drew as a box (the first font's `.notdef`). Private use characters still draw as boxes.
 
+> **Behavior change**: SVG text (SVG images, the SVG images nested in them, and `convertSVGTextToPath`) takes a character its first font lacks from the next family of its `font-family` list, then from the system's fonts, as canvas text does. Chrome does the same. Before, the whole text used the first font, and a character it lacks drew as a box. Text with no such character draws the same as before. `convertSVGTextToPath` now reads the document the way an SVG image does (`<style>` sheets, `var()`, `<use>` and the other CSS rules), so its output matches what the SVG image draws. A document that is not well-formed UTF-8 XML is read as before, with only the first family of each `font-family` list.
+
 ## Emoji text
 
 ```js

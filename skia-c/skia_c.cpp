@@ -12,6 +12,9 @@
 #include <vector>
 
 #include "skia_c.hpp"
+
+#include <modules/svg/include/SkSVGAttributeParser.h>
+
 #include "svg_image.hpp"
 
 // libskia is built with SK_RELEASE; a debug skia-c would see other class
@@ -4954,28 +4957,107 @@ void skiac_sk_w_stream_destroy(skiac_w_memory_stream* c_w_memory_stream) {
 }
 
 // SkSVG
-void skiac_svg_text_to_path(const uint8_t* data,
-                            size_t length,
-                            skiac_font_collection* c_collection,
-                            skiac_sk_data* output_data) {
-  SkMemoryStream svg_stream(data, length, false);
+}  // extern "C"
+
+namespace {
+
+// The document's paths, text as paths, in an SVG of `size`.
+void WriteTextToPath(SkSVGDOM* dom,
+                     const SkSize& size,
+                     skiac_sk_data* output_data) {
   SkDynamicMemoryWStream w_stream;
-  c_collection->prepareLookup();
-  auto svg_dom = SkSVGDOM::Builder()
-                     .setFontManager(napi_svg::MakeNamedFontMgr(c_collection))
-                     .make(svg_stream);
-  auto svg_root = svg_dom->getRoot();
-  auto svg_container_size =
-      svg_root->intrinsicSize(SkSVGLengthContext(SkSize::Make(0, 0)));
-  auto canvas =
-      SkSVGCanvas::Make(SkRect::MakeSize(svg_container_size), &w_stream,
-                        SkSVGCanvas::kConvertTextToPaths_Flag);
-  svg_dom->render(canvas.get());
+  auto canvas = SkSVGCanvas::Make(SkRect::MakeSize(size), &w_stream,
+                                  SkSVGCanvas::kConvertTextToPaths_Flag);
+  dom->render(canvas.get());
   canvas.reset();
   auto d = w_stream.detachAsData().release();
   output_data->data = reinterpret_cast<skiac_data*>(d);
   output_data->size = d->size();
   output_data->ptr = d->bytes();
+}
+
+// SkSVGSVG::intrinsicSize of `root`, an <svg> with only the root's width,
+// height and style attributes as written (SkSVG reads them in document
+// order; an invalid value keeps the one before it), at 96 dpi (the
+// resolution svg_doc gives the content's physical lengths; SkSVG's default
+// is 90). False, with a 0x0 size, when a side is a percentage.
+bool RootSize(const char* root, size_t root_len, SkSize* size) {
+  *size = SkSize::Make(0, 0);
+  SkMemoryStream stream(root, root_len, false);
+  auto dom = SkSVGDOM::Builder().make(stream);
+  if (!dom || !dom->getRoot()) {
+    return false;
+  }
+  const SkSVGLength root_width = dom->getRoot()->getWidth();
+  const SkSVGLength root_height = dom->getRoot()->getHeight();
+  if (root_width.unit() == SkSVGLength::Unit::kPercentage ||
+      root_height.unit() == SkSVGLength::Unit::kPercentage) {
+    return false;
+  }
+  const SkSVGLengthContext context(SkSize::Make(0, 0), 96);
+  *size = SkSize::Make(
+      context.resolve(root_width, SkSVGLengthContext::LengthType::kHorizontal),
+      context.resolve(root_height, SkSVGLengthContext::LengthType::kVertical));
+  return true;
+}
+
+}  // namespace
+
+extern "C" {
+
+void skiac_svg_text_to_path(const uint8_t* data,
+                            size_t length,
+                            skiac_font_collection* c_collection,
+                            skiac_sk_data* output_data) {
+  SkMemoryStream svg_stream(data, length, false);
+  c_collection->prepareLookup();
+  auto svg_dom = napi_svg::MakeTextToPathDocument(svg_stream, c_collection,
+                                                  nullptr, 0, false);
+  // Bytes SkSVG cannot read (not XML, or no <svg> root): no output, so
+  // convertSVGTextToPath throws, as for the prepared path.
+  if (!svg_dom) {
+    return;
+  }
+  auto svg_root = svg_dom->getRoot();
+  auto svg_container_size =
+      svg_root->intrinsicSize(SkSVGLengthContext(SkSize::Make(0, 0)));
+  WriteTextToPath(svg_dom.get(), svg_container_size, output_data);
+}
+
+void skiac_svg_text_to_path_prepared(const uint8_t* data,
+                                     size_t length,
+                                     const skiac_svg_font_list* fonts,
+                                     size_t font_count,
+                                     const char* root,
+                                     size_t root_len,
+                                     skiac_font_collection* c_collection,
+                                     skiac_sk_data* output_data) {
+  SkMemoryStream svg_stream(data, length, false);
+  c_collection->prepareLookup();
+  auto svg_dom = napi_svg::MakeTextToPathDocument(svg_stream, c_collection,
+                                                  fonts, font_count, true);
+  if (!svg_dom) {
+    return;
+  }
+  // The prepared root has no width, height or style (an SVG image is laid
+  // out at the size it is drawn at) and only its own viewBox, so the
+  // content keeps its coordinates in a container of the root's size, the
+  // size svg_doc laid the content out at (skiac_svg_root_size).
+  SkSize size;
+  RootSize(root, root_len, &size);
+  svg_dom->setContainerSize(size);
+  WriteTextToPath(svg_dom.get(), size, output_data);
+}
+
+bool skiac_svg_root_size(const char* root,
+                         size_t root_len,
+                         float* out_width,
+                         float* out_height) {
+  SkSize size;
+  const bool known = RootSize(root, root_len, &size);
+  *out_width = size.width();
+  *out_height = size.height();
+  return known;
 }
 
 // SkDocument

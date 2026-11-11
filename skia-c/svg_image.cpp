@@ -11,20 +11,32 @@
 //   font-family         Blink's font list: registered names, the per-OS
 //                       generic families, then the standard font
 //                       (font_families.cpp ResolveFontFamilies)
+//   a missing glyph     Blink's FontFallbackIterator per grapheme cluster:
+//                       the list's fonts, the emoji priority font, the
+//                       system font and the last resort font, as canvas
+//                       text (SvgRunShaper)
 
 #include "svg_image.hpp"
 
 #include <cstdlib>
 #include <cstring>
 #include <memory>
+#include <optional>
 #include <string>
 #include <unordered_map>
+#include <unordered_set>
 #include <utility>
 #include <vector>
 
+#include <modules/skshaper/include/SkShaper.h>
+#include <modules/skshaper/include/SkShaper_factory.h>
 #include <src/core/SkTextBlobPriv.h>
+#include <src/core/SkUTF.h>
 
+#include "icu_api.h"
+#include "shaper.hpp"
 #include "text.hpp"
+#include "text_caches.hpp"
 #include "text_raster.hpp"
 
 #if defined(SK_DEBUG) || !defined(SK_RELEASE)
@@ -68,6 +80,30 @@ class StaticAsset final : public skresources::ImageAsset {
   sk_sp<SkImage> image_;
 };
 
+// The font request of the text fragment SkSVGText is shaping in a
+// document: SkSVGText's ResolveFont asks the document's font manager for the
+// fragment's typeface (onLegacyMakeTypeface) at the start of each fragment
+// (SkSVGTextContext::shapeFragment), and every shapePendingBuffer of that
+// fragment shapes right after, before the next fragment asks. The font
+// manager keeps the request and the shaper (SvgRunShaper) reads it there:
+// the font list's faces, the style and the families. A document draws
+// under the font collection's lock, so one draw at a time uses it. (Not a
+// thread_local: its destructor would need __cxa_thread_atexit_impl, which
+// old glibc does not have.)
+struct SvgFontRequest {
+  // Whether a fragment asked since the last draw; else the shaper shapes as
+  // SkSVG's Primitive shaper.
+  bool active = false;
+  // The faces of the font list for the style, in list order (the first is
+  // the one ResolveFont draws with).
+  std::vector<sk_sp<SkTypeface>> faces;
+  SkFontStyle style;
+  // The request's families, for the system stage (the last resort family,
+  // the monospace generic).
+  std::vector<std::string> names;
+  std::vector<int> generics;
+};
+
 // The font-family lists of a document. SkSVGText asks for a typeface by
 // the family attribute (napi-font:K); Blink's font list gives it. With
 // `names`, the attribute is a family name (convertSVGTextToPath: the first
@@ -92,6 +128,11 @@ class SvgFontMgr final : public SkFontMgr {
     }
   }
 
+  // The request of the fragment being shaped (onLegacyMakeTypeface).
+  const SvgFontRequest& request() const { return request_; }
+  // Forgets the request (its faces), after a draw.
+  void EndText() const { request_ = SvgFontRequest(); }
+
  protected:
   int onCountFamilies() const override { return assets()->countFamilies(); }
   void onGetFamilyName(int index, SkString* name) const override {
@@ -108,6 +149,9 @@ class SvgFontMgr final : public SkFontMgr {
       const SkFontStyle& style) const override {
     return assets()->matchFamilyStyle(name, style);
   }
+  // Null (TypefaceFontProvider has no fallback). It must stay null: SkSVG's
+  // FontMgrRunIterator splits a fragment's text at the fonts this returns,
+  // where SvgRunShaper picks the font of each grapheme cluster itself.
   sk_sp<SkTypeface> onMatchFamilyStyleCharacter(
       const char name[],
       const SkFontStyle& style,
@@ -137,12 +181,29 @@ class SvgFontMgr final : public SkFontMgr {
 
   // SkSVGText ResolveFont: the first family of the list that has a face for
   // `style` (FontFallbackList::GetFontData), or the standard font.
+  // The request is kept for the fragment's shaping (request_).
   sk_sp<SkTypeface> onLegacyMakeTypeface(const char name[],
                                          SkFontStyle style) const override {
+    SvgFontRequest& request = request_;
+    request.active = true;
+    request.style = style;
+    request.faces.clear();
+    request.names.clear();
+    request.generics.clear();
     if (names_) {
       sk_sp<SkTypeface> face =
           name ? MatchNamedFamily(c_collection_, name, style) : nullptr;
-      return face ? face : assets()->legacyMakeTypeface(name, style);
+      if (!face) {
+        face = assets()->legacyMakeTypeface(name, style);
+      }
+      if (face) {
+        request.faces.push_back(face);
+      }
+      if (name) {
+        request.names.push_back(name);
+        request.generics.push_back(0);
+      }
+      return face;
     }
     const long index = IndexAfter(name, kFontPrefix);
     static const std::vector<Family> kNone;
@@ -154,17 +215,18 @@ class SvgFontMgr final : public SkFontMgr {
     for (const Family& family : list) {
       families.push_back(
           {family.name.data(), family.name.size(), family.generic});
+      request.names.push_back(family.name);
+      request.generics.push_back(family.generic);
     }
-    skiac_text_request request{};
-    request.size_adjust_metric = -1;
-    request.families = families.data();
-    request.family_count = families.size();
+    skiac_text_request text_request{};
+    text_request.size_adjust_metric = -1;
+    text_request.families = families.data();
+    text_request.family_count = families.size();
     c_collection_->flushCachesIfDirty();
     const std::vector<SkString> resolved =
-        ResolveFontFamilies(c_collection_, request);
-    const std::vector<sk_sp<SkTypeface>> faces =
-        c_collection_->collection->findTypefaces(resolved, style);
-    return faces.empty() ? nullptr : faces.front();
+        ResolveFontFamilies(c_collection_, text_request);
+    request.faces = c_collection_->collection->findTypefaces(resolved, style);
+    return request.faces.empty() ? nullptr : request.faces.front();
   }
 
  private:
@@ -182,6 +244,423 @@ class SvgFontMgr final : public SkFontMgr {
   skiac_font_collection* c_collection_;
   bool names_;
   std::vector<std::vector<Family>> lists_;
+  mutable SvgFontRequest request_;
+};
+
+// UCHAR_DEFAULT_IGNORABLE_CODE_POINT: ZWJ, ZWNJ, the variation selectors
+// and the like draw nothing, so a font without them still covers a cluster.
+bool IsDefaultIgnorable(SkUnichar c) {
+  return u_hasBinaryProperty(c, UCHAR_DEFAULT_IGNORABLE_CODE_POINT);
+}
+
+// SkSVG's Primitive shaper (SkShaper_primitive.cpp) with Blink's font
+// fallback: each grapheme cluster takes the first font of
+// FontFallbackIterator (font_fallback_iterator.cc) that has all its
+// characters (default ignorables aside):
+//   1. the font list's faces for the fragment's style (the request), in
+//      order, each typeface once;
+//   2. for an emoji or symbol cluster (RunSegmenter's priority), the system
+//      font for that priority;
+//   3. the system font for the cluster's first character (SystemFallbackFor,
+//      the stage canvas text asks);
+//   4. the last resort font;
+//   5. else the first font, which draws its .notdef.
+// Runs of clusters with one font are laid out one after another as
+// Primitive lays out its one run: one glyph per character, the font's
+// advances, no kerning. A fallback run draws the face at the fragment's
+// size and flags. A fragment that needs no fallback is shaped by Primitive
+// itself, so its output is the same. SkSVG keeps its own layout (chunks,
+// positions, textPath).
+class SvgRunShaper final : public SkShaper {
+ public:
+  SvgRunShaper(skiac_font_collection* c_collection, const SvgFontMgr* mgr)
+      : c_collection_(c_collection),
+        mgr_(mgr),
+        primitive_(SkShapers::Primitive::PrimitiveText()) {}
+
+  void shape(const char* utf8,
+             size_t utf8_bytes,
+             const SkFont& font,
+             bool left_to_right,
+             SkScalar width,
+             RunHandler* handler) const override {
+    primitive_->shape(utf8, utf8_bytes, font, left_to_right, width, handler);
+  }
+
+  void shape(const char* utf8,
+             size_t utf8_bytes,
+             FontRunIterator& font,
+             BiDiRunIterator& bidi,
+             ScriptRunIterator& script,
+             LanguageRunIterator& language,
+             SkScalar width,
+             RunHandler* handler) const override {
+    this->shape({utf8, utf8_bytes}, font, bidi, script, language, {},
+                {.width = width}, handler);
+  }
+
+  void shape(const char* utf8,
+             size_t utf8_bytes,
+             FontRunIterator& font,
+             BiDiRunIterator& bidi,
+             ScriptRunIterator& script,
+             LanguageRunIterator& language,
+             const Feature* features,
+             size_t features_size,
+             SkScalar width,
+             RunHandler* handler) const override {
+    this->shape({utf8, utf8_bytes}, font, bidi, script, language,
+                {features, features_size}, {.width = width}, handler);
+  }
+
+  void shape(SkSpan<const char> utf8,
+             FontRunIterator& font_runs,
+             BiDiRunIterator& bidi,
+             ScriptRunIterator& script,
+             LanguageRunIterator& language,
+             SkSpan<const Feature> features,
+             const Options& options,
+             RunHandler* handler) const override {
+    SkFont primary;
+    if (!font_runs.atEnd()) {
+      font_runs.consume();
+      primary = font_runs.currentFont();
+    }
+    std::vector<Run> runs;
+    if (mgr_->request().active && !utf8.empty() && primary.getTypeface() &&
+        options.width >= SK_ScalarMax && !Covers(primary.getTypeface(), utf8)) {
+      runs = PickFonts(utf8, primary);
+    }
+    if (runs.empty() || (runs.size() == 1 && runs.front().font.getTypeface() ==
+                                                 primary.getTypeface())) {
+      // Primitive's own output.
+      TrivialFontRunIterator primary_runs(primary, utf8.size());
+      primitive_->shape(utf8, primary_runs, bidi, script, language, features,
+                        options, handler);
+      return;
+    }
+    Emit(utf8, runs, options, handler);
+  }
+
+ private:
+  struct Run {
+    SkFont font;
+    size_t start;
+    size_t end;
+  };
+
+  // Whether `face` has every character of the text: then every cluster
+  // takes it, as the list's first font. (A missing default ignorable goes
+  // to PickFonts, which loads ICU before asking for the property.)
+  static bool Covers(SkTypeface* face, SkSpan<const char> utf8) {
+    const char* at = utf8.data();
+    const char* end = at + utf8.size();
+    while (at < end) {
+      const SkUnichar c = SkUTF::NextUTF8(&at, end);
+      if (c < 0) {
+        return true;
+      }
+      if (!face->unicharToGlyph(c)) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  // The fonts of the text's grapheme clusters, as runs of one font.
+  std::vector<Run> PickFonts(SkSpan<const char> utf8,
+                             const SkFont& primary) const {
+    sk_sp<SkUnicode>& unicode_ref = GetTextCaches(c_collection_).unicode;
+    if (!unicode_ref) {
+      // Loads ICU's data on Windows before the first ICU call.
+      unicode_ref = SkUnicodes::ICU::Make();
+    }
+    const sk_sp<SkUnicode> unicode = unicode_ref;
+    std::vector<Run> runs;
+    if (!unicode) {
+      return runs;
+    }
+    // The code points, and the text as UTF-16 for RunSegmenter's priority
+    // (SymbolsIterator: emoji presentation and text presentation emoji).
+    std::vector<SkUnichar> chars;
+    std::vector<size_t> char_bytes;
+    std::u16string text16;
+    std::vector<size_t> unit_bytes;
+    {
+      const char* at = utf8.data();
+      const char* end = at + utf8.size();
+      while (at < end) {
+        const size_t offset = at - utf8.data();
+        const SkUnichar c = SkUTF::NextUTF8(&at, end);
+        if (c < 0) {
+          return runs;
+        }
+        chars.push_back(c);
+        char_bytes.push_back(offset);
+        uint16_t units[2];
+        const size_t count = SkUTF::ToUTF16(c, units);
+        for (size_t i = 0; i < count; ++i) {
+          text16.push_back(static_cast<char16_t>(units[i]));
+          unit_bytes.push_back(offset);
+        }
+      }
+    }
+    std::vector<Priority> unit_priority(text16.size(), Priority::kText);
+    for (const Segment& segment : SegmentItem(
+             text16.data(), static_cast<uint32_t>(text16.size()), false)) {
+      for (uint32_t i = segment.start; i < segment.end; ++i) {
+        unit_priority[i] = segment.priority;
+      }
+    }
+    std::vector<bool> cluster_start(utf8.size() + 1, false);
+    {
+      auto breaks =
+          unicode->makeBreakIterator(SkUnicode::BreakType::kGraphemes);
+      if (!breaks ||
+          !breaks->setText(utf8.data(), static_cast<int>(utf8.size()))) {
+        return runs;
+      }
+      for (SkBreakIterator::Position at = breaks->first(); !breaks->isDone();
+           at = breaks->next()) {
+        if (at >= 0 && static_cast<size_t>(at) <= utf8.size()) {
+          cluster_start[at] = true;
+        }
+      }
+    }
+    cluster_start[0] = true;
+    cluster_start[utf8.size()] = true;
+
+    Fallback fallback(c_collection_, mgr_->request(), primary);
+    sk_sp<SkTypeface> previous = primary.refTypeface();
+    size_t unit = 0;
+    for (size_t i = 0; i < chars.size();) {
+      // The cluster's characters [i, j).
+      size_t j = i + 1;
+      while (j < chars.size() && !cluster_start[char_bytes[j]]) {
+        ++j;
+      }
+      const size_t start = char_bytes[i];
+      const size_t end = j < chars.size() ? char_bytes[j] : utf8.size();
+      const Priority priority = unit_priority[unit];
+      for (size_t k = i; k < j; ++k) {
+        unit += chars[k] > 0xFFFF ? 2 : 1;
+      }
+      sk_sp<SkTypeface> face =
+          fallback.FontFor(&chars[i], j - i, priority, previous);
+      if (!runs.empty() && runs.back().font.getTypeface() == face.get()) {
+        runs.back().end = end;
+      } else {
+        SkFont font = primary;
+        font.setTypeface(face);
+        runs.push_back({font, start, end});
+      }
+      previous = std::move(face);
+      i = j;
+    }
+    return runs;
+  }
+
+  // FontFallbackIterator over the fragment's font request.
+  class Fallback {
+   public:
+    Fallback(skiac_font_collection* c_collection,
+             const SvgFontRequest& slot,
+             const SkFont& primary)
+        : c_collection_(c_collection) {
+      std::unordered_set<SkTypefaceID> seen;
+      auto add = [&](const sk_sp<SkTypeface>& face) {
+        if (face && seen.insert(face->uniqueID()).second) {
+          list_.push_back(face);
+        }
+      };
+      add(primary.refTypeface());
+      for (const sk_sp<SkTypeface>& face : slot.faces) {
+        add(face);
+      }
+      for (size_t i = 0; i < slot.names.size(); ++i) {
+        families_.push_back(
+            {slot.names[i].data(), slot.names[i].size(), slot.generics[i]});
+      }
+      request_.families = families_.data();
+      request_.family_count = families_.size();
+      request_.size = primary.getSize();
+      request_.weight = static_cast<float>(slot.style.weight());
+      request_.slope =
+          slot.style.slant() == SkFontStyle::kUpright_Slant ? 0 : 14;
+      request_.style = slot.style.slant();
+      request_.stretch = slot.style.width();
+      request_.stretch_pct = 100;
+      request_.size_adjust_metric = -1;
+      SkTypeface* first = list_.front().get();
+      query_.request = &request_;
+      query_.primary_face = first;
+      query_.primary_base = first;
+      query_.primary_synthetic =
+          SynthesizeStyle(c_collection, first, first, request_);
+      query_.coretext = HasCoreTextFallbackSource(c_collection);
+      query_.han_script = FallbackHanScript("");
+      query_.monospace = FallbackMonospace(request_);
+    }
+
+    // The font of a cluster of `count` characters; one with only default
+    // ignorables stays with the font before it.
+    sk_sp<SkTypeface> FontFor(const SkUnichar* chars,
+                              size_t count,
+                              Priority priority,
+                              const sk_sp<SkTypeface>& previous) {
+      uint32_t hint = 0;
+      for (size_t i = 0; i < count && !hint; ++i) {
+        if (!IsDefaultIgnorable(chars[i])) {
+          hint = static_cast<uint32_t>(chars[i]);
+        }
+      }
+      if (!hint) {
+        return previous;
+      }
+      auto covers = [&](SkTypeface* face) {
+        for (size_t i = 0; i < count; ++i) {
+          if (!IsDefaultIgnorable(chars[i]) &&
+              !face->unicharToGlyph(chars[i])) {
+            return false;
+          }
+        }
+        return true;
+      };
+      for (const sk_sp<SkTypeface>& face : list_) {
+        if (covers(face.get())) {
+          return face;
+        }
+      }
+      if (IsNonTextFallbackPriority(priority)) {
+        sk_sp<SkTypeface> face = SystemFont(hint, priority);
+        if (face && covers(face.get())) {
+          return face;
+        }
+      }
+      if (sk_sp<SkTypeface> face = SystemFont(hint, Priority::kText);
+          face && covers(face.get())) {
+        return face;
+      }
+      if (!last_resort_made_) {
+        last_resort_made_ = true;
+        const SkFontStyle style(
+            static_cast<int>(request_.weight), request_.stretch,
+            static_cast<SkFontStyle::Slant>(request_.style));
+        last_resort_ = LastResortFace(c_collection_, request_, style,
+                                      query_.coretext, std::nullopt)
+                           .face;
+      }
+      if (last_resort_ && covers(last_resort_.get())) {
+        return last_resort_;
+      }
+      return list_.front();
+    }
+
+   private:
+    sk_sp<SkTypeface> SystemFont(uint32_t hint, Priority priority) {
+      return SystemFallbackFor(c_collection_, query_, hint, priority).face;
+    }
+
+    skiac_font_collection* c_collection_;
+    std::vector<sk_sp<SkTypeface>> list_;
+    std::vector<skiac_text_family> families_;
+    skiac_text_request request_{};
+    SystemFallbackRequest query_;
+    sk_sp<SkTypeface> last_resort_;
+    bool last_resort_made_ = false;
+  };
+
+  // Primitive's layout of each run, one after another on one line.
+  void Emit(SkSpan<const char> utf8,
+            const std::vector<Run>& runs,
+            const Options& options,
+            RunHandler* handler) const {
+    std::vector<RunHandler::RunInfo> infos;
+    infos.reserve(runs.size());
+    for (const Run& run : runs) {
+      const char* text = utf8.data() + run.start;
+      const size_t bytes = run.end - run.start;
+      const size_t glyphs = SkUTF::CountUTF8(text, bytes);
+      const SkScalar tracking =
+          options.tracking * run.font.getSize() * run.font.getScaleX();
+      infos.push_back(
+          {run.font,
+           0,
+           0,
+           "",
+           {run.font.measureText(text, bytes, SkTextEncoding::kUTF8) +
+                glyphs * tracking,
+            0},
+           glyphs,
+           RunHandler::Range(run.start, bytes)});
+    }
+    handler->beginLine();
+    for (const RunHandler::RunInfo& info : infos) {
+      if (info.glyphCount) {
+        handler->runInfo(info);
+      }
+    }
+    handler->commitRunInfo();
+    for (size_t r = 0; r < runs.size(); ++r) {
+      const RunHandler::RunInfo& info = infos[r];
+      if (!info.glyphCount) {
+        continue;
+      }
+      const SkFont& font = runs[r].font;
+      const char* text = utf8.data() + runs[r].start;
+      const size_t bytes = runs[r].end - runs[r].start;
+      std::vector<SkGlyphID> glyphs(info.glyphCount);
+      font.textToGlyphs(text, bytes, SkTextEncoding::kUTF8, glyphs);
+      std::vector<SkScalar> advances(info.glyphCount);
+      font.getWidths(glyphs, advances);
+      const SkScalar tracking =
+          options.tracking * font.getSize() * font.getScaleX();
+      const RunHandler::Buffer buffer = handler->runBuffer(info);
+      memcpy(buffer.glyphs, glyphs.data(), info.glyphCount * sizeof(SkGlyphID));
+      SkPoint position = buffer.point;
+      for (size_t i = 0; i < info.glyphCount; ++i) {
+        buffer.positions[i] = position;
+        position.fX += advances[i] + tracking;
+      }
+      if (buffer.clusters) {
+        const char* at = text;
+        for (size_t i = 0; i < info.glyphCount; ++i) {
+          buffer.clusters[i] = SkToU32(at - utf8.data());
+          SkUTF::NextUTF8(&at, text + bytes);
+        }
+      }
+      handler->commitRunBuffer(info);
+    }
+    handler->commitLine();
+  }
+
+  skiac_font_collection* c_collection_;
+  const SvgFontMgr* mgr_;
+  std::unique_ptr<SkShaper> primitive_;
+};
+
+// SkShapers::Primitive::Factory with SvgRunShaper for `mgr`'s documents.
+class SvgShapingFactory final : public SkShapers::Factory {
+ public:
+  SvgShapingFactory(skiac_font_collection* c_collection, const SvgFontMgr* mgr)
+      : c_collection_(c_collection), mgr_(mgr) {}
+
+  std::unique_ptr<SkShaper> makeShaper(sk_sp<SkFontMgr>) override {
+    return std::make_unique<SvgRunShaper>(c_collection_, mgr_);
+  }
+  std::unique_ptr<SkShaper::BiDiRunIterator>
+  makeBidiRunIterator(const char*, size_t, uint8_t) override {
+    return std::make_unique<SkShaper::TrivialBiDiRunIterator>(0, 0);
+  }
+  std::unique_ptr<SkShaper::ScriptRunIterator>
+  makeScriptRunIterator(const char*, size_t, SkFourByteTag) override {
+    return std::make_unique<SkShaper::TrivialScriptRunIterator>(0, 0);
+  }
+  SkUnicode* getUnicode() override { return nullptr; }
+
+ private:
+  skiac_font_collection* c_collection_;
+  const SvgFontMgr* mgr_;
 };
 
 class Resources final : public skresources::ResourceProvider {
@@ -208,7 +687,7 @@ class Resources final : public skresources::ResourceProvider {
 
   Resources(const skiac_svg_resource* images,
             size_t count,
-            sk_sp<SkFontMgr> font_mgr,
+            sk_sp<SvgFontMgr> font_mgr,
             skiac_font_collection* c_collection)
       : font_mgr_(std::move(font_mgr)), c_collection_(c_collection) {
     entries_.resize(count);
@@ -279,10 +758,13 @@ class Resources final : public skresources::ResourceProvider {
     e->picture_fonts = fonts;
     SkMemoryStream stream(e->data);
     // Not kept: the document refs this provider.
-    sk_sp<SkSVGDOM> dom = SkSVGDOM::Builder()
-                              .setFontManager(font_mgr_)
-                              .setResourceProvider(sk_ref_sp(this))
-                              .make(stream);
+    sk_sp<SkSVGDOM> dom =
+        SkSVGDOM::Builder()
+            .setFontManager(font_mgr_)
+            .setResourceProvider(sk_ref_sp(this))
+            .setTextShapingFactory(
+                sk_make_sp<SvgShapingFactory>(c_collection_, font_mgr_.get()))
+            .make(stream);
     if (dom) {
       const SkRect root = SkRect::MakeWH(e->root_width, e->root_height);
       dom->setContainerSize(SkSize::Make(e->root_width, e->root_height));
@@ -295,6 +777,9 @@ class Resources final : public skresources::ResourceProvider {
   }
 
   int nested_draws_left = kNestedDrawBudget;
+
+  // Forgets the font request of the document's text, after a draw.
+  void EndText() const { font_mgr_->EndText(); }
 
   // What the entries keep for the document's life: the encoded copies, the
   // decoded rasters (one per URL), their scaled copies and the nested
@@ -372,7 +857,7 @@ class Resources final : public skresources::ResourceProvider {
   std::vector<Entry> entries_;
   std::unordered_map<size_t, size_t> shared_raster_;
   std::unordered_map<uint32_t, size_t> by_id_;
-  sk_sp<SkFontMgr> font_mgr_;
+  sk_sp<SvgFontMgr> font_mgr_;
   skiac_font_collection* c_collection_;
 
   friend class ChromeSvgCanvas;
@@ -541,16 +1026,29 @@ sk_sp<SkSVGDOM> MakePreparedDocument(
   auto font_mgr = sk_make_sp<SvgFontMgr>(c_collection, fonts, font_count);
   auto provider =
       sk_make_sp<Resources>(images, image_count, font_mgr, c_collection);
-  sk_sp<SkSVGDOM> dom = SkSVGDOM::Builder()
-                            .setFontManager(font_mgr)
-                            .setResourceProvider(provider)
-                            .make(stream);
+  sk_sp<SkSVGDOM> dom =
+      SkSVGDOM::Builder()
+          .setFontManager(font_mgr)
+          .setResourceProvider(provider)
+          .setTextShapingFactory(
+              sk_make_sp<SvgShapingFactory>(c_collection, font_mgr.get()))
+          .make(stream);
   *resources = std::move(provider);
   return dom;
 }
 
-sk_sp<SkFontMgr> MakeNamedFontMgr(skiac_font_collection* c_collection) {
-  return sk_make_sp<SvgFontMgr>(c_collection, nullptr, 0, true);
+sk_sp<SkSVGDOM> MakeTextToPathDocument(SkStream& stream,
+                                       skiac_font_collection* c_collection,
+                                       const skiac_svg_font_list* fonts,
+                                       size_t font_count,
+                                       bool prepared) {
+  auto font_mgr =
+      sk_make_sp<SvgFontMgr>(c_collection, fonts, font_count, !prepared);
+  return SkSVGDOM::Builder()
+      .setFontManager(font_mgr)
+      .setTextShapingFactory(
+          sk_make_sp<SvgShapingFactory>(c_collection, font_mgr.get()))
+      .make(stream);
 }
 
 void RenderPrepared(SkSVGDOM* dom,
@@ -561,6 +1059,7 @@ void RenderPrepared(SkSVGDOM* dom,
   provider->nested_draws_left = kNestedDrawBudget;
   ChromeSvgCanvas chrome(canvas, provider, cs);
   dom->render(&chrome);
+  provider->EndText();
 }
 
 size_t RetainedBytes(const skresources::ResourceProvider* resources) {

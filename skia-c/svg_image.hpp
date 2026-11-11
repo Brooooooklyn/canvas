@@ -20,10 +20,17 @@ sk_sp<SkSVGDOM> MakePreparedDocument(
     size_t font_count,
     sk_sp<skresources::ResourceProvider>* resources);
 
-// The font manager of a document whose font-family attributes are family
-// names (convertSVGTextToPath): a name matches as canvas text naming it.
-// The caller holds the font collection's lock.
-sk_sp<SkFontMgr> MakeNamedFontMgr(skiac_font_collection* c_collection);
+// The SkSVGDOM convertSVGTextToPath draws. For a `prepared` document the
+// font-family attributes name `fonts` (napi-font:K), as for an SVG image;
+// else each is a family name (the first of the list, as SkSVG parses it),
+// matched as canvas text matches a named family (MatchNamedFamily). Text
+// falls back per grapheme cluster as in SVG images. The caller holds the
+// font collection's lock while it makes and draws the document.
+sk_sp<SkSVGDOM> MakeTextToPathDocument(SkStream& stream,
+                                       skiac_font_collection* c_collection,
+                                       const skiac_svg_font_list* fonts,
+                                       size_t font_count,
+                                       bool prepared);
 
 // Draws a prepared document on `canvas`, a raster in colour space `cs`.
 // The caller holds the font collection's lock.
