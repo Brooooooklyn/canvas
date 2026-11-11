@@ -22,7 +22,6 @@ napi             = { version = "3.1", default-features = false, features = ["nap
 napi-derive      = { version = "3.1", default-features = false }
 num_cpus         = "1"
 precomputed-hash = "0.1"
-regex            = "1"
 roxmltree        = "0.21"
 selectors        = "0.42"
 serde            = "1"

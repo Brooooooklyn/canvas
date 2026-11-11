@@ -13,6 +13,13 @@ FRA i, JAN M, ZHS W, NLD x, TRK z, ESP k).
 ScriptProbe.ttf: Lato-Regular.ttf with its GSUB replaced by a ccmp feature
 that maps "1" to "m" under the DFLT script and to "w" under latn.
 
+NominalProbe.ttf: Lato-Regular.ttf with its GSUB replaced by a ccmp
+feature that maps "0" to "W" and "x" to "X" (spacing-units-chrome.spec.ts,
+filter-parse-chrome.spec.ts).
+
+LowXProbe.ttf: Lato-Regular.ttf whose cmap maps "x" to the underscore
+glyph (spacing-units-chrome.spec.ts, filter-parse-chrome.spec.ts).
+
 SymCmapProbe.ttf: Lato-Regular.ttf with only a (3,0) symbol cmap: the
 glyphs of U+0020..U+00FF at U+F020..U+F0FF.
 
@@ -42,6 +49,26 @@ IDs) and saved as TrueType.
 
   Copyright 2022 The Noto Project Authors
   (https://github.com/notofonts/devanagari). No Reserved Font Name.
+
+IcWghtProbe.ttf: ScienceGothic-VariableFont.ttf (this folder) subset to
+U+0020..U+007E (all layout features, all name IDs), the CTRS, slnt and
+wdth axes pinned at 0, 0 and 100 with fontTools.varLib.instancer (wght
+100..900 left), and U+6C34 mapped to the "M" glyph
+(spacing-units-chrome.spec.ts, filter-parse-chrome.spec.ts).
+
+  Copyright © 2025 The Science Gothic Project Authors
+  (https://github.com/googlefonts/science-gothic/blob/main/AUTHORS.txt).
+  No Reserved Font Name. Science Gothic is a trademark of Font Detective
+  LLC; the copy is named IcWghtProbe.
+
+IcOpszProbe.ttf: Newsreader-opsz-only.ttf (this folder) subset to
+U+0020..U+007E (opsz 6..72 kept), and U+6C34 mapped to the "M" glyph
+(spacing-units-chrome.spec.ts, filter-parse-chrome.spec.ts).
+
+  Copyright 2020 The Newsreader Project Authors
+  (http://github.com/productiontype/Newsreader). No Reserved Font Name.
+  Newsreader is a registered trademark of Production Systems SAS; the copy
+  is named IcOpszProbe.
 
 This Font Software is licensed under the SIL Open Font License, Version 1.1.
 This license is copied below, and is also available with a FAQ at:

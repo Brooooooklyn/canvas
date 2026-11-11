@@ -7,9 +7,6 @@ use cssparser::{Parser, Token};
 
 use crate::css_math::{self, Category, Lengths, Literal, MathOptions, Node, Unit};
 
-/// The default font size.
-pub const FONT_MEDIUM_PX: f32 = 16.0;
-
 /// The canvas default font is `10px sans-serif` (canvas_font_cache.cc).
 pub(crate) const PARENT_FONT_SIZE: f64 = 10.0;
 /// The root element's font size, for `rem`.
@@ -814,40 +811,6 @@ pub fn parse_font_stretch(stretch: &str) -> Option<FontStretch> {
   }
 }
 
-/// A CSS length for letterSpacing / wordSpacing: em and % against the
-/// default 16px.
-pub fn parse_size_px(size: f32, unit: &str) -> f32 {
-  let mut size_px = size;
-  match unit {
-    "em" | "rem" | "pc" => {
-      size_px = size * FONT_MEDIUM_PX;
-    }
-    "pt" => {
-      size_px = size * 4.0 / 3.0;
-    }
-    "px" => {
-      size_px = size;
-    }
-    "in" => {
-      size_px = size * 96.0;
-    }
-    "cm" => {
-      size_px = size * 96.0 / 2.54;
-    }
-    "mm" => {
-      size_px = size * 96.0 / 25.4;
-    }
-    "q" => {
-      size_px = size * 96.0 / 25.4 / 4.0;
-    }
-    "%" => {
-      size_px = size * FONT_MEDIUM_PX / 100.0;
-    }
-    _ => {}
-  };
-  size_px
-}
-
 #[cfg(test)]
 mod tests {
   use super::*;
@@ -869,13 +832,6 @@ mod tests {
     assert_eq!(parse_font_stretch("CONDENSED"), None);
     assert_eq!(parse_font_stretch("50%"), None);
     assert_eq!(parse_font_stretch("ultra"), None);
-  }
-
-  #[allow(clippy::float_cmp)]
-  #[test]
-  fn test_parse_size_px() {
-    assert_eq!(parse_size_px(12.0, "px"), 12.0f32);
-    assert_eq!(parse_size_px(2.0, "em"), 32.0f32);
   }
 
   #[test]

@@ -338,6 +338,17 @@ pub mod ffi {
     pub lh: f32,
   }
 
+  /// text.hpp skiac_primary_font_units.
+  #[repr(C)]
+  #[derive(Debug, Clone, Copy, Default)]
+  pub struct skiac_primary_font_units {
+    pub x_height: f32,
+    pub zero_width: f32,
+    pub cap_height: f32,
+    pub ideographic_advance: f32,
+    pub has_ideographic_advance: bool,
+  }
+
   /// skia_c.hpp skiac_text_request: the text (not NUL-terminated) and the
   /// canvas text settings.
   #[repr(C)]
@@ -1558,10 +1569,10 @@ pub mod ffi {
 
     pub fn skiac_font_collection_destroy(c_font_collection: *mut skiac_font_collection);
 
-    pub fn skiac_font_collection_ideographic_advance(
+    pub fn skiac_font_collection_primary_font_units(
       c_collection: *mut skiac_font_collection,
       request: *const skiac_text_request,
-      advance: *mut f32,
+      units: *mut skiac_primary_font_units,
     ) -> bool;
 
     pub fn skiac_font_collection_enable_installed_fonts(
@@ -6607,17 +6618,21 @@ impl FontCollection {
     unsafe { ffi::skiac_font_collection_set_alias(self.0, family.as_ptr(), alias_name.as_ptr()) }
   }
 
-  /// The advance of U+6C34 in the primary face of the `settings` font (the
-  /// first of its families that exists), or None when no family exists or
-  /// that face has no such glyph. Blink's ideographic advance, for the ic
-  /// unit.
-  pub fn ideographic_advance(&self, settings: &TextSettings) -> Option<f32> {
-    let mut advance = 0.0;
+  /// The x-height (0 when the font has none), "0" advance, cap height and
+  /// U+6C34 advance (when it has the glyph) of the primary font of the
+  /// `settings` font, read off the font without shaping (Blink's
+  /// SimpleFontData metrics for ex, ch, cap and ic); None when no family font
+  /// with glyphs exists.
+  pub fn primary_font_units(
+    &self,
+    settings: &TextSettings,
+  ) -> Option<ffi::skiac_primary_font_units> {
+    let mut units = ffi::skiac_primary_font_units::default();
     settings
       .with_request("", |request| unsafe {
-        ffi::skiac_font_collection_ideographic_advance(self.0, request, &mut advance)
+        ffi::skiac_font_collection_primary_font_units(self.0, request, &mut units)
       })
-      .then_some(advance)
+      .then_some(units)
   }
 
   pub fn get_variation_axes(
@@ -7342,6 +7357,59 @@ mod text_line_tests {
         assert_eq!(width.to_bits(), widths[i].to_bits(), "line {i}");
       }
     }
+  }
+
+  /// The ex, ch and cap read (primary_font_units, for letterSpacing,
+  /// wordSpacing and filter lengths) notes its font argument list as a
+  /// layout does and runs the drop it asks for itself: 300 lists read with
+  /// no text layout drop the caches, here the line laid out before them.
+  #[test]
+  fn primary_font_units_drop_the_caches_past_the_budget() {
+    let mut settings = settings();
+    settings.font.size = 16.0;
+    settings.font.families = vec![FamilyName::Named("DropMono".to_owned())];
+    let collection = variable_and_fallback_fonts();
+    settings.font.weight = 500.5;
+    assert!(measure(&collection, &settings, "a") > 0.0);
+    assert!(kept(&collection, &settings, "a"));
+    for i in 0..300 {
+      settings.font.weight = 100.0 + i as f32;
+      let units = collection.primary_font_units(&settings);
+      assert!(
+        units.is_some_and(|units| units.zero_width > 0.0),
+        "read {i}"
+      );
+    }
+    settings.font.weight = 500.5;
+    assert!(!kept(&collection, &settings, "a"));
+  }
+
+  /// The ic read (primary_font_units' U+6C34 advance, for letterSpacing,
+  /// wordSpacing and filter lengths) does the same, also when the face has
+  /// no U+6C34: 300 variation lists read with no text layout drop the line
+  /// laid out before.
+  #[test]
+  fn ideographic_advance_drops_the_caches_past_the_budget() {
+    let mut settings = settings();
+    settings.font.size = 16.0;
+    settings.font.families = vec![FamilyName::Named("DropMono".to_owned())];
+    let collection = variable_and_fallback_fonts();
+    assert!(measure(&collection, &settings, "a") > 0.0);
+    assert!(kept(&collection, &settings, "a"));
+    let wght = u32::from_be_bytes(*b"wght");
+    for i in 0..300 {
+      settings.variations = vec![FontVariation {
+        tag: wght,
+        value: 100.0 + i as f32,
+      }];
+      let units = collection.primary_font_units(&settings);
+      assert!(
+        units.is_some_and(|units| !units.has_ideographic_advance),
+        "read {i}"
+      );
+    }
+    settings.variations = Vec::new();
+    assert!(!kept(&collection, &settings, "a"));
   }
 
   /// HarfBuzz's own Unicode data (what the shaper's HarfBuzz uses) gives

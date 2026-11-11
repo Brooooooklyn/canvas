@@ -1,0 +1,643 @@
+{
+  "source": "Chrome 157 (HeadlessChrome/157.0.0.0, macOS arm64, --disable-gpu): NominalProbe.ttf as the FontFace SpNominal; spacing on detached <canvas> contexts, filter on OffscreenCanvas (willReadFrequently)",
+  "spacing": [
+    {
+      "id": "nominal ls 1ch @40",
+      "ops": [
+        ["font", "40px SpNominal"],
+        ["letterSpacing", "1ch"]
+      ],
+      "chrome": {
+        "letterSpacing": "1ch",
+        "wordSpacing": "0px",
+        "font": "40px SpNominal",
+        "lsPx": 23.199996948242188,
+        "wsPx": 0,
+        "hello": 209.91993713378906
+      }
+    },
+    {
+      "id": "nominal ls 1rch @40",
+      "ops": [
+        ["font", "40px SpNominal"],
+        ["letterSpacing", "1rch"]
+      ],
+      "chrome": {
+        "letterSpacing": "1rch",
+        "wordSpacing": "0px",
+        "font": "40px SpNominal",
+        "lsPx": 23.199996948242188,
+        "wsPx": 0,
+        "hello": 209.91993713378906
+      }
+    },
+    {
+      "id": "nominal ls 1ex @40",
+      "ops": [
+        ["font", "40px SpNominal"],
+        ["letterSpacing", "1ex"]
+      ],
+      "chrome": {
+        "letterSpacing": "1ex",
+        "wordSpacing": "0px",
+        "font": "40px SpNominal",
+        "lsPx": 20.259994506835938,
+        "wsPx": 0,
+        "hello": 195.2199249267578
+      }
+    },
+    {
+      "id": "nominal ls 1rex @40",
+      "ops": [
+        ["font", "40px SpNominal"],
+        ["letterSpacing", "1rex"]
+      ],
+      "chrome": {
+        "letterSpacing": "1rex",
+        "wordSpacing": "0px",
+        "font": "40px SpNominal",
+        "lsPx": 20.259994506835938,
+        "wsPx": 0,
+        "hello": 195.2199249267578
+      }
+    },
+    {
+      "id": "nominal ls 1cap @40",
+      "ops": [
+        ["font", "40px SpNominal"],
+        ["letterSpacing", "1cap"]
+      ],
+      "chrome": {
+        "letterSpacing": "1cap",
+        "wordSpacing": "0px",
+        "font": "40px SpNominal",
+        "lsPx": 28.659988403320312,
+        "wsPx": 0,
+        "hello": 237.2198944091797
+      }
+    },
+    {
+      "id": "nominal ls 0.5ch @40",
+      "ops": [
+        ["font", "40px SpNominal"],
+        ["letterSpacing", "0.5ch"]
+      ],
+      "chrome": {
+        "letterSpacing": "0.5ch",
+        "wordSpacing": "0px",
+        "font": "40px SpNominal",
+        "lsPx": 11.599990844726562,
+        "wsPx": 0,
+        "hello": 151.91990661621094
+      }
+    },
+    {
+      "id": "nominal ws 1ch @40",
+      "ops": [
+        ["font", "40px SpNominal"],
+        ["wordSpacing", "1ch"]
+      ],
+      "chrome": {
+        "letterSpacing": "0px",
+        "wordSpacing": "1ch",
+        "font": "40px SpNominal",
+        "lsPx": 0,
+        "wsPx": 23.199996948242188,
+        "hello": 93.91995239257812
+      }
+    },
+    {
+      "id": "nominal ws 1rch @40",
+      "ops": [
+        ["font", "40px SpNominal"],
+        ["wordSpacing", "1rch"]
+      ],
+      "chrome": {
+        "letterSpacing": "0px",
+        "wordSpacing": "1rch",
+        "font": "40px SpNominal",
+        "lsPx": 0,
+        "wsPx": 23.199996948242188,
+        "hello": 93.91995239257812
+      }
+    },
+    {
+      "id": "nominal ws 1ex @40",
+      "ops": [
+        ["font", "40px SpNominal"],
+        ["wordSpacing", "1ex"]
+      ],
+      "chrome": {
+        "letterSpacing": "0px",
+        "wordSpacing": "1ex",
+        "font": "40px SpNominal",
+        "lsPx": 0,
+        "wsPx": 20.259994506835938,
+        "hello": 93.91995239257812
+      }
+    },
+    {
+      "id": "nominal ws 1rex @40",
+      "ops": [
+        ["font", "40px SpNominal"],
+        ["wordSpacing", "1rex"]
+      ],
+      "chrome": {
+        "letterSpacing": "0px",
+        "wordSpacing": "1rex",
+        "font": "40px SpNominal",
+        "lsPx": 0,
+        "wsPx": 20.259994506835938,
+        "hello": 93.91995239257812
+      }
+    },
+    {
+      "id": "nominal ws 1cap @40",
+      "ops": [
+        ["font", "40px SpNominal"],
+        ["wordSpacing", "1cap"]
+      ],
+      "chrome": {
+        "letterSpacing": "0px",
+        "wordSpacing": "1cap",
+        "font": "40px SpNominal",
+        "lsPx": 0,
+        "wsPx": 28.659988403320312,
+        "hello": 93.91995239257812
+      }
+    },
+    {
+      "id": "nominal ws 0.5ch @40",
+      "ops": [
+        ["font", "40px SpNominal"],
+        ["wordSpacing", "0.5ch"]
+      ],
+      "chrome": {
+        "letterSpacing": "0px",
+        "wordSpacing": "0.5ch",
+        "font": "40px SpNominal",
+        "lsPx": 0,
+        "wsPx": 11.599990844726562,
+        "hello": 93.91995239257812
+      }
+    },
+    {
+      "id": "nominal ls 1ch @20",
+      "ops": [
+        ["font", "20px SpNominal"],
+        ["letterSpacing", "1ch"]
+      ],
+      "chrome": {
+        "letterSpacing": "1ch",
+        "wordSpacing": "0px",
+        "font": "20px SpNominal",
+        "lsPx": 11.599990844726562,
+        "wsPx": 0,
+        "hello": 104.95993041992188
+      }
+    },
+    {
+      "id": "nominal ls 1rch @20",
+      "ops": [
+        ["font", "20px SpNominal"],
+        ["letterSpacing", "1rch"]
+      ],
+      "chrome": {
+        "letterSpacing": "1rch",
+        "wordSpacing": "0px",
+        "font": "20px SpNominal",
+        "lsPx": 11.599990844726562,
+        "wsPx": 0,
+        "hello": 104.95993041992188
+      }
+    },
+    {
+      "id": "nominal ls 1ex @20",
+      "ops": [
+        ["font", "20px SpNominal"],
+        ["letterSpacing", "1ex"]
+      ],
+      "chrome": {
+        "letterSpacing": "1ex",
+        "wordSpacing": "0px",
+        "font": "20px SpNominal",
+        "lsPx": 10.129989624023438,
+        "wsPx": 0,
+        "hello": 97.60992431640625
+      }
+    },
+    {
+      "id": "nominal ls 1rex @20",
+      "ops": [
+        ["font", "20px SpNominal"],
+        ["letterSpacing", "1rex"]
+      ],
+      "chrome": {
+        "letterSpacing": "1rex",
+        "wordSpacing": "0px",
+        "font": "20px SpNominal",
+        "lsPx": 10.129989624023438,
+        "wsPx": 0,
+        "hello": 97.60992431640625
+      }
+    },
+    {
+      "id": "nominal ls 1cap @20",
+      "ops": [
+        ["font", "20px SpNominal"],
+        ["letterSpacing", "1cap"]
+      ],
+      "chrome": {
+        "letterSpacing": "1cap",
+        "wordSpacing": "0px",
+        "font": "20px SpNominal",
+        "lsPx": 14.329986572265625,
+        "wsPx": 0,
+        "hello": 118.60990905761719
+      }
+    },
+    {
+      "id": "nominal ls 0.5ch @20",
+      "ops": [
+        ["font", "20px SpNominal"],
+        ["letterSpacing", "0.5ch"]
+      ],
+      "chrome": {
+        "letterSpacing": "0.5ch",
+        "wordSpacing": "0px",
+        "font": "20px SpNominal",
+        "lsPx": 5.79998779296875,
+        "wsPx": 0,
+        "hello": 75.95991516113281
+      }
+    },
+    {
+      "id": "nominal ws 1ch @20",
+      "ops": [
+        ["font", "20px SpNominal"],
+        ["wordSpacing", "1ch"]
+      ],
+      "chrome": {
+        "letterSpacing": "0px",
+        "wordSpacing": "1ch",
+        "font": "20px SpNominal",
+        "lsPx": 0,
+        "wsPx": 11.599990844726562,
+        "hello": 46.95997619628906
+      }
+    },
+    {
+      "id": "nominal ws 1rch @20",
+      "ops": [
+        ["font", "20px SpNominal"],
+        ["wordSpacing", "1rch"]
+      ],
+      "chrome": {
+        "letterSpacing": "0px",
+        "wordSpacing": "1rch",
+        "font": "20px SpNominal",
+        "lsPx": 0,
+        "wsPx": 11.599990844726562,
+        "hello": 46.95997619628906
+      }
+    },
+    {
+      "id": "nominal ws 1ex @20",
+      "ops": [
+        ["font", "20px SpNominal"],
+        ["wordSpacing", "1ex"]
+      ],
+      "chrome": {
+        "letterSpacing": "0px",
+        "wordSpacing": "1ex",
+        "font": "20px SpNominal",
+        "lsPx": 0,
+        "wsPx": 10.129989624023438,
+        "hello": 46.95997619628906
+      }
+    },
+    {
+      "id": "nominal ws 1rex @20",
+      "ops": [
+        ["font", "20px SpNominal"],
+        ["wordSpacing", "1rex"]
+      ],
+      "chrome": {
+        "letterSpacing": "0px",
+        "wordSpacing": "1rex",
+        "font": "20px SpNominal",
+        "lsPx": 0,
+        "wsPx": 10.129989624023438,
+        "hello": 46.95997619628906
+      }
+    },
+    {
+      "id": "nominal ws 1cap @20",
+      "ops": [
+        ["font", "20px SpNominal"],
+        ["wordSpacing", "1cap"]
+      ],
+      "chrome": {
+        "letterSpacing": "0px",
+        "wordSpacing": "1cap",
+        "font": "20px SpNominal",
+        "lsPx": 0,
+        "wsPx": 14.329986572265625,
+        "hello": 46.95997619628906
+      }
+    },
+    {
+      "id": "nominal ws 0.5ch @20",
+      "ops": [
+        ["font", "20px SpNominal"],
+        ["wordSpacing", "0.5ch"]
+      ],
+      "chrome": {
+        "letterSpacing": "0px",
+        "wordSpacing": "0.5ch",
+        "font": "20px SpNominal",
+        "lsPx": 0,
+        "wsPx": 5.79998779296875,
+        "hello": 46.95997619628906
+      }
+    },
+    {
+      "id": "nominal ls 1ch @40 bold",
+      "ops": [
+        ["font", "bold 40px SpNominal"],
+        ["letterSpacing", "1ch"]
+      ],
+      "chrome": {
+        "letterSpacing": "1ch",
+        "wordSpacing": "0px",
+        "font": "bold 40px SpNominal",
+        "lsPx": 23.199996948242188,
+        "wsPx": 0,
+        "hello": 209.91993713378906
+      }
+    },
+    {
+      "id": "nominal ls 1ex @40 bold",
+      "ops": [
+        ["font", "bold 40px SpNominal"],
+        ["letterSpacing", "1ex"]
+      ],
+      "chrome": {
+        "letterSpacing": "1ex",
+        "wordSpacing": "0px",
+        "font": "bold 40px SpNominal",
+        "lsPx": 20.884994506835938,
+        "wsPx": 0,
+        "hello": 198.3449249267578
+      }
+    },
+    {
+      "id": "nominal ls 1ch @40 italic",
+      "ops": [
+        ["font", "italic 40px SpNominal"],
+        ["letterSpacing", "1ch"]
+      ],
+      "chrome": {
+        "letterSpacing": "1ch",
+        "wordSpacing": "0px",
+        "font": "italic 40px SpNominal",
+        "lsPx": 23.199996948242188,
+        "wsPx": 0,
+        "hello": 209.91993713378906
+      }
+    },
+    {
+      "id": "nominal ls 1ex @40 italic",
+      "ops": [
+        ["font", "italic 40px SpNominal"],
+        ["letterSpacing", "1ex"]
+      ],
+      "chrome": {
+        "letterSpacing": "1ex",
+        "wordSpacing": "0px",
+        "font": "italic 40px SpNominal",
+        "lsPx": 20.259994506835938,
+        "wsPx": 0,
+        "hello": 195.2199249267578
+      }
+    }
+  ],
+  "filter": [
+    {
+      "id": "color 4ch 40px SpNominal",
+      "font": "40px SpNominal",
+      "filter": "drop-shadow(20px 0 0 rgb(calc(4ch / 1px) 0 0))",
+      "chrome": {
+        "filter": "drop-shadow(20px 0 0 rgb(calc(4ch / 1px) 0 0))",
+        "pixel": [93, 0, 0, 255]
+      }
+    },
+    {
+      "id": "offset 2ch 40px SpNominal",
+      "font": "40px SpNominal",
+      "filter": "drop-shadow(calc(2 * 1ch) 0 0 red)",
+      "chrome": {
+        "filter": "drop-shadow(calc(2 * 1ch) 0 0 red)",
+        "center": 46.9
+      }
+    },
+    {
+      "id": "color 4rch 40px SpNominal",
+      "font": "40px SpNominal",
+      "filter": "drop-shadow(20px 0 0 rgb(calc(4rch / 1px) 0 0))",
+      "chrome": {
+        "filter": "drop-shadow(20px 0 0 rgb(calc(4rch / 1px) 0 0))",
+        "pixel": [93, 0, 0, 255]
+      }
+    },
+    {
+      "id": "offset 2rch 40px SpNominal",
+      "font": "40px SpNominal",
+      "filter": "drop-shadow(calc(2 * 1rch) 0 0 red)",
+      "chrome": {
+        "filter": "drop-shadow(calc(2 * 1rch) 0 0 red)",
+        "center": 46.9
+      }
+    },
+    {
+      "id": "color 4ex 40px SpNominal",
+      "font": "40px SpNominal",
+      "filter": "drop-shadow(20px 0 0 rgb(calc(4ex / 1px) 0 0))",
+      "chrome": {
+        "filter": "drop-shadow(20px 0 0 rgb(calc(4ex / 1px) 0 0))",
+        "pixel": [81, 0, 0, 255]
+      }
+    },
+    {
+      "id": "offset 2ex 40px SpNominal",
+      "font": "40px SpNominal",
+      "filter": "drop-shadow(calc(2 * 1ex) 0 0 red)",
+      "chrome": {
+        "filter": "drop-shadow(calc(2 * 1ex) 0 0 red)",
+        "center": 41.022
+      }
+    },
+    {
+      "id": "color 4rex 40px SpNominal",
+      "font": "40px SpNominal",
+      "filter": "drop-shadow(20px 0 0 rgb(calc(4rex / 1px) 0 0))",
+      "chrome": {
+        "filter": "drop-shadow(20px 0 0 rgb(calc(4rex / 1px) 0 0))",
+        "pixel": [81, 0, 0, 255]
+      }
+    },
+    {
+      "id": "offset 2rex 40px SpNominal",
+      "font": "40px SpNominal",
+      "filter": "drop-shadow(calc(2 * 1rex) 0 0 red)",
+      "chrome": {
+        "filter": "drop-shadow(calc(2 * 1rex) 0 0 red)",
+        "center": 41.022
+      }
+    },
+    {
+      "id": "color 4ch 20px SpNominal",
+      "font": "20px SpNominal",
+      "filter": "drop-shadow(20px 0 0 rgb(calc(4ch / 1px) 0 0))",
+      "chrome": {
+        "filter": "drop-shadow(20px 0 0 rgb(calc(4ch / 1px) 0 0))",
+        "pixel": [46, 0, 0, 255]
+      }
+    },
+    {
+      "id": "offset 2ch 20px SpNominal",
+      "font": "20px SpNominal",
+      "filter": "drop-shadow(calc(2 * 1ch) 0 0 red)",
+      "chrome": {
+        "filter": "drop-shadow(calc(2 * 1ch) 0 0 red)",
+        "center": 23.7
+      }
+    },
+    {
+      "id": "color 4rch 20px SpNominal",
+      "font": "20px SpNominal",
+      "filter": "drop-shadow(20px 0 0 rgb(calc(4rch / 1px) 0 0))",
+      "chrome": {
+        "filter": "drop-shadow(20px 0 0 rgb(calc(4rch / 1px) 0 0))",
+        "pixel": [46, 0, 0, 255]
+      }
+    },
+    {
+      "id": "offset 2rch 20px SpNominal",
+      "font": "20px SpNominal",
+      "filter": "drop-shadow(calc(2 * 1rch) 0 0 red)",
+      "chrome": {
+        "filter": "drop-shadow(calc(2 * 1rch) 0 0 red)",
+        "center": 23.7
+      }
+    },
+    {
+      "id": "color 4ex 20px SpNominal",
+      "font": "20px SpNominal",
+      "filter": "drop-shadow(20px 0 0 rgb(calc(4ex / 1px) 0 0))",
+      "chrome": {
+        "filter": "drop-shadow(20px 0 0 rgb(calc(4ex / 1px) 0 0))",
+        "pixel": [41, 0, 0, 255]
+      }
+    },
+    {
+      "id": "offset 2ex 20px SpNominal",
+      "font": "20px SpNominal",
+      "filter": "drop-shadow(calc(2 * 1ex) 0 0 red)",
+      "chrome": {
+        "filter": "drop-shadow(calc(2 * 1ex) 0 0 red)",
+        "center": 20.759
+      }
+    },
+    {
+      "id": "color 4rex 20px SpNominal",
+      "font": "20px SpNominal",
+      "filter": "drop-shadow(20px 0 0 rgb(calc(4rex / 1px) 0 0))",
+      "chrome": {
+        "filter": "drop-shadow(20px 0 0 rgb(calc(4rex / 1px) 0 0))",
+        "pixel": [41, 0, 0, 255]
+      }
+    },
+    {
+      "id": "offset 2rex 20px SpNominal",
+      "font": "20px SpNominal",
+      "filter": "drop-shadow(calc(2 * 1rex) 0 0 red)",
+      "chrome": {
+        "filter": "drop-shadow(calc(2 * 1rex) 0 0 red)",
+        "center": 20.759
+      }
+    },
+    {
+      "id": "color 4ch bold 40px SpNominal",
+      "font": "bold 40px SpNominal",
+      "filter": "drop-shadow(20px 0 0 rgb(calc(4ch / 1px) 0 0))",
+      "chrome": {
+        "filter": "drop-shadow(20px 0 0 rgb(calc(4ch / 1px) 0 0))",
+        "pixel": [93, 0, 0, 255]
+      }
+    },
+    {
+      "id": "offset 2ch bold 40px SpNominal",
+      "font": "bold 40px SpNominal",
+      "filter": "drop-shadow(calc(2 * 1ch) 0 0 red)",
+      "chrome": {
+        "filter": "drop-shadow(calc(2 * 1ch) 0 0 red)",
+        "center": 46.9
+      }
+    },
+    {
+      "id": "color 4rch bold 40px SpNominal",
+      "font": "bold 40px SpNominal",
+      "filter": "drop-shadow(20px 0 0 rgb(calc(4rch / 1px) 0 0))",
+      "chrome": {
+        "filter": "drop-shadow(20px 0 0 rgb(calc(4rch / 1px) 0 0))",
+        "pixel": [93, 0, 0, 255]
+      }
+    },
+    {
+      "id": "offset 2rch bold 40px SpNominal",
+      "font": "bold 40px SpNominal",
+      "filter": "drop-shadow(calc(2 * 1rch) 0 0 red)",
+      "chrome": {
+        "filter": "drop-shadow(calc(2 * 1rch) 0 0 red)",
+        "center": 46.9
+      }
+    },
+    {
+      "id": "color 4ex bold 40px SpNominal",
+      "font": "bold 40px SpNominal",
+      "filter": "drop-shadow(20px 0 0 rgb(calc(4ex / 1px) 0 0))",
+      "chrome": {
+        "filter": "drop-shadow(20px 0 0 rgb(calc(4ex / 1px) 0 0))",
+        "pixel": [84, 0, 0, 255]
+      }
+    },
+    {
+      "id": "offset 2ex bold 40px SpNominal",
+      "font": "bold 40px SpNominal",
+      "filter": "drop-shadow(calc(2 * 1ex) 0 0 red)",
+      "chrome": {
+        "filter": "drop-shadow(calc(2 * 1ex) 0 0 red)",
+        "center": 42.269
+      }
+    },
+    {
+      "id": "color 4rex bold 40px SpNominal",
+      "font": "bold 40px SpNominal",
+      "filter": "drop-shadow(20px 0 0 rgb(calc(4rex / 1px) 0 0))",
+      "chrome": {
+        "filter": "drop-shadow(20px 0 0 rgb(calc(4rex / 1px) 0 0))",
+        "pixel": [84, 0, 0, 255]
+      }
+    },
+    {
+      "id": "offset 2rex bold 40px SpNominal",
+      "font": "bold 40px SpNominal",
+      "filter": "drop-shadow(calc(2 * 1rex) 0 0 red)",
+      "chrome": {
+        "filter": "drop-shadow(calc(2 * 1rex) 0 0 red)",
+        "center": 42.269
+      }
+    }
+  ]
+}

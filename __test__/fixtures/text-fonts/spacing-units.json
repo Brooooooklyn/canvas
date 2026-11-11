@@ -1,0 +1,2098 @@
+{
+  "note": "Chrome 157 (HeadlessChrome/157.0.0.0, headless, --disable-gpu, desktop mode, en-US host, DPR 1), macOS arm64. SpLato = __test__/fonts/Lato-Regular.ttf as a FontFace. Each row runs its ops on a new detached <canvas> 2D context ('save' / 'restore' / 'reset' are calls). lsPx = (width('Hello') - width on a new context with the same font and lang) / 5; wsPx = (width('a b c') - that width - 5 * lsPx) / 2; hello = width('Hello'). Blink resolves the spacing when it is set (em = rem = the font size; ex, ch, cap, ic from the font) and again on every font set (against a font with no data: ex = em / 2, ch = cap = 0, ic = em), canvas_rendering_context_2d_state.cc:365-404 and :871-944. After save() both getters are '' (the state copy constructor does not copy parsed_letter_spacing_). The 1ic / 1ric rows are 40 in Chrome through a CJK fallback font; Lato has no U+6C34, so ours gives ic = em, also 40. Capture: canvas-align-work/blink-shaper/stages/S16/chrome.cjs.",
+  "rows": [
+    {
+      "id": "ls 0.1em @40",
+      "ops": [
+        ["font", "40px SpLato"],
+        ["letterSpacing", "0.1em"]
+      ],
+      "chrome": {
+        "letterSpacing": "0.1em",
+        "wordSpacing": "0px",
+        "font": "40px SpLato",
+        "lsPx": 4,
+        "wsPx": 0,
+        "hello": 113.91995239257812
+      }
+    },
+    {
+      "id": "ls 1em @40",
+      "ops": [
+        ["font", "40px SpLato"],
+        ["letterSpacing", "1em"]
+      ],
+      "chrome": {
+        "letterSpacing": "1em",
+        "wordSpacing": "0px",
+        "font": "40px SpLato",
+        "lsPx": 40,
+        "wsPx": -0.00000762939453125,
+        "hello": 293.9199523925781
+      }
+    },
+    {
+      "id": "ls 1em default font",
+      "ops": [
+        ["font", "10px SpLato"],
+        ["letterSpacing", "1em"]
+      ],
+      "chrome": {
+        "letterSpacing": "1em",
+        "wordSpacing": "0px",
+        "font": "10px SpLato",
+        "lsPx": 10,
+        "wsPx": 0,
+        "hello": 73.47998046875
+      }
+    },
+    {
+      "id": "ls 1em then font 40",
+      "ops": [
+        ["letterSpacing", "1em"],
+        ["font", "40px SpLato"]
+      ],
+      "chrome": {
+        "letterSpacing": "1em",
+        "wordSpacing": "0px",
+        "font": "40px SpLato",
+        "lsPx": 40,
+        "wsPx": -0.00000762939453125,
+        "hello": 293.9199523925781
+      }
+    },
+    {
+      "id": "ls 0.5em @40 then font 20",
+      "ops": [
+        ["font", "40px SpLato"],
+        ["letterSpacing", "0.5em"],
+        ["font", "20px SpLato"]
+      ],
+      "chrome": {
+        "letterSpacing": "0.5em",
+        "wordSpacing": "0px",
+        "font": "20px SpLato",
+        "lsPx": 10,
+        "wsPx": 0,
+        "hello": 96.95997619628906
+      }
+    },
+    {
+      "id": "ls 0.5em @40 then same font",
+      "ops": [
+        ["font", "40px SpLato"],
+        ["letterSpacing", "0.5em"],
+        ["font", "40px SpLato"]
+      ],
+      "chrome": {
+        "letterSpacing": "0.5em",
+        "wordSpacing": "0px",
+        "font": "40px SpLato",
+        "lsPx": 20,
+        "wsPx": 0,
+        "hello": 193.91995239257812
+      }
+    },
+    {
+      "id": "ls 1rem @40",
+      "ops": [
+        ["font", "40px SpLato"],
+        ["letterSpacing", "1rem"]
+      ],
+      "chrome": {
+        "letterSpacing": "1rem",
+        "wordSpacing": "0px",
+        "font": "40px SpLato",
+        "lsPx": 40,
+        "wsPx": -0.00000762939453125,
+        "hello": 293.9199523925781
+      }
+    },
+    {
+      "id": "ls 1rem @40 then font 20",
+      "ops": [
+        ["font", "40px SpLato"],
+        ["letterSpacing", "1rem"],
+        ["font", "20px SpLato"]
+      ],
+      "chrome": {
+        "letterSpacing": "1rem",
+        "wordSpacing": "0px",
+        "font": "20px SpLato",
+        "lsPx": 20,
+        "wsPx": 0,
+        "hello": 146.95997619628906
+      }
+    },
+    {
+      "id": "ls 10% @40",
+      "ops": [
+        ["font", "40px SpLato"],
+        ["letterSpacing", "10%"]
+      ],
+      "chrome": {
+        "letterSpacing": "0px",
+        "wordSpacing": "0px",
+        "font": "40px SpLato",
+        "lsPx": 0,
+        "wsPx": 0,
+        "hello": 93.91995239257812
+      }
+    },
+    {
+      "id": "ls 1ex @40",
+      "ops": [
+        ["font", "40px SpLato"],
+        ["letterSpacing", "1ex"]
+      ],
+      "chrome": {
+        "letterSpacing": "1ex",
+        "wordSpacing": "0px",
+        "font": "40px SpLato",
+        "lsPx": 20.259994506835938,
+        "wsPx": 0,
+        "hello": 195.2199249267578
+      }
+    },
+    {
+      "id": "ls 1ex @40 then font 40 other spelling",
+      "ops": [
+        ["font", "40px SpLato"],
+        ["letterSpacing", "1ex"],
+        ["font", "40px \"SpLato\""]
+      ],
+      "chrome": {
+        "letterSpacing": "1ex",
+        "wordSpacing": "0px",
+        "font": "40px SpLato",
+        "lsPx": 20,
+        "wsPx": 0,
+        "hello": 193.91995239257812
+      }
+    },
+    {
+      "id": "ls 1ch @40",
+      "ops": [
+        ["font", "40px SpLato"],
+        ["letterSpacing", "1ch"]
+      ],
+      "chrome": {
+        "letterSpacing": "1ch",
+        "wordSpacing": "0px",
+        "font": "40px SpLato",
+        "lsPx": 23.199996948242188,
+        "wsPx": 0,
+        "hello": 209.91993713378906
+      }
+    },
+    {
+      "id": "ls 1ch @40 then font 20",
+      "ops": [
+        ["font", "40px SpLato"],
+        ["letterSpacing", "1ch"],
+        ["font", "20px SpLato"]
+      ],
+      "chrome": {
+        "letterSpacing": "1ch",
+        "wordSpacing": "0px",
+        "font": "20px SpLato",
+        "lsPx": 0,
+        "wsPx": 0,
+        "hello": 46.95997619628906
+      }
+    },
+    {
+      "id": "ls 1pc @40",
+      "ops": [
+        ["font", "40px SpLato"],
+        ["letterSpacing", "1pc"]
+      ],
+      "chrome": {
+        "letterSpacing": "1pc",
+        "wordSpacing": "0px",
+        "font": "40px SpLato",
+        "lsPx": 16,
+        "wsPx": 0,
+        "hello": 173.91995239257812
+      }
+    },
+    {
+      "id": "ls 10vw @40",
+      "ops": [
+        ["font", "40px SpLato"],
+        ["letterSpacing", "10vw"]
+      ],
+      "chrome": {
+        "letterSpacing": "10vw",
+        "wordSpacing": "0px",
+        "font": "40px SpLato",
+        "lsPx": 0,
+        "wsPx": 0,
+        "hello": 93.91995239257812
+      }
+    },
+    {
+      "id": "ls 1em @40 save font20 restore",
+      "ops": [
+        ["font", "40px SpLato"],
+        ["letterSpacing", "1em"],
+        ["save", null],
+        ["font", "20px SpLato"],
+        ["restore", null]
+      ],
+      "chrome": {
+        "letterSpacing": "1em",
+        "wordSpacing": "0px",
+        "font": "40px SpLato",
+        "lsPx": 40,
+        "wsPx": -0.00000762939453125,
+        "hello": 293.9199523925781
+      }
+    },
+    {
+      "id": "ls 1em @40 save font20",
+      "ops": [
+        ["font", "40px SpLato"],
+        ["letterSpacing", "1em"],
+        ["save", null],
+        ["font", "20px SpLato"]
+      ],
+      "chrome": {
+        "letterSpacing": "",
+        "wordSpacing": "",
+        "font": "20px SpLato",
+        "lsPx": 20,
+        "wsPx": 0,
+        "hello": 146.95997619628906
+      }
+    },
+    {
+      "id": "ls 0.5em @40 lang fr",
+      "ops": [
+        ["font", "40px SpLato"],
+        ["letterSpacing", "0.5em"],
+        ["lang", "fr"]
+      ],
+      "chrome": {
+        "letterSpacing": "0.5em",
+        "wordSpacing": "0px",
+        "font": "40px SpLato",
+        "lsPx": 20,
+        "wsPx": 0,
+        "hello": 193.91995239257812
+      }
+    },
+    {
+      "id": "ls 1ex @40 lang fr",
+      "ops": [
+        ["font", "40px SpLato"],
+        ["letterSpacing", "1ex"],
+        ["lang", "fr"]
+      ],
+      "chrome": {
+        "letterSpacing": "1ex",
+        "wordSpacing": "0px",
+        "font": "40px SpLato",
+        "lsPx": 20,
+        "wsPx": 0,
+        "hello": 193.91995239257812
+      }
+    },
+    {
+      "id": "ls 0.5em font 2em",
+      "ops": [
+        ["font", "2em SpLato"],
+        ["letterSpacing", "0.5em"]
+      ],
+      "chrome": {
+        "letterSpacing": "0.5em",
+        "wordSpacing": "0px",
+        "font": "20px SpLato",
+        "lsPx": 10,
+        "wsPx": 0,
+        "hello": 96.95997619628906
+      }
+    },
+    {
+      "id": "ws 0.5em @40",
+      "ops": [
+        ["font", "40px SpLato"],
+        ["wordSpacing", "0.5em"]
+      ],
+      "chrome": {
+        "letterSpacing": "0px",
+        "wordSpacing": "0.5em",
+        "font": "40px SpLato",
+        "lsPx": 0,
+        "wsPx": 20,
+        "hello": 93.91995239257812
+      }
+    },
+    {
+      "id": "ws 0.5em @40 then font 20",
+      "ops": [
+        ["font", "40px SpLato"],
+        ["wordSpacing", "0.5em"],
+        ["font", "20px SpLato"]
+      ],
+      "chrome": {
+        "letterSpacing": "0px",
+        "wordSpacing": "0.5em",
+        "font": "20px SpLato",
+        "lsPx": 0,
+        "wsPx": 10,
+        "hello": 46.95997619628906
+      }
+    },
+    {
+      "id": "ws 1em default font",
+      "ops": [
+        ["font", "10px SpLato"],
+        ["wordSpacing", "1em"]
+      ],
+      "chrome": {
+        "letterSpacing": "0px",
+        "wordSpacing": "1em",
+        "font": "10px SpLato",
+        "lsPx": 0,
+        "wsPx": 10,
+        "hello": 23.47998046875
+      }
+    },
+    {
+      "id": "ws 10% @40",
+      "ops": [
+        ["font", "40px SpLato"],
+        ["wordSpacing", "10%"]
+      ],
+      "chrome": {
+        "letterSpacing": "0px",
+        "wordSpacing": "0px",
+        "font": "40px SpLato",
+        "lsPx": 0,
+        "wsPx": 0,
+        "hello": 93.91995239257812
+      }
+    },
+    {
+      "id": "ls+ws em @40 then font 20",
+      "ops": [
+        ["font", "40px SpLato"],
+        ["letterSpacing", "0.1em"],
+        ["wordSpacing", "0.5em"],
+        ["font", "20px SpLato"]
+      ],
+      "chrome": {
+        "letterSpacing": "0.1em",
+        "wordSpacing": "0.5em",
+        "font": "20px SpLato",
+        "lsPx": 2,
+        "wsPx": 10,
+        "hello": 56.95997619628906
+      }
+    },
+    {
+      "id": "get 0.10em",
+      "ops": [
+        ["font", "40px SpLato"],
+        ["letterSpacing", "0.10em"]
+      ],
+      "chrome": {
+        "letterSpacing": "0.1em",
+        "wordSpacing": "0px",
+        "font": "40px SpLato",
+        "lsPx": 4,
+        "wsPx": 0,
+        "hello": 113.91995239257812
+      }
+    },
+    {
+      "id": "get 1EM",
+      "ops": [
+        ["font", "40px SpLato"],
+        ["letterSpacing", "1EM"]
+      ],
+      "chrome": {
+        "letterSpacing": "1em",
+        "wordSpacing": "0px",
+        "font": "40px SpLato",
+        "lsPx": 40,
+        "wsPx": -0.00000762939453125,
+        "hello": 293.9199523925781
+      }
+    },
+    {
+      "id": "get +2px",
+      "ops": [
+        ["font", "10px SpLato"],
+        ["letterSpacing", "+2px"]
+      ],
+      "chrome": {
+        "letterSpacing": "2px",
+        "wordSpacing": "0px",
+        "font": "10px SpLato",
+        "lsPx": 2,
+        "wsPx": 0,
+        "hello": 33.47998046875
+      }
+    },
+    {
+      "id": "get 1e1px",
+      "ops": [
+        ["font", "10px SpLato"],
+        ["letterSpacing", "1e1px"]
+      ],
+      "chrome": {
+        "letterSpacing": "10px",
+        "wordSpacing": "0px",
+        "font": "10px SpLato",
+        "lsPx": 10,
+        "wsPx": 0,
+        "hello": 73.47998046875
+      }
+    },
+    {
+      "id": "get \" 2px\"",
+      "ops": [
+        ["font", "10px SpLato"],
+        ["letterSpacing", " 2px"]
+      ],
+      "chrome": {
+        "letterSpacing": "0px",
+        "wordSpacing": "0px",
+        "font": "10px SpLato",
+        "lsPx": 0,
+        "wsPx": 0,
+        "hello": 23.47998046875
+      }
+    },
+    {
+      "id": "get \"2px \"",
+      "ops": [
+        ["font", "10px SpLato"],
+        ["letterSpacing", "2px "]
+      ],
+      "chrome": {
+        "letterSpacing": "0px",
+        "wordSpacing": "0px",
+        "font": "10px SpLato",
+        "lsPx": 0,
+        "wsPx": 0,
+        "hello": 23.47998046875
+      }
+    },
+    {
+      "id": "get \"x2px\"",
+      "ops": [
+        ["font", "10px SpLato"],
+        ["letterSpacing", "x2px"]
+      ],
+      "chrome": {
+        "letterSpacing": "0px",
+        "wordSpacing": "0px",
+        "font": "10px SpLato",
+        "lsPx": 0,
+        "wsPx": 0,
+        "hello": 23.47998046875
+      }
+    },
+    {
+      "id": "get \"0\"",
+      "ops": [
+        ["font", "10px SpLato"],
+        ["letterSpacing", "3px"],
+        ["letterSpacing", "0"]
+      ],
+      "chrome": {
+        "letterSpacing": "3px",
+        "wordSpacing": "0px",
+        "font": "10px SpLato",
+        "lsPx": 3,
+        "wsPx": 0,
+        "hello": 38.47998046875
+      }
+    },
+    {
+      "id": "get 2PX",
+      "ops": [
+        ["font", "10px SpLato"],
+        ["letterSpacing", "2PX"]
+      ],
+      "chrome": {
+        "letterSpacing": "2px",
+        "wordSpacing": "0px",
+        "font": "10px SpLato",
+        "lsPx": 2,
+        "wsPx": 0,
+        "hello": 33.47998046875
+      }
+    },
+    {
+      "id": "get 1.50pt",
+      "ops": [
+        ["font", "10px SpLato"],
+        ["letterSpacing", "1.50pt"]
+      ],
+      "chrome": {
+        "letterSpacing": "1.5pt",
+        "wordSpacing": "0px",
+        "font": "10px SpLato",
+        "lsPx": 2,
+        "wsPx": 0,
+        "hello": 33.47998046875
+      }
+    },
+    {
+      "id": "ls 1cap @40",
+      "ops": [
+        ["font", "40px SpLato"],
+        ["letterSpacing", "1cap"]
+      ],
+      "chrome": {
+        "letterSpacing": "1cap",
+        "wordSpacing": "0px",
+        "font": "40px SpLato",
+        "lsPx": 28.659988403320312,
+        "wsPx": 0,
+        "hello": 237.2198944091797
+      }
+    },
+    {
+      "id": "ls 1cap @40 then font 20",
+      "ops": [
+        ["font", "40px SpLato"],
+        ["letterSpacing", "1cap"],
+        ["font", "20px SpLato"]
+      ],
+      "chrome": {
+        "letterSpacing": "1cap",
+        "wordSpacing": "0px",
+        "font": "20px SpLato",
+        "lsPx": 0,
+        "wsPx": 0,
+        "hello": 46.95997619628906
+      }
+    },
+    {
+      "id": "ls 1ic @40",
+      "ops": [
+        ["font", "40px SpLato"],
+        ["letterSpacing", "1ic"]
+      ],
+      "chrome": {
+        "letterSpacing": "1ic",
+        "wordSpacing": "0px",
+        "font": "40px SpLato",
+        "lsPx": 40,
+        "wsPx": -0.00000762939453125,
+        "hello": 293.9199523925781
+      }
+    },
+    {
+      "id": "ls 1ic @40 then font 20",
+      "ops": [
+        ["font", "40px SpLato"],
+        ["letterSpacing", "1ic"],
+        ["font", "20px SpLato"]
+      ],
+      "chrome": {
+        "letterSpacing": "1ic",
+        "wordSpacing": "0px",
+        "font": "20px SpLato",
+        "lsPx": 20,
+        "wsPx": 0,
+        "hello": 146.95997619628906
+      }
+    },
+    {
+      "id": "ls 1lh @40",
+      "ops": [
+        ["font", "40px SpLato"],
+        ["letterSpacing", "1lh"]
+      ],
+      "chrome": {
+        "letterSpacing": "1lh",
+        "wordSpacing": "0px",
+        "font": "40px SpLato",
+        "lsPx": 0,
+        "wsPx": 0,
+        "hello": 93.91995239257812
+      }
+    },
+    {
+      "id": "ls 1lh @40 then font 20",
+      "ops": [
+        ["font", "40px SpLato"],
+        ["letterSpacing", "1lh"],
+        ["font", "20px SpLato"]
+      ],
+      "chrome": {
+        "letterSpacing": "1lh",
+        "wordSpacing": "0px",
+        "font": "20px SpLato",
+        "lsPx": 0,
+        "wsPx": 0,
+        "hello": 46.95997619628906
+      }
+    },
+    {
+      "id": "ls 1rlh @40",
+      "ops": [
+        ["font", "40px SpLato"],
+        ["letterSpacing", "1rlh"]
+      ],
+      "chrome": {
+        "letterSpacing": "1rlh",
+        "wordSpacing": "0px",
+        "font": "40px SpLato",
+        "lsPx": 0,
+        "wsPx": 0,
+        "hello": 93.91995239257812
+      }
+    },
+    {
+      "id": "ls 1rlh @40 then font 20",
+      "ops": [
+        ["font", "40px SpLato"],
+        ["letterSpacing", "1rlh"],
+        ["font", "20px SpLato"]
+      ],
+      "chrome": {
+        "letterSpacing": "1rlh",
+        "wordSpacing": "0px",
+        "font": "20px SpLato",
+        "lsPx": 0,
+        "wsPx": 0,
+        "hello": 46.95997619628906
+      }
+    },
+    {
+      "id": "ls 1rex @40",
+      "ops": [
+        ["font", "40px SpLato"],
+        ["letterSpacing", "1rex"]
+      ],
+      "chrome": {
+        "letterSpacing": "1rex",
+        "wordSpacing": "0px",
+        "font": "40px SpLato",
+        "lsPx": 20.259994506835938,
+        "wsPx": 0,
+        "hello": 195.2199249267578
+      }
+    },
+    {
+      "id": "ls 1rex @40 then font 20",
+      "ops": [
+        ["font", "40px SpLato"],
+        ["letterSpacing", "1rex"],
+        ["font", "20px SpLato"]
+      ],
+      "chrome": {
+        "letterSpacing": "1rex",
+        "wordSpacing": "0px",
+        "font": "20px SpLato",
+        "lsPx": 10,
+        "wsPx": 0,
+        "hello": 96.95997619628906
+      }
+    },
+    {
+      "id": "ls 1rch @40",
+      "ops": [
+        ["font", "40px SpLato"],
+        ["letterSpacing", "1rch"]
+      ],
+      "chrome": {
+        "letterSpacing": "1rch",
+        "wordSpacing": "0px",
+        "font": "40px SpLato",
+        "lsPx": 23.199996948242188,
+        "wsPx": 0,
+        "hello": 209.91993713378906
+      }
+    },
+    {
+      "id": "ls 1rch @40 then font 20",
+      "ops": [
+        ["font", "40px SpLato"],
+        ["letterSpacing", "1rch"],
+        ["font", "20px SpLato"]
+      ],
+      "chrome": {
+        "letterSpacing": "1rch",
+        "wordSpacing": "0px",
+        "font": "20px SpLato",
+        "lsPx": 0,
+        "wsPx": 0,
+        "hello": 46.95997619628906
+      }
+    },
+    {
+      "id": "ls 1ric @40",
+      "ops": [
+        ["font", "40px SpLato"],
+        ["letterSpacing", "1ric"]
+      ],
+      "chrome": {
+        "letterSpacing": "1ric",
+        "wordSpacing": "0px",
+        "font": "40px SpLato",
+        "lsPx": 40,
+        "wsPx": -0.00000762939453125,
+        "hello": 293.9199523925781
+      }
+    },
+    {
+      "id": "ls 1ric @40 then font 20",
+      "ops": [
+        ["font", "40px SpLato"],
+        ["letterSpacing", "1ric"],
+        ["font", "20px SpLato"]
+      ],
+      "chrome": {
+        "letterSpacing": "1ric",
+        "wordSpacing": "0px",
+        "font": "20px SpLato",
+        "lsPx": 20,
+        "wsPx": 0,
+        "hello": 146.95997619628906
+      }
+    },
+    {
+      "id": "ls 1rcap @40",
+      "ops": [
+        ["font", "40px SpLato"],
+        ["letterSpacing", "1rcap"]
+      ],
+      "chrome": {
+        "letterSpacing": "1rcap",
+        "wordSpacing": "0px",
+        "font": "40px SpLato",
+        "lsPx": 28.659988403320312,
+        "wsPx": 0,
+        "hello": 237.2198944091797
+      }
+    },
+    {
+      "id": "ls 1rcap @40 then font 20",
+      "ops": [
+        ["font", "40px SpLato"],
+        ["letterSpacing", "1rcap"],
+        ["font", "20px SpLato"]
+      ],
+      "chrome": {
+        "letterSpacing": "1rcap",
+        "wordSpacing": "0px",
+        "font": "20px SpLato",
+        "lsPx": 0,
+        "wsPx": 0,
+        "hello": 46.95997619628906
+      }
+    },
+    {
+      "id": "ls 1cqw @40",
+      "ops": [
+        ["font", "40px SpLato"],
+        ["letterSpacing", "1cqw"]
+      ],
+      "chrome": {
+        "letterSpacing": "1cqw",
+        "wordSpacing": "0px",
+        "font": "40px SpLato",
+        "lsPx": 0,
+        "wsPx": 0,
+        "hello": 93.91995239257812
+      }
+    },
+    {
+      "id": "ls 1cqw @40 then font 20",
+      "ops": [
+        ["font", "40px SpLato"],
+        ["letterSpacing", "1cqw"],
+        ["font", "20px SpLato"]
+      ],
+      "chrome": {
+        "letterSpacing": "1cqw",
+        "wordSpacing": "0px",
+        "font": "20px SpLato",
+        "lsPx": 0,
+        "wsPx": 0,
+        "hello": 46.95997619628906
+      }
+    },
+    {
+      "id": "ls 4Q @40",
+      "ops": [
+        ["font", "40px SpLato"],
+        ["letterSpacing", "4Q"]
+      ],
+      "chrome": {
+        "letterSpacing": "4q",
+        "wordSpacing": "0px",
+        "font": "40px SpLato",
+        "lsPx": 3.7795257568359375,
+        "wsPx": 0,
+        "hello": 112.81758117675781
+      }
+    },
+    {
+      "id": "ls 4Q @40 then font 20",
+      "ops": [
+        ["font", "40px SpLato"],
+        ["letterSpacing", "4Q"],
+        ["font", "20px SpLato"]
+      ],
+      "chrome": {
+        "letterSpacing": "4q",
+        "wordSpacing": "0px",
+        "font": "20px SpLato",
+        "lsPx": 3.7795257568359375,
+        "wsPx": 0,
+        "hello": 65.85760498046875
+      }
+    },
+    {
+      "id": "ls 1vmin @40",
+      "ops": [
+        ["font", "40px SpLato"],
+        ["letterSpacing", "1vmin"]
+      ],
+      "chrome": {
+        "letterSpacing": "1vmin",
+        "wordSpacing": "0px",
+        "font": "40px SpLato",
+        "lsPx": 0,
+        "wsPx": 0,
+        "hello": 93.91995239257812
+      }
+    },
+    {
+      "id": "ls 1vmin @40 then font 20",
+      "ops": [
+        ["font", "40px SpLato"],
+        ["letterSpacing", "1vmin"],
+        ["font", "20px SpLato"]
+      ],
+      "chrome": {
+        "letterSpacing": "1vmin",
+        "wordSpacing": "0px",
+        "font": "20px SpLato",
+        "lsPx": 0,
+        "wsPx": 0,
+        "hello": 46.95997619628906
+      }
+    },
+    {
+      "id": "ls 1dvh @40",
+      "ops": [
+        ["font", "40px SpLato"],
+        ["letterSpacing", "1dvh"]
+      ],
+      "chrome": {
+        "letterSpacing": "1dvh",
+        "wordSpacing": "0px",
+        "font": "40px SpLato",
+        "lsPx": 0,
+        "wsPx": 0,
+        "hello": 93.91995239257812
+      }
+    },
+    {
+      "id": "ls 1dvh @40 then font 20",
+      "ops": [
+        ["font", "40px SpLato"],
+        ["letterSpacing", "1dvh"],
+        ["font", "20px SpLato"]
+      ],
+      "chrome": {
+        "letterSpacing": "1dvh",
+        "wordSpacing": "0px",
+        "font": "20px SpLato",
+        "lsPx": 0,
+        "wsPx": 0,
+        "hello": 46.95997619628906
+      }
+    },
+    {
+      "id": "ls calc(1px) @40",
+      "ops": [
+        ["font", "40px SpLato"],
+        ["letterSpacing", "calc(1px)"]
+      ],
+      "chrome": {
+        "letterSpacing": "0px",
+        "wordSpacing": "0px",
+        "font": "40px SpLato",
+        "lsPx": 0,
+        "wsPx": 0,
+        "hello": 93.91995239257812
+      }
+    },
+    {
+      "id": "ls calc(1px) @40 then font 20",
+      "ops": [
+        ["font", "40px SpLato"],
+        ["letterSpacing", "calc(1px)"],
+        ["font", "20px SpLato"]
+      ],
+      "chrome": {
+        "letterSpacing": "0px",
+        "wordSpacing": "0px",
+        "font": "20px SpLato",
+        "lsPx": 0,
+        "wsPx": 0,
+        "hello": 46.95997619628906
+      }
+    },
+    {
+      "id": "ls 1px/**/ @40",
+      "ops": [
+        ["font", "40px SpLato"],
+        ["letterSpacing", "1px/**/"]
+      ],
+      "chrome": {
+        "letterSpacing": "1px",
+        "wordSpacing": "0px",
+        "font": "40px SpLato",
+        "lsPx": 1,
+        "wsPx": 0,
+        "hello": 98.91995239257812
+      }
+    },
+    {
+      "id": "ls 1px/**/ @40 then font 20",
+      "ops": [
+        ["font", "40px SpLato"],
+        ["letterSpacing", "1px/**/"],
+        ["font", "20px SpLato"]
+      ],
+      "chrome": {
+        "letterSpacing": "1px",
+        "wordSpacing": "0px",
+        "font": "20px SpLato",
+        "lsPx": 1,
+        "wsPx": 0,
+        "hello": 51.95997619628906
+      }
+    },
+    {
+      "id": "ls -0.25em @40",
+      "ops": [
+        ["font", "40px SpLato"],
+        ["letterSpacing", "-0.25em"]
+      ],
+      "chrome": {
+        "letterSpacing": "-0.25em",
+        "wordSpacing": "0px",
+        "font": "40px SpLato",
+        "lsPx": -10,
+        "wsPx": 0,
+        "hello": 43.919952392578125
+      }
+    },
+    {
+      "id": "ls -0.25em @40 then font 20",
+      "ops": [
+        ["font", "40px SpLato"],
+        ["letterSpacing", "-0.25em"],
+        ["font", "20px SpLato"]
+      ],
+      "chrome": {
+        "letterSpacing": "-0.25em",
+        "wordSpacing": "0px",
+        "font": "20px SpLato",
+        "lsPx": -5,
+        "wsPx": 0,
+        "hello": 21.959976196289062
+      }
+    },
+    {
+      "id": "ls .5em @40",
+      "ops": [
+        ["font", "40px SpLato"],
+        ["letterSpacing", ".5em"]
+      ],
+      "chrome": {
+        "letterSpacing": "0.5em",
+        "wordSpacing": "0px",
+        "font": "40px SpLato",
+        "lsPx": 20,
+        "wsPx": 0,
+        "hello": 193.91995239257812
+      }
+    },
+    {
+      "id": "ls .5em @40 then font 20",
+      "ops": [
+        ["font", "40px SpLato"],
+        ["letterSpacing", ".5em"],
+        ["font", "20px SpLato"]
+      ],
+      "chrome": {
+        "letterSpacing": "0.5em",
+        "wordSpacing": "0px",
+        "font": "20px SpLato",
+        "lsPx": 10,
+        "wsPx": 0,
+        "hello": 96.95997619628906
+      }
+    },
+    {
+      "id": "ls 1e-1em @40",
+      "ops": [
+        ["font", "40px SpLato"],
+        ["letterSpacing", "1e-1em"]
+      ],
+      "chrome": {
+        "letterSpacing": "0.1em",
+        "wordSpacing": "0px",
+        "font": "40px SpLato",
+        "lsPx": 4,
+        "wsPx": 0,
+        "hello": 113.91995239257812
+      }
+    },
+    {
+      "id": "ls 1e-1em @40 then font 20",
+      "ops": [
+        ["font", "40px SpLato"],
+        ["letterSpacing", "1e-1em"],
+        ["font", "20px SpLato"]
+      ],
+      "chrome": {
+        "letterSpacing": "0.1em",
+        "wordSpacing": "0px",
+        "font": "20px SpLato",
+        "lsPx": 2,
+        "wsPx": 0,
+        "hello": 56.95997619628906
+      }
+    },
+    {
+      "id": "ls 0em @40",
+      "ops": [
+        ["font", "40px SpLato"],
+        ["letterSpacing", "0em"]
+      ],
+      "chrome": {
+        "letterSpacing": "0em",
+        "wordSpacing": "0px",
+        "font": "40px SpLato",
+        "lsPx": 0,
+        "wsPx": 0,
+        "hello": 93.91995239257812
+      }
+    },
+    {
+      "id": "ls 0em @40 then font 20",
+      "ops": [
+        ["font", "40px SpLato"],
+        ["letterSpacing", "0em"],
+        ["font", "20px SpLato"]
+      ],
+      "chrome": {
+        "letterSpacing": "0em",
+        "wordSpacing": "0px",
+        "font": "20px SpLato",
+        "lsPx": 0,
+        "wsPx": 0,
+        "hello": 46.95997619628906
+      }
+    },
+    {
+      "id": "ls 1em1 @40",
+      "ops": [
+        ["font", "40px SpLato"],
+        ["letterSpacing", "1em1"]
+      ],
+      "chrome": {
+        "letterSpacing": "0px",
+        "wordSpacing": "0px",
+        "font": "40px SpLato",
+        "lsPx": 0,
+        "wsPx": 0,
+        "hello": 93.91995239257812
+      }
+    },
+    {
+      "id": "ls 1em1 @40 then font 20",
+      "ops": [
+        ["font", "40px SpLato"],
+        ["letterSpacing", "1em1"],
+        ["font", "20px SpLato"]
+      ],
+      "chrome": {
+        "letterSpacing": "0px",
+        "wordSpacing": "0px",
+        "font": "20px SpLato",
+        "lsPx": 0,
+        "wsPx": 0,
+        "hello": 46.95997619628906
+      }
+    },
+    {
+      "id": "ls 1em then fontStretch",
+      "ops": [
+        ["font", "40px SpLato"],
+        ["letterSpacing", "0.5em"],
+        ["fontStretch", "condensed"]
+      ],
+      "chrome": {
+        "letterSpacing": "0.5em",
+        "wordSpacing": "0px",
+        "font": "40px SpLato",
+        "lsPx": 20,
+        "wsPx": 0,
+        "hello": 193.91995239257812
+      }
+    },
+    {
+      "id": "ls 1em @40 then font 20 sans-serif",
+      "ops": [
+        ["font", "40px SpLato"],
+        ["letterSpacing", "0.5em"],
+        ["font", "20px SpLato, sans-serif"]
+      ],
+      "chrome": {
+        "letterSpacing": "0.5em",
+        "wordSpacing": "0px",
+        "font": "20px SpLato, sans-serif",
+        "lsPx": 10,
+        "wsPx": 0,
+        "hello": 96.95997619628906
+      }
+    },
+    {
+      "id": "ls 0.5em then reset-like set same string",
+      "ops": [
+        ["font", "40px SpLato"],
+        ["letterSpacing", "0.5em"],
+        ["font", "20px SpLato"],
+        ["letterSpacing", "0.5em"]
+      ],
+      "chrome": {
+        "letterSpacing": "0.5em",
+        "wordSpacing": "0px",
+        "font": "20px SpLato",
+        "lsPx": 10,
+        "wsPx": 0,
+        "hello": 96.95997619628906
+      }
+    },
+    {
+      "id": "ls 0.5em @40 then font 20 then 0.50em",
+      "ops": [
+        ["font", "40px SpLato"],
+        ["letterSpacing", "0.5em"],
+        ["font", "20px SpLato"],
+        ["letterSpacing", "0.50em"]
+      ],
+      "chrome": {
+        "letterSpacing": "0.5em",
+        "wordSpacing": "0px",
+        "font": "20px SpLato",
+        "lsPx": 10,
+        "wsPx": 0,
+        "hello": 96.95997619628906
+      }
+    },
+    {
+      "id": "ls 1ex @40 then font 20 then 1ex",
+      "ops": [
+        ["font", "40px SpLato"],
+        ["letterSpacing", "1ex"],
+        ["font", "20px SpLato"],
+        ["letterSpacing", "1ex"]
+      ],
+      "chrome": {
+        "letterSpacing": "1ex",
+        "wordSpacing": "0px",
+        "font": "20px SpLato",
+        "lsPx": 10,
+        "wsPx": 0,
+        "hello": 96.95997619628906
+      }
+    },
+    {
+      "id": "ls 1ex then 1.0ex",
+      "ops": [
+        ["font", "40px SpLato"],
+        ["letterSpacing", "1ex"],
+        ["font", "20px SpLato"],
+        ["letterSpacing", "1.0ex"]
+      ],
+      "chrome": {
+        "letterSpacing": "1ex",
+        "wordSpacing": "0px",
+        "font": "20px SpLato",
+        "lsPx": 10,
+        "wsPx": 0,
+        "hello": 96.95997619628906
+      }
+    },
+    {
+      "id": "ls invalid font then em",
+      "ops": [
+        ["font", "40px SpLato"],
+        ["font", "bogus"],
+        ["letterSpacing", "0.5em"]
+      ],
+      "chrome": {
+        "letterSpacing": "0.5em",
+        "wordSpacing": "0px",
+        "font": "40px SpLato",
+        "lsPx": 20,
+        "wsPx": 0,
+        "hello": 193.91995239257812
+      }
+    },
+    {
+      "id": "ls em @40.5",
+      "ops": [
+        ["font", "40.5px SpLato"],
+        ["letterSpacing", "1em"]
+      ],
+      "chrome": {
+        "letterSpacing": "1em",
+        "wordSpacing": "0px",
+        "font": "40.5px SpLato",
+        "lsPx": 40.500003051757815,
+        "wsPx": -0.00000762939453125,
+        "hello": 297.593994140625
+      }
+    },
+    {
+      "id": "get 0.123456789em",
+      "ops": [
+        ["font", "40px SpLato"],
+        ["letterSpacing", "0.123456789em"]
+      ],
+      "chrome": {
+        "letterSpacing": "0.123457em",
+        "wordSpacing": "0px",
+        "font": "40px SpLato",
+        "lsPx": 4.938262939453125,
+        "wsPx": 0,
+        "hello": 118.61126708984375
+      }
+    },
+    {
+      "id": "get 1234567px",
+      "ops": [
+        ["font", "40px SpLato"],
+        ["letterSpacing", "1234567px"]
+      ],
+      "chrome": {
+        "letterSpacing": "1.23457e+6px",
+        "wordSpacing": "0px",
+        "font": "40px SpLato",
+        "lsPx": 32749.216009521486,
+        "wsPx": 8.579994201660156,
+        "hello": 163840
+      }
+    },
+    {
+      "id": "get 1e-7px",
+      "ops": [
+        ["font", "40px SpLato"],
+        ["letterSpacing", "1e-7px"]
+      ],
+      "chrome": {
+        "letterSpacing": "1.00000e-7px",
+        "wordSpacing": "0px",
+        "font": "40px SpLato",
+        "lsPx": 0,
+        "wsPx": 0,
+        "hello": 93.91995239257812
+      }
+    },
+    {
+      "id": "get -0px",
+      "ops": [
+        ["font", "40px SpLato"],
+        ["letterSpacing", "-0px"]
+      ],
+      "chrome": {
+        "letterSpacing": "0px",
+        "wordSpacing": "0px",
+        "font": "40px SpLato",
+        "lsPx": 0,
+        "wsPx": 0,
+        "hello": 93.91995239257812
+      }
+    },
+    {
+      "id": "get 1e40px",
+      "ops": [
+        ["font", "40px SpLato"],
+        ["letterSpacing", "1e40px"]
+      ],
+      "chrome": {
+        "letterSpacing": "3.40282e+38px",
+        "wordSpacing": "0px",
+        "font": "40px SpLato",
+        "lsPx": 32749.216009521486,
+        "wsPx": 8.579994201660156,
+        "hello": 163840
+      }
+    },
+    {
+      "id": "get 0.30000001px",
+      "ops": [
+        ["font", "40px SpLato"],
+        ["letterSpacing", "0.30000001px"]
+      ],
+      "chrome": {
+        "letterSpacing": "0.3px",
+        "wordSpacing": "0px",
+        "font": "40px SpLato",
+        "lsPx": 0.29998779296875,
+        "wsPx": 0,
+        "hello": 95.41989135742188
+      }
+    },
+    {
+      "id": "get 1E1PX",
+      "ops": [
+        ["font", "40px SpLato"],
+        ["letterSpacing", "1E1PX"]
+      ],
+      "chrome": {
+        "letterSpacing": "10px",
+        "wordSpacing": "0px",
+        "font": "40px SpLato",
+        "lsPx": 10,
+        "wsPx": 0,
+        "hello": 143.91995239257812
+      }
+    },
+    {
+      "id": "get /**/2px",
+      "ops": [
+        ["font", "40px SpLato"],
+        ["letterSpacing", "/**/2px"]
+      ],
+      "chrome": {
+        "letterSpacing": "2px",
+        "wordSpacing": "0px",
+        "font": "40px SpLato",
+        "lsPx": 2,
+        "wsPx": 0,
+        "hello": 103.91995239257812
+      }
+    },
+    {
+      "id": "get +.5em",
+      "ops": [
+        ["font", "40px SpLato"],
+        ["letterSpacing", "+.5em"]
+      ],
+      "chrome": {
+        "letterSpacing": "0.5em",
+        "wordSpacing": "0px",
+        "font": "40px SpLato",
+        "lsPx": 20,
+        "wsPx": 0,
+        "hello": 193.91995239257812
+      }
+    },
+    {
+      "id": "get 1em/*x*/",
+      "ops": [
+        ["font", "40px SpLato"],
+        ["letterSpacing", "1em/*x*/"]
+      ],
+      "chrome": {
+        "letterSpacing": "1em",
+        "wordSpacing": "0px",
+        "font": "40px SpLato",
+        "lsPx": 40,
+        "wsPx": -0.00000762939453125,
+        "hello": 293.9199523925781
+      }
+    },
+    {
+      "id": "ls 1ex default font",
+      "ops": [
+        ["font", "10px SpLato"],
+        ["letterSpacing", "1ex"]
+      ],
+      "chrome": {
+        "letterSpacing": "1ex",
+        "wordSpacing": "0px",
+        "font": "10px SpLato",
+        "lsPx": 5.0649871826171875,
+        "wsPx": 0,
+        "hello": 48.80491638183594
+      }
+    },
+    {
+      "id": "ls 1ex default then font 40",
+      "ops": [
+        ["letterSpacing", "1ex"],
+        ["font", "40px SpLato"]
+      ],
+      "chrome": {
+        "letterSpacing": "1ex",
+        "wordSpacing": "0px",
+        "font": "40px SpLato",
+        "lsPx": 20,
+        "wsPx": 0,
+        "hello": 193.91995239257812
+      }
+    },
+    {
+      "id": "ws 1ch @40",
+      "ops": [
+        ["font", "40px SpLato"],
+        ["wordSpacing", "1ch"]
+      ],
+      "chrome": {
+        "letterSpacing": "0px",
+        "wordSpacing": "1ch",
+        "font": "40px SpLato",
+        "lsPx": 0,
+        "wsPx": 23.199996948242188,
+        "hello": 93.91995239257812
+      }
+    },
+    {
+      "id": "ws 1ch @40 then font 20",
+      "ops": [
+        ["font", "40px SpLato"],
+        ["wordSpacing", "1ch"],
+        ["font", "20px SpLato"]
+      ],
+      "chrome": {
+        "letterSpacing": "0px",
+        "wordSpacing": "1ch",
+        "font": "20px SpLato",
+        "lsPx": 0,
+        "wsPx": 0,
+        "hello": 46.95997619628906
+      }
+    },
+    {
+      "id": "ws 0.25em @40 lang fr",
+      "ops": [
+        ["font", "40px SpLato"],
+        ["wordSpacing", "0.25em"],
+        ["lang", "fr"]
+      ],
+      "chrome": {
+        "letterSpacing": "0px",
+        "wordSpacing": "0.25em",
+        "font": "40px SpLato",
+        "lsPx": 0,
+        "wsPx": 10,
+        "hello": 93.91995239257812
+      }
+    },
+    {
+      "id": "ls 0.25em @40 lang same",
+      "ops": [
+        ["font", "40px SpLato"],
+        ["letterSpacing", "0.25em"],
+        ["lang", "inherit"]
+      ],
+      "chrome": {
+        "letterSpacing": "0.25em",
+        "wordSpacing": "0px",
+        "font": "40px SpLato",
+        "lsPx": 10,
+        "wsPx": 0,
+        "hello": 143.91995239257812
+      }
+    },
+    {
+      "id": "ls 1ex @40 then same font string",
+      "ops": [
+        ["font", "40px SpLato"],
+        ["letterSpacing", "1ex"],
+        ["font", "40px SpLato"]
+      ],
+      "chrome": {
+        "letterSpacing": "1ex",
+        "wordSpacing": "0px",
+        "font": "40px SpLato",
+        "lsPx": 20,
+        "wsPx": 0,
+        "hello": 193.91995239257812
+      }
+    },
+    {
+      "id": "ls 1ch @40 then same font string",
+      "ops": [
+        ["font", "40px SpLato"],
+        ["letterSpacing", "1ch"],
+        ["font", "40px SpLato"]
+      ],
+      "chrome": {
+        "letterSpacing": "1ch",
+        "wordSpacing": "0px",
+        "font": "40px SpLato",
+        "lsPx": 0,
+        "wsPx": 0,
+        "hello": 93.91995239257812
+      }
+    },
+    {
+      "id": "ls 1ex @40 then font serialized same",
+      "ops": [
+        ["font", "40px  SpLato"],
+        ["letterSpacing", "1ex"],
+        ["font", "40px SpLato"]
+      ],
+      "chrome": {
+        "letterSpacing": "1ex",
+        "wordSpacing": "0px",
+        "font": "40px SpLato",
+        "lsPx": 20,
+        "wsPx": 0,
+        "hello": 193.91995239257812
+      }
+    },
+    {
+      "id": "ls 1ex default then font default string",
+      "ops": [
+        ["letterSpacing", "1ex"],
+        ["font", "10px SpLato"]
+      ],
+      "chrome": {
+        "letterSpacing": "1ex",
+        "wordSpacing": "0px",
+        "font": "10px SpLato",
+        "lsPx": 5,
+        "wsPx": 0,
+        "hello": 48.47998046875
+      }
+    },
+    {
+      "id": "ls 1ex @40 then lang same",
+      "ops": [
+        ["font", "40px SpLato"],
+        ["letterSpacing", "1ex"],
+        ["lang", "inherit"]
+      ],
+      "chrome": {
+        "letterSpacing": "1ex",
+        "wordSpacing": "0px",
+        "font": "40px SpLato",
+        "lsPx": 20.259994506835938,
+        "wsPx": 0,
+        "hello": 195.2199249267578
+      }
+    },
+    {
+      "id": "ls 1ex @40 then lang fr then same font",
+      "ops": [
+        ["font", "40px SpLato"],
+        ["letterSpacing", "1ex"],
+        ["lang", "fr"],
+        ["font", "40px SpLato"]
+      ],
+      "chrome": {
+        "letterSpacing": "1ex",
+        "wordSpacing": "0px",
+        "font": "40px SpLato",
+        "lsPx": 20,
+        "wsPx": 0,
+        "hello": 193.91995239257812
+      }
+    },
+    {
+      "id": "ls 1ex @40 save then same font",
+      "ops": [
+        ["font", "40px SpLato"],
+        ["letterSpacing", "1ex"],
+        ["save", null],
+        ["font", "40px SpLato"]
+      ],
+      "chrome": {
+        "letterSpacing": "",
+        "wordSpacing": "",
+        "font": "40px SpLato",
+        "lsPx": 20,
+        "wsPx": 0,
+        "hello": 193.91995239257812
+      }
+    },
+    {
+      "id": "save: ls 1em @40 save",
+      "ops": [["font", "40px SpLato"], ["letterSpacing", "1em"], ["save"]],
+      "chrome": {
+        "letterSpacing": "",
+        "wordSpacing": "",
+        "font": "40px SpLato",
+        "lsPx": 40,
+        "wsPx": -0.00000762939453125,
+        "hello": 293.9199523925781
+      }
+    },
+    {
+      "id": "save: ws 0.5em @40 save font20",
+      "ops": [["font", "40px SpLato"], ["wordSpacing", "0.5em"], ["save"], ["font", "20px SpLato"]],
+      "chrome": {
+        "letterSpacing": "",
+        "wordSpacing": "",
+        "font": "20px SpLato",
+        "lsPx": 0,
+        "wsPx": 10,
+        "hello": 46.95997619628906
+      }
+    },
+    {
+      "id": "save: ls 1em @40 save then 1em",
+      "ops": [["font", "40px SpLato"], ["letterSpacing", "1em"], ["save"], ["letterSpacing", "1em"]],
+      "chrome": {
+        "letterSpacing": "",
+        "wordSpacing": "",
+        "font": "40px SpLato",
+        "lsPx": 40,
+        "wsPx": -0.00000762939453125,
+        "hello": 293.9199523925781
+      }
+    },
+    {
+      "id": "save: ls 1em @40 save then 1.0em",
+      "ops": [["font", "40px SpLato"], ["letterSpacing", "1em"], ["save"], ["letterSpacing", "1.0em"]],
+      "chrome": {
+        "letterSpacing": "",
+        "wordSpacing": "",
+        "font": "40px SpLato",
+        "lsPx": 40,
+        "wsPx": -0.00000762939453125,
+        "hello": 293.9199523925781
+      }
+    },
+    {
+      "id": "save: ls 1em @40 save then 2px",
+      "ops": [["font", "40px SpLato"], ["letterSpacing", "1em"], ["save"], ["letterSpacing", "2px"]],
+      "chrome": {
+        "letterSpacing": "2px",
+        "wordSpacing": "",
+        "font": "40px SpLato",
+        "lsPx": 2,
+        "wsPx": 0,
+        "hello": 103.91995239257812
+      }
+    },
+    {
+      "id": "save: ls 1em @40 save then empty",
+      "ops": [["font", "40px SpLato"], ["letterSpacing", "1em"], ["save"], ["letterSpacing", ""]],
+      "chrome": {
+        "letterSpacing": "",
+        "wordSpacing": "",
+        "font": "40px SpLato",
+        "lsPx": 40,
+        "wsPx": -0.00000762939453125,
+        "hello": 293.9199523925781
+      }
+    },
+    {
+      "id": "save: ls 1em @40 save then bad",
+      "ops": [["font", "40px SpLato"], ["letterSpacing", "1em"], ["save"], ["letterSpacing", "x"]],
+      "chrome": {
+        "letterSpacing": "",
+        "wordSpacing": "",
+        "font": "40px SpLato",
+        "lsPx": 40,
+        "wsPx": -0.00000762939453125,
+        "hello": 293.9199523925781
+      }
+    },
+    {
+      "id": "save: ls 1em @40 save restore",
+      "ops": [["font", "40px SpLato"], ["letterSpacing", "1em"], ["save"], ["restore"]],
+      "chrome": {
+        "letterSpacing": "1em",
+        "wordSpacing": "0px",
+        "font": "40px SpLato",
+        "lsPx": 40,
+        "wsPx": -0.00000762939453125,
+        "hello": 293.9199523925781
+      }
+    },
+    {
+      "id": "save: ls 1em @40 save 2px restore",
+      "ops": [["font", "40px SpLato"], ["letterSpacing", "1em"], ["save"], ["letterSpacing", "2px"], ["restore"]],
+      "chrome": {
+        "letterSpacing": "1em",
+        "wordSpacing": "0px",
+        "font": "40px SpLato",
+        "lsPx": 40,
+        "wsPx": -0.00000762939453125,
+        "hello": 293.9199523925781
+      }
+    },
+    {
+      "id": "save: ls 1em @40 save save restore",
+      "ops": [["font", "40px SpLato"], ["letterSpacing", "1em"], ["save"], ["save"], ["restore"]],
+      "chrome": {
+        "letterSpacing": "",
+        "wordSpacing": "",
+        "font": "40px SpLato",
+        "lsPx": 40,
+        "wsPx": -0.00000762939453125,
+        "hello": 293.9199523925781
+      }
+    },
+    {
+      "id": "save: default save",
+      "ops": [["font", "40px SpLato"], ["save"]],
+      "chrome": {
+        "letterSpacing": "",
+        "wordSpacing": "",
+        "font": "40px SpLato",
+        "lsPx": 0,
+        "wsPx": 0,
+        "hello": 93.91995239257812
+      }
+    },
+    {
+      "id": "save: default save then 0px",
+      "ops": [["font", "40px SpLato"], ["save"], ["letterSpacing", "0px"], ["wordSpacing", "0px"]],
+      "chrome": {
+        "letterSpacing": "",
+        "wordSpacing": "",
+        "font": "40px SpLato",
+        "lsPx": 0,
+        "wsPx": 0,
+        "hello": 93.91995239257812
+      }
+    },
+    {
+      "id": "save: ls 1em @40 save lang fr",
+      "ops": [["font", "40px SpLato"], ["letterSpacing", "1em"], ["save"], ["lang", "fr"]],
+      "chrome": {
+        "letterSpacing": "",
+        "wordSpacing": "",
+        "font": "40px SpLato",
+        "lsPx": 40,
+        "wsPx": -0.00000762939453125,
+        "hello": 293.9199523925781
+      }
+    },
+    {
+      "id": "reset: ls 1em ws 2px @40 reset",
+      "ops": [
+        ["font", "40px SpLato"],
+        ["letterSpacing", "1em"],
+        ["wordSpacing", "2px"],
+        ["reset"],
+        ["font", "40px SpLato"]
+      ],
+      "chrome": {
+        "letterSpacing": "0px",
+        "wordSpacing": "0px",
+        "font": "40px SpLato",
+        "lsPx": 0,
+        "wsPx": 0,
+        "hello": 93.91995239257812
+      }
+    },
+    {
+      "id": "reset: ls 1em @40 save reset",
+      "ops": [["font", "40px SpLato"], ["letterSpacing", "1em"], ["save"], ["reset"], ["font", "40px SpLato"]],
+      "chrome": {
+        "letterSpacing": "0px",
+        "wordSpacing": "0px",
+        "font": "40px SpLato",
+        "lsPx": 0,
+        "wsPx": 0,
+        "hello": 93.91995239257812
+      }
+    },
+    {
+      "id": "get 2px then -0px",
+      "ops": [
+        ["font", "40px SpLato"],
+        ["letterSpacing", "2px"],
+        ["letterSpacing", "-0px"]
+      ],
+      "chrome": {
+        "letterSpacing": "0px",
+        "wordSpacing": "0px",
+        "font": "40px SpLato",
+        "lsPx": 0,
+        "wsPx": 0,
+        "hello": 93.91995239257812
+      }
+    },
+    {
+      "id": "get 1__qem",
+      "ops": [
+        ["font", "40px SpLato"],
+        ["letterSpacing", "1__qem"]
+      ],
+      "chrome": {
+        "letterSpacing": "1em",
+        "wordSpacing": "0px",
+        "font": "40px SpLato",
+        "lsPx": 40,
+        "wsPx": -0.00000762939453125,
+        "hello": 293.9199523925781
+      }
+    },
+    {
+      "id": "get 1__QEM",
+      "ops": [
+        ["font", "40px SpLato"],
+        ["letterSpacing", "1__QEM"]
+      ],
+      "chrome": {
+        "letterSpacing": "1em",
+        "wordSpacing": "0px",
+        "font": "40px SpLato",
+        "lsPx": 40,
+        "wsPx": -0.00000762939453125,
+        "hello": 293.9199523925781
+      }
+    },
+    {
+      "id": "get 1Q",
+      "ops": [
+        ["font", "40px SpLato"],
+        ["letterSpacing", "1Q"]
+      ],
+      "chrome": {
+        "letterSpacing": "1q",
+        "wordSpacing": "0px",
+        "font": "40px SpLato",
+        "lsPx": 0.9448699951171875,
+        "wsPx": 0,
+        "hello": 98.64430236816406
+      }
+    },
+    {
+      "id": "get 1vi",
+      "ops": [
+        ["font", "40px SpLato"],
+        ["letterSpacing", "1vi"]
+      ],
+      "chrome": {
+        "letterSpacing": "1vi",
+        "wordSpacing": "0px",
+        "font": "40px SpLato",
+        "lsPx": 0,
+        "wsPx": 0,
+        "hello": 93.91995239257812
+      }
+    },
+    {
+      "id": "get 1fr",
+      "ops": [
+        ["font", "40px SpLato"],
+        ["letterSpacing", "1fr"]
+      ],
+      "chrome": {
+        "letterSpacing": "0px",
+        "wordSpacing": "0px",
+        "font": "40px SpLato",
+        "lsPx": 0,
+        "wsPx": 0,
+        "hello": 93.91995239257812
+      }
+    },
+    {
+      "id": "get 1deg",
+      "ops": [
+        ["font", "40px SpLato"],
+        ["letterSpacing", "1deg"]
+      ],
+      "chrome": {
+        "letterSpacing": "0px",
+        "wordSpacing": "0px",
+        "font": "40px SpLato",
+        "lsPx": 0,
+        "wsPx": 0,
+        "hello": 93.91995239257812
+      }
+    },
+    {
+      "id": "get 1px tab",
+      "ops": [
+        ["font", "40px SpLato"],
+        ["letterSpacing", "1px\t"]
+      ],
+      "chrome": {
+        "letterSpacing": "0px",
+        "wordSpacing": "0px",
+        "font": "40px SpLato",
+        "lsPx": 0,
+        "wsPx": 0,
+        "hello": 93.91995239257812
+      }
+    },
+    {
+      "id": "get 1e30px",
+      "ops": [
+        ["font", "40px SpLato"],
+        ["letterSpacing", "1e30px"]
+      ],
+      "chrome": {
+        "letterSpacing": "1.00000e+30px",
+        "wordSpacing": "0px",
+        "font": "40px SpLato",
+        "lsPx": 32749.216009521486,
+        "wsPx": 8.579994201660156,
+        "hello": 163840
+      }
+    },
+    {
+      "id": "get 3e38px",
+      "ops": [
+        ["font", "40px SpLato"],
+        ["letterSpacing", "3e38px"]
+      ],
+      "chrome": {
+        "letterSpacing": "3.00000e+38px",
+        "wordSpacing": "0px",
+        "font": "40px SpLato",
+        "lsPx": 32749.216009521486,
+        "wsPx": 8.579994201660156,
+        "hello": 163840
+      }
+    },
+    {
+      "id": "get -1e40px",
+      "ops": [
+        ["font", "40px SpLato"],
+        ["letterSpacing", "-1e40px"]
+      ],
+      "chrome": {
+        "letterSpacing": "-3.40282e+38px",
+        "wordSpacing": "0px",
+        "font": "40px SpLato",
+        "lsPx": -32767.999615478515,
+        "wsPx": -0.00594329833984375,
+        "hello": -163746.078125
+      }
+    },
+    {
+      "id": "get inherit",
+      "ops": [
+        ["font", "40px SpLato"],
+        ["letterSpacing", "2px"],
+        ["letterSpacing", "inherit"]
+      ],
+      "chrome": {
+        "letterSpacing": "2px",
+        "wordSpacing": "0px",
+        "font": "40px SpLato",
+        "lsPx": 2,
+        "wsPx": 0,
+        "hello": 103.91995239257812
+      }
+    },
+    {
+      "id": "get var",
+      "ops": [
+        ["font", "40px SpLato"],
+        ["letterSpacing", "2px"],
+        ["letterSpacing", "var(--x)"]
+      ],
+      "chrome": {
+        "letterSpacing": "2px",
+        "wordSpacing": "0px",
+        "font": "40px SpLato",
+        "lsPx": 2,
+        "wsPx": 0,
+        "hello": 103.91995239257812
+      }
+    },
+    {
+      "id": "get 1em then 1em/**/",
+      "ops": [
+        ["font", "40px SpLato"],
+        ["letterSpacing", "1em"],
+        ["letterSpacing", "1em/**/"]
+      ],
+      "chrome": {
+        "letterSpacing": "1em",
+        "wordSpacing": "0px",
+        "font": "40px SpLato",
+        "lsPx": 40,
+        "wsPx": -0.00000762939453125,
+        "hello": 293.9199523925781
+      }
+    },
+    {
+      "id": "ws 1rem @40 then font 20",
+      "ops": [
+        ["font", "40px SpLato"],
+        ["wordSpacing", "1rem"],
+        ["font", "20px SpLato"]
+      ],
+      "chrome": {
+        "letterSpacing": "0px",
+        "wordSpacing": "1rem",
+        "font": "20px SpLato",
+        "lsPx": 0,
+        "wsPx": 20,
+        "hello": 46.95997619628906
+      }
+    },
+    {
+      "id": "ws 1ex @40",
+      "ops": [
+        ["font", "40px SpLato"],
+        ["wordSpacing", "1ex"]
+      ],
+      "chrome": {
+        "letterSpacing": "0px",
+        "wordSpacing": "1ex",
+        "font": "40px SpLato",
+        "lsPx": 0,
+        "wsPx": 20.259994506835938,
+        "hello": 93.91995239257812
+      }
+    },
+    {
+      "id": "ws 1cap @40",
+      "ops": [
+        ["font", "40px SpLato"],
+        ["wordSpacing", "1cap"]
+      ],
+      "chrome": {
+        "letterSpacing": "0px",
+        "wordSpacing": "1cap",
+        "font": "40px SpLato",
+        "lsPx": 0,
+        "wsPx": 28.659988403320312,
+        "hello": 93.91995239257812
+      }
+    },
+    {
+      "id": "ws 4Q @40",
+      "ops": [
+        ["font", "40px SpLato"],
+        ["wordSpacing", "4Q"]
+      ],
+      "chrome": {
+        "letterSpacing": "0px",
+        "wordSpacing": "4q",
+        "font": "40px SpLato",
+        "lsPx": 0,
+        "wsPx": 3.7795257568359375,
+        "hello": 93.91995239257812
+      }
+    },
+    {
+      "id": "ws \"2px \" @40",
+      "ops": [
+        ["font", "40px SpLato"],
+        ["wordSpacing", "2px "]
+      ],
+      "chrome": {
+        "letterSpacing": "0px",
+        "wordSpacing": "0px",
+        "font": "40px SpLato",
+        "lsPx": 0,
+        "wsPx": 0,
+        "hello": 93.91995239257812
+      }
+    }
+  ]
+}
