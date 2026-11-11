@@ -15,6 +15,12 @@ fn main() {
   println!("cargo:rerun-if-changed=skia-c/shaper.hpp");
   println!("cargo:rerun-if-changed=skia-c/shaper.cpp");
   println!("cargo:rerun-if-changed=skia-c/shaper_ucd.cpp");
+  println!("cargo:rerun-if-changed=skia-c/shaper_text.cpp");
+  println!("cargo:rerun-if-changed=skia-c/shaper_items.cpp");
+  println!("cargo:rerun-if-changed=skia-c/shaper_segment.cpp");
+  println!("cargo:rerun-if-changed=skia-c/shaper_font.cpp");
+  println!("cargo:rerun-if-changed=skia-c/shaper_place.cpp");
+  println!("cargo:rerun-if-changed=third_party/emoji-segmenter/emoji_presentation_scanner.c");
   println!("cargo:rerun-if-changed=skia-c/font_families.cpp");
   println!("cargo:rerun-if-changed=skia-c/text_metrics.cpp");
   println!("cargo:rerun-if-changed=skia-c/hb_api.h");
@@ -300,6 +306,11 @@ fn main() {
     .file("skia-c/svg_image.cpp")
     .file("skia-c/shaper.cpp")
     .file("skia-c/shaper_ucd.cpp")
+    .file("skia-c/shaper_text.cpp")
+    .file("skia-c/shaper_items.cpp")
+    .file("skia-c/shaper_segment.cpp")
+    .file("skia-c/shaper_font.cpp")
+    .file("skia-c/shaper_place.cpp")
     .include("./skia-c")
     .include(skia_path)
     // https://github.com/rust-lang/rust/pull/93901#issuecomment-1119360260

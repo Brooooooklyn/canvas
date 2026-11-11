@@ -376,10 +376,6 @@ void AddFeature(TextStyle* style, SkFourByteTag tag, uint32_t value) {
   style->addFontFeature(SkString(name, 4), static_cast<int>(value));
 }
 
-void AddFeature(TextStyle* style, const char* tag, uint32_t value) {
-  style->addFontFeature(SkString(tag), static_cast<int>(value));
-}
-
 // FontDescription::LigaturesState values (font_props.rs LigatureState).
 constexpr uint8_t kLigaturesNormal = 0;
 constexpr uint8_t kLigaturesEnabled = 1;
@@ -387,11 +383,19 @@ constexpr uint8_t kLigaturesDisabled = 2;
 
 }  // namespace
 
-void AddBlinkFeatures(TextStyle* style, const skiac_text_request& request) {
+std::vector<hb_feature_t> BlinkFeatures(const skiac_text_request& request) {
+  std::vector<hb_feature_t> features;
+  auto add = [&features](hb_tag_t tag, uint32_t value) {
+    features.push_back(
+        {tag, value, HB_FEATURE_GLOBAL_START, HB_FEATURE_GLOBAL_END});
+  };
+  auto tag = [](const char* name) {
+    return SKIAC_HB_TAG(name[0], name[1], name[2], name[3]);
+  };
   // FontFeatureRange::FromFontDescription (font_features.cc). kerning: 0
   // auto, 1 none, 2 normal; HarfBuzz has kern on, so only none pushes.
   if (request.kerning == 1) {
-    AddFeature(style, "kern", 0);
+    add(tag("kern"), 0);
   }
   // Ligatures. Any non-zero letter spacing turns the optional ones off;
   // optimizeSpeed (text_rendering 1) turns the default-on ones off unless
@@ -401,19 +405,19 @@ void AddBlinkFeatures(TextStyle* style, const skiac_text_request& request) {
   const uint8_t common = request.lig_common;
   if (letter_spacing || common == kLigaturesDisabled ||
       (common == kLigaturesNormal && default_is_off)) {
-    AddFeature(style, "liga", 0);
-    AddFeature(style, "clig", 0);
+    add(tag("liga"), 0);
+    add(tag("clig"), 0);
   }
   if (!letter_spacing && request.lig_discretionary == kLigaturesEnabled) {
-    AddFeature(style, "dlig", 1);
+    add(tag("dlig"), 1);
   }
   if (!letter_spacing && request.lig_historical == kLigaturesEnabled) {
-    AddFeature(style, "hlig", 1);
+    add(tag("hlig"), 1);
   }
   const uint8_t contextual = request.lig_contextual;
   if (letter_spacing || contextual == kLigaturesDisabled ||
       (contextual == kLigaturesNormal && default_is_off)) {
-    AddFeature(style, "calt", 0);
+    add(tag("calt"), 0);
   }
   // No canvas source for font-variant-east-asian or the width variants.
   // font-variant-numeric.
@@ -422,36 +426,43 @@ void AddBlinkFeatures(TextStyle* style, const skiac_text_request& request) {
   const uint32_t spacing = (numeric >> 2) & 3;
   const uint32_t fraction = (numeric >> 4) & 3;
   if (figure == 1) {
-    AddFeature(style, "lnum", 1);
+    add(tag("lnum"), 1);
   } else if (figure == 2) {
-    AddFeature(style, "onum", 1);
+    add(tag("onum"), 1);
   }
   if (spacing == 1) {
-    AddFeature(style, "pnum", 1);
+    add(tag("pnum"), 1);
   } else if (spacing == 2) {
-    AddFeature(style, "tnum", 1);
+    add(tag("tnum"), 1);
   }
   if (fraction == 2) {
-    AddFeature(style, "afrc", 1);
+    add(tag("afrc"), 1);
   } else if (fraction == 1) {
-    AddFeature(style, "frac", 1);
+    add(tag("frac"), 1);
   }
   if (numeric & (1 << 6)) {
-    AddFeature(style, "ordn", 1);
+    add(tag("ordn"), 1);
   }
   if (numeric & (1 << 7)) {
-    AddFeature(style, "zero", 1);
+    add(tag("zero"), 1);
   }
   // font-feature-settings, in computed order. Blink's default chws 1 is not
   // pushed (no text-spacing-trim source here).
   for (int i = 0; request.features && i < request.features_count; ++i) {
-    AddFeature(style, request.features[i].tag, request.features[i].value);
+    add(request.features[i].tag, request.features[i].value);
   }
   // font-variant-position, last: it wins over font-feature-settings.
   if (request.variant_position == 1) {
-    AddFeature(style, "subs", 1);
+    add(tag("subs"), 1);
   } else if (request.variant_position == 2) {
-    AddFeature(style, "sups", 1);
+    add(tag("sups"), 1);
+  }
+  return features;
+}
+
+void AddBlinkFeatures(TextStyle* style, const skiac_text_request& request) {
+  for (const hb_feature_t& feature : BlinkFeatures(request)) {
+    AddFeature(style, feature.tag, feature.value);
   }
 }
 

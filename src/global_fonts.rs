@@ -137,6 +137,23 @@ pub fn set_text_renderer(env: &Env, renderer: Unknown) -> napi::Result<()> {
   ))
 }
 
+/// The Blink shaper's counters (skia-c shaper.hpp skiac_shaper_stats) as
+/// JSON: the layouts it took, the ones it turned down by reason, and the
+/// layouts during which the text caches changed. `reset` sets them to 0
+/// after reading. Not part of the API; for the shaper's tests and harness.
+#[napi(js_name = "__shaperStats")]
+pub fn shaper_stats(reset: bool) -> String {
+  let mut stats = crate::sk::ffi::skiac_shaper_stats::default();
+  unsafe { crate::sk::ffi::skiac_debug_shaper_stats(&mut stats, reset) };
+  let rejected: Vec<String> = stats.rejected.iter().map(|n| n.to_string()).collect();
+  format!(
+    "{{\"accepted\":{},\"rejected\":[{}],\"cacheChanges\":{}}}",
+    stats.accepted,
+    rejected.join(","),
+    stats.cache_changes
+  )
+}
+
 /// The text renderer in use: 'portable' or 'system'.
 #[napi(ts_return_type = "TextRenderer")]
 pub fn get_text_renderer() -> &'static str {

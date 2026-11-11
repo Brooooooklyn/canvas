@@ -463,12 +463,18 @@ BlinkRectF MeasureBlinkInk(const BlinkLine& line,
       // SkFontGetBoundsForGlyphs rounds out without subpixel positioning.
       const SkRect box =
           font.isSubpixel() ? bounds[i] : SkRect::Make(bounds[i].roundOut());
-      const uint32_t cluster = run.clusters[i];
-      const auto word = std::find_if(
-          words.begin(), words.end(), [cluster](const auto& range) {
-            return cluster >= range.first && cluster < range.second;
-          });
-      glyphs.push_back({static_cast<size_t>(word - words.begin()), r,
+      size_t word = run.item;
+      if (!words.empty()) {
+        const uint32_t cluster = run.clusters[i];
+        word =
+            static_cast<size_t>(std::find_if(words.begin(), words.end(),
+                                             [cluster](const auto& range) {
+                                               return cluster >= range.first &&
+                                                      cluster < range.second;
+                                             }) -
+                                words.begin());
+      }
+      glyphs.push_back({word, r,
                         run.origin.fX + run.positions[i].fX - left_edge,
                         run.origin.fY + run.positions[i].fY - baseline, box});
     }

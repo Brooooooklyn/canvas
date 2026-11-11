@@ -4204,6 +4204,12 @@ impl Context {
     })
   }
 
+  fn debug_text_line(&mut self, text: &str) -> result::Result<String, SkError> {
+    let settings = self.text_settings();
+    let font = get_font()?;
+    Ok(self.surface.canvas.debug_text_line(text, &settings, &font))
+  }
+
   fn get_line_metrics(&mut self, text: &str) -> result::Result<LineMetrics, SkError> {
     let fill_paint = self.fill_paint()?;
     let settings = self.text_settings();
@@ -6422,6 +6428,14 @@ impl CanvasRenderingContext2D {
       em_height_ascent: metrics.em_height_ascent as f64,
       em_height_descent: metrics.em_height_descent as f64,
     })
+  }
+
+  /// The Blink shaper's differential harness (__test__/shaper-diff.mjs): the
+  /// glyphs, positions and clusters the line of `text` draws, as JSON. Not
+  /// part of the API; goes with the old layout path.
+  #[napi(js_name = "__debugTextLine")]
+  pub fn debug_text_line(&mut self, text: String) -> Result<String> {
+    Ok(self.context.debug_text_line(&text)?)
   }
 
   /// Only an over-limit canvas loses its context; an SVG or PDF context

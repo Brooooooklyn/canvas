@@ -732,6 +732,8 @@ struct skiac_font_collection {
   // text_words.cpp CanShapeWordByWord: whether a face's GPOS / GSUB lookups
   // touch the space glyph, per typeface (cleared with the match caches).
   std::map<SkTypefaceID, uint8_t> space_in_lookups;
+  // The same with the Blink shaper's space glyph (text_words.cpp).
+  std::map<SkTypefaceID, uint8_t> hb_space_in_lookups;
   // text_caps.cpp: the OpenType caps features of a face for a script.
   std::map<std::pair<SkTypefaceID, uint32_t>, uint8_t> caps_features;
   // FontCollection keeps a clone of every face for every list of font
@@ -925,6 +927,7 @@ struct skiac_font_collection {
     if (caches_dirty) {
       collection->clearCaches();
       space_in_lookups.clear();
+      hb_space_in_lookups.clear();
       caps_features.clear();
       font_arguments.clear();
       text_caches.reset();
@@ -950,6 +953,7 @@ struct skiac_font_collection {
     if (caches_over_budget) {
       collection->clearCaches();
       space_in_lookups.clear();
+      hb_space_in_lookups.clear();
       caps_features.clear();
       text_caches.reset();
       font_arguments.clear();
@@ -978,6 +982,7 @@ struct skiac_font_collection {
     // Clear caches before swap
     collection->clearCaches();
     space_in_lookups.clear();
+    hb_space_in_lookups.clear();
     caps_features.clear();
     font_arguments.clear();
     text_caches.reset();

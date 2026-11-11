@@ -69,6 +69,8 @@
     "prepublishOnly": "pinst --disable && napi prepublish -t npm",
     "postpublish": "pinst --enable",
     "test:ci": "NODE_OPTIONS='--import=core-js/proposals/iterator-helpers.js' ava -c 1",
+    "test:shaper-blink": "NAPI_RS_CANVAS_SHAPER=blink NODE_OPTIONS='--import=core-js/proposals/iterator-helpers.js' ava -c 1 __test__/text.spec.ts __test__/text.system.spec.ts __test__/text-renderer.spec.ts __test__/text-raster.spec.ts __test__/portable-text.spec.ts __test__/text-bbox-chrome.spec.ts __test__/text-metrics-chrome.spec.ts __test__/text-whitespace-chrome.spec.ts __test__/text-layout-cache.spec.ts __test__/font-features-chrome.spec.ts __test__/font-props.spec.ts __test__/font-shorthand.spec.ts __test__/font-size-adjust-chrome.spec.ts __test__/font-families.spec.ts __test__/installed-fonts.spec.ts __test__/lang-ligature-chrome.spec.ts __test__/small-caps-chrome.spec.ts __test__/variable-fonts.spec.ts __test__/variable-fonts-chrome.spec.ts __test__/system-font-renderer.spec.ts __test__/blink-shaper-chrome.spec.ts __test__/blink-shaper-stats.spec.ts __test__/svg-canvas.spec.ts __test__/regression.spec.ts __test__/regression.system.spec.ts",
+    "test:shaper-diff": "node __test__/shaper-diff.mjs",
     "test": "NODE_OPTIONS='--import=core-js/proposals/iterator-helpers.js' ava",
     "e2e": "yarn workspace @napi-rs/canvas-e2e-webpack test",
     "e2e:electron": "yarn workspace @napi-rs/canvas-e2e-electron test",

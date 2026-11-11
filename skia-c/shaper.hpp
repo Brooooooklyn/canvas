@@ -43,8 +43,20 @@ bool LayOutLineBlink(skiac_font_collection* c_collection,
 // request the shaper cannot lay out yet. Each step of the work removes
 // values; when none is left, every request is laid out by the shaper.
 enum class ShaperReject : uint32_t {
-  // No shaping code yet: every request.
+  // Kept so the slot numbers stay; no request is turned down for it now.
   kNotImplemented = 0,
+  // letterSpacing is not 0 (ShapeResultSpacing: stage S4).
+  kLetterSpacing,
+  // wordSpacing is not 0 (stage S4).
+  kWordSpacing,
+  // fontVariantCaps is not normal (caps per font: stage S5).
+  kCaps,
+  // A family has its own size or opsz (UsedSizes::faces: stage S6).
+  kFaceSizes,
+  // A character that no family's face draws (system fallback: stage S3).
+  kFallback,
+  // A variation selector (the VS fallback pass: stage S3).
+  kVariationSelector,
   kCount,
 };
 
@@ -117,6 +129,9 @@ class HbFontRef {
   hb_font_t* font_ = nullptr;
 };
 
+// The data of the shaper's HarfBuzz font funcs (shaper_font.cpp).
+struct HbFontData;
+
 // One font the shaper may use: Blink's SimpleFontData.
 struct FontEntry {
   // The instance at the request's axes and this entry's opsz.
@@ -137,6 +152,10 @@ struct FontEntry {
   // TextRasterPolicy::DrawFont of `shaping_font` with the synthetic styles.
   SkFont draw_font;
   HbFontRef hb;
+  // The data `hb`'s font funcs read, owned by `hb`.
+  HbFontData* hb_data = nullptr;
+  // SimpleFontData::SpaceGlyph: HarfBuzz's glyph for U+0020.
+  SkGlyphID space_glyph = 0;
 };
 
 // A glyph as HarfBuzz placed it: `advance` in 16.16 (TextRunLayoutUnit),
@@ -162,6 +181,10 @@ struct ShapedRun {
   // The 16.16 sum of the advances as a float, at least 0; after spacing,
   // not clamped.
   float width = 0;
+  // A glyph has an offset (GlyphDataRange::HasNonZeroOffsets), a y one
+  // (ShapeResult::HasVerticalOffsets).
+  bool has_offsets = false;
+  bool has_vertical_offsets = false;
 };
 
 // Blink's ShapeResult of one item: the runs in visual order.
@@ -171,6 +194,83 @@ struct ShapeResult {
   // visual order.
   float width = 0;
 };
+
+// ---- the steps (shaper_*.cpp) ----
+
+// PlainTextNode::NormalizeSpacesAndMaybeBidi for a canvas, on the UTF-16 of
+// `text` (UTF-8). shaper_text.cpp.
+PreparedText PrepareText(const char* text, size_t length);
+
+// PlainTextNode::SegmentText: the items in visual order. `word_by_word` is
+// Font::CanShapeWordByWord. shaper_items.cpp.
+struct ItemList {
+  std::vector<Item> items;
+  bool contains_rtl = false;
+  bool rtl_base = false;
+};
+ItemList SegmentText(const PreparedText& prepared, bool rtl, bool word_by_word);
+
+// HarfBuzzShaper::Shape's segments of an item, in item units: one Latin
+// segment for 8-bit text, else RunSegmenter's ranges (ScriptRunIterator and
+// SymbolsIterator). shaper_segment.cpp.
+std::vector<Segment> SegmentItem(const char16_t* text,
+                                 uint32_t length,
+                                 bool is_8bit);
+
+// ICUScriptToHBScript.
+hb_script_t IcuScriptToHbScript(int script);
+
+// The HarfBuzz caches of a TextCaches (shaper_font.cpp): faces by typeface
+// and the buffer.
+struct ShaperCaches;
+void DestroyShaperCaches(ShaperCaches* caches);
+
+// HarfBuzz's nominal glyph of `code_point` in `typeface` (its cmap, as
+// Blink's SimpleFontData::GlyphForCharacter), 0 when none.
+SkGlyphID HbNominalGlyph(skiac_font_collection* c_collection,
+                         SkTypeface* typeface,
+                         uint32_t code_point);
+
+// Gives `entry` its HarfBuzz font: a sub font of the typeface's cached
+// parent, with Blink's font funcs over entry->draw_font. False when the
+// typeface has no data.
+bool MakeEntryFont(skiac_font_collection* c_collection, FontEntry* entry);
+
+// Blink's VariationSelectorMode values the font funcs read.
+enum class VariationSelectorMode {
+  kUseSpecified,
+  kIgnore,
+};
+void SetVariationSelectorMode(FontEntry* entry, VariationSelectorMode mode);
+
+// The buffer every layout of the collection shapes with.
+hb_buffer_t* ShaperBuffer(skiac_font_collection* c_collection);
+
+// harfbuzz_face.h kUnmatchedVSGlyphId: the glyph the font funcs give a
+// variation sequence the font has only the base of.
+constexpr hb_codepoint_t kUnmatchedVSGlyphId = static_cast<hb_codepoint_t>(-1);
+
+// One item shaped: its ShapeResult.
+struct ShapedItem {
+  Item item;
+  ShapeResult result;
+};
+
+// The glyphs of the items where PlainTextPainter puts them, the line width
+// and the advance of the item an inkless line's box starts at
+// (shaper_place.cpp).
+struct PlacedLine {
+  BlinkLine blink;
+  // Where TextMetrics measures the glyphs' ink when that is not where they
+  // are drawn (an RTL base's reversed LTR words); else empty.
+  BlinkLine ink;
+  float line_width = 0;
+  float last_item_width = 0;
+};
+PlacedLine PlaceItems(const std::vector<ShapedItem>& items,
+                      const PreparedText& prepared,
+                      bool contains_rtl,
+                      bool rtl_base);
 
 // ---- debug entry points (cargo tests and the harness) ----
 
@@ -185,6 +285,10 @@ static_assert(static_cast<size_t>(ShaperReject::kCount) <= kShaperRejectSlots,
 struct skiac_shaper_stats {
   uint64_t accepted;
   uint64_t rejected[kShaperRejectSlots];
+  // Layouts during which the collection's TextCaches were dropped or one of
+  // their maps cleared (LayOutLineBlink holds references into them): must
+  // stay 0.
+  uint64_t cache_changes;
 };
 
 // Fills `stats`; then sets the counts to 0 when `reset`.

@@ -2,6 +2,7 @@
 // skparagraph.
 
 #include <math.h>
+#include <stdio.h>
 #include <string.h>
 #include <algorithm>
 #include <cmath>
@@ -26,28 +27,9 @@
 #endif
 
 void TextCachesDeleter::operator()(TextCaches* caches) const {
+  NoteTextCachesChange();
   delete caches;
 }
-
-namespace {
-
-using LineRun = TextCaches::Run;
-using Line = TextCaches::Line;
-
-constexpr float kMaxLayoutWidth = 100000;
-// TextCaches::lines holds up to kMaxLines lines and about kMaxLineBytes bytes
-// (TextCaches::line_bytes; not a hard cap: a draw adds a line's joined blob
-// after the check), dropping the least recently used line first, but it
-// drops none for its bytes while it holds fewer than kMinLines lines. So the
-// last kMinLines lines used stay whatever their bytes, as in skparagraph's
-// ParagraphCache (now off), which kept the last 128 paragraphs of any size,
-// each several times the bytes of a kept line (up to about 25x with fallback
-// runs): a loop over 128 lines of any length stays in both.
-constexpr size_t kMaxLines = 512;
-constexpr size_t kMinLines = 128;
-constexpr size_t kMaxLineBytes = 16 << 20;
-// Line::inks holds up to this many left edges.
-constexpr size_t kMaxInks = 4;
 
 TextCaches& GetTextCaches(skiac_font_collection* c_collection) {
   if (!c_collection->text_caches) {
@@ -61,6 +43,7 @@ const std::vector<SkString>& CachedFontFamilies(
     const skiac_text_request& request) {
   auto& cache = GetTextCaches(c_collection).families;
   if (cache.size() > 256) {
+    NoteTextCachesChange();
     cache.clear();
   }
   std::string key;
@@ -87,6 +70,7 @@ PrimaryFontMetrics CachedPrimaryFont(skiac_font_collection* c_collection,
                                      float size) {
   auto& cache = GetTextCaches(c_collection).metrics;
   if (cache.size() > 1024) {
+    NoteTextCachesChange();
     cache.clear();
   }
   uint32_t size_bits;
@@ -103,6 +87,26 @@ PrimaryFontMetrics CachedPrimaryFont(skiac_font_collection* c_collection,
   }
   return found->second;
 }
+
+namespace {
+
+using LineRun = TextCaches::Run;
+using Line = TextCaches::Line;
+
+constexpr float kMaxLayoutWidth = 100000;
+// TextCaches::lines holds up to kMaxLines lines and about kMaxLineBytes bytes
+// (TextCaches::line_bytes; not a hard cap: a draw adds a line's joined blob
+// after the check), dropping the least recently used line first, but it
+// drops none for its bytes while it holds fewer than kMinLines lines. So the
+// last kMinLines lines used stay whatever their bytes, as in skparagraph's
+// ParagraphCache (now off), which kept the last 128 paragraphs of any size,
+// each several times the bytes of a kept line (up to about 25x with fallback
+// runs): a loop over 128 lines of any length stays in both.
+constexpr size_t kMaxLines = 512;
+constexpr size_t kMinLines = 128;
+constexpr size_t kMaxLineBytes = 16 << 20;
+// Line::inks holds up to this many left edges.
+constexpr size_t kMaxInks = 4;
 
 // Every request field LayOutLine reads, then the text.
 void AppendLineKey(std::string* key, const skiac_text_request& request) {
@@ -927,11 +931,16 @@ Line* FindOrLayOutLine(skiac_font_collection* c_collection,
   for (const BlinkRun& run : fresh.blink.runs) {
     glyphs += run.glyphs.size();
   }
+  // The Blink shaper's copy of the glyphs where TextMetrics measures them.
+  for (const BlinkRun& run : fresh.ink_blink.runs) {
+    glyphs += run.glyphs.size();
+  }
   // The key, its map node and the Line take about 512 bytes on top; the
   // first draw adds the text blobs' (MeasureOrDraw).
   const size_t bytes =
       key.size() + 512 +
-      LineBytes(fresh.blink.runs.size(), glyphs, fresh.words.size());
+      LineBytes(fresh.blink.runs.size() + fresh.ink_blink.runs.size(), glyphs,
+                fresh.words.size());
   while (!caches.lru.empty() && (caches.lines.size() >= kMaxLines ||
                                  (caches.lines.size() >= kMinLines &&
                                   caches.line_bytes + bytes > kMaxLineBytes))) {
@@ -1087,8 +1096,9 @@ void MeasureOrDraw(skiac_font_collection* c_collection,
   if (found != line->inks.end()) {
     ink = found->second;
   } else {
-    ink = MeasureBlinkInk(line->blink, policy, line->words, left_edge,
-                          line_baseline);
+    ink = MeasureBlinkInk(
+        line->ink_blink.runs.empty() ? line->blink : line->ink_blink, policy,
+        line->words, left_edge, line_baseline);
     if (line->inks.size() < kMaxInks) {
       line->inks.emplace_back(left_bits, ink);
     }
@@ -1201,6 +1211,83 @@ void skiac_text_draw(skiac_canvas* c_canvas,
   MeasureOrDraw(c_collection, *request, reinterpret_cast<SkPaint*>(c_paint),
                 reinterpret_cast<SkCanvas*>(c_canvas), x, y, max_width,
                 nullptr);
+}
+
+void skiac_debug_text_line(skiac_font_collection* c_collection,
+                           const skiac_text_request* request,
+                           void (*sink)(const char*, size_t, void*),
+                           void* context) {
+  c_collection->flushCachesIfDirty();
+  const Line* line = FindOrLayOutLine(c_collection, *request);
+  std::string out;
+  char number[64];
+  auto put_float = [&](float value) {
+    snprintf(number, sizeof(number), "%.9g", value);
+    out += number;
+  };
+  out += "{\"empty\":";
+  out += line->empty ? "true" : "false";
+  out += ",\"width\":";
+  put_float(line->line_width);
+  out += ",\"lastWordAdvance\":";
+  put_float(line->last_word_advance);
+  // MeasureOrDraw's x offsets of the old path (0 for the Blink shaper).
+  const float rtl_offset =
+      request->direction == static_cast<int>(TextDirection::kRtl)
+          ? line->layout_width - line->paragraph_width
+          : 0.0f;
+  out += ",\"runs\":[";
+  for (size_t r = 0; r < line->blink.runs.size(); ++r) {
+    const BlinkRun& run = line->blink.runs[r];
+    SkString family;
+    if (run.font.getTypeface()) {
+      run.font.getTypeface()->getFamilyName(&family);
+    }
+    out += r ? ",{" : "{";
+    out += "\"family\":\"";
+    for (const char c : std::string_view(family.c_str(), family.size())) {
+      if (c == '"' || c == '\\') {
+        out += '\\';
+      }
+      if (static_cast<unsigned char>(c) >= 0x20) {
+        out += c;
+      }
+    }
+    out += "\",\"size\":";
+    put_float(run.font.getSize());
+    out += ",\"embolden\":";
+    out += run.font.isEmbolden() ? "true" : "false";
+    out += ",\"skew\":";
+    put_float(run.font.getSkewX());
+    // Where the glyphs go from the paint origin: skparagraph's run origins
+    // and the baseline it draws at.
+    out += ",\"x\":[";
+    for (size_t i = 0; i < run.positions.size(); ++i) {
+      if (i) {
+        out += ',';
+      }
+      put_float((run.origin.fX + run.positions[i].fX) - rtl_offset +
+                line->letter_spacing_offset);
+    }
+    out += "],\"y\":[";
+    for (size_t i = 0; i < run.positions.size(); ++i) {
+      if (i) {
+        out += ',';
+      }
+      put_float((run.origin.fY - line->line_baseline) + run.positions[i].fY);
+    }
+    out += "],\"glyphs\":[";
+    for (size_t i = 0; i < run.glyphs.size(); ++i) {
+      out += (i ? "," : "") + std::to_string(run.glyphs[i]);
+    }
+    out += "],\"clusters\":[";
+    for (size_t i = 0; i < run.clusters.size(); ++i) {
+      out += (i ? "," : "") + std::to_string(run.clusters[i]);
+    }
+    out += "]}";
+  }
+  out += "]}";
+  sink(out.data(), out.size(), context);
 }
 
 bool skiac_text_line_kept(skiac_font_collection* c_collection,

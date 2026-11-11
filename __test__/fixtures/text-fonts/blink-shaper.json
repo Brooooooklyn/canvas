@@ -7008,8 +7008,8 @@
         "fontSizeAdjust": "none"
       },
       "chrome": [59.811187744140625, -1.5625, 58.444000244140625, 28.359375, 12.00521469116211],
-      "flip": "S3",
-      "flipPortable": "S3"
+      "flip": "S2",
+      "flipPortable": "S2"
     },
     "arabic: full 0.5": {
       "group": "arabic",
@@ -7097,8 +7097,8 @@
         "fontSizeAdjust": "none"
       },
       "chrome": [82.94921875, -1.3671875, 81.58203125, 28.359375, 7.59765625],
-      "flip": "S3",
-      "flipPortable": "S3"
+      "flip": "S2",
+      "flipPortable": "S2"
     },
     "arabic: mid_full 0.5": {
       "group": "arabic",
@@ -7186,8 +7186,8 @@
         "fontSizeAdjust": "none"
       },
       "chrome": [47.389312744140625, -1.5625, 46.022125244140625, 28.359375, 12.00521469116211],
-      "flip": "S3",
-      "flipPortable": "S3"
+      "flip": "S2",
+      "flipPortable": "S2"
     },
     "arabic: end_full 0.5": {
       "group": "arabic",
@@ -7275,8 +7275,8 @@
         "fontSizeAdjust": "none"
       },
       "chrome": [61.5234375, -1.3671875, 59.700523376464844, 28.359375, 7.59765625],
-      "flip": "S3",
-      "flipPortable": "S3"
+      "flip": "S2",
+      "flipPortable": "S2"
     },
     "arabic: start_full 0.5": {
       "group": "arabic",
