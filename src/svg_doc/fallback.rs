@@ -19,8 +19,10 @@
 //!   stack depth they add (all or none). `Graph` over-approximates what
 //!   SkSVG may follow, so a value SkSVG parses in a way this module does
 //!   not model cannot hide a reference from it. A draw whose cost is not
-//!   bounded by its bytes (clip content, a dashed stroke) may not be added
-//!   at all.
+//!   bounded by its bytes (clip content, a filter, a textPath's outline of
+//!   anything but a `<path>`, a dashed stroke) may not be added at all. A
+//!   textPath href is renamed only when it names a `<path>` (svg_doc, as
+//!   Blink, draws no text along anything else).
 //! - `<!ATTLIST>` declarations are blanked: expat applies their defaults,
 //!   roxmltree (so svg_doc) does not. Any default may hide content (display,
 //!   an empty viewBox, a pattern width of 0), so they are blanked only when
@@ -34,6 +36,7 @@ use std::collections::{HashMap, HashSet};
 use std::ops::Range;
 
 use super::dom::{self, Doc, NodeData, NodeId};
+use super::values::local_ref;
 
 /// The work the renames may add to SkSVG's, in element visits (a shape, a
 /// text or an image costs 32 more, plus its attribute values and text):
@@ -54,6 +57,12 @@ const CAP: u64 = 1 << 50;
 /// The work of a text byte, per call: a glyph outline is about 1.4 KB of
 /// path data (8^4 `<use>` draws of 100 "W" went past 1 GB).
 const GLYPH_WORK: u64 = 1024;
+
+/// The work of a path data byte when the data has an arc command (`A` or
+/// `a`, any byte): SkSVG makes up to 4 conics of an arc and the SVG canvas
+/// writes each one as up to 32 quads, about 5 KB from an arc of 10 bytes
+/// (512 `<use href>` draws of 400 arcs went past 1 GB).
+const ARC_WORK: u64 = 1024;
 
 /// Bytes the reference scan may compare; past them the references are not
 /// known (no renames; every pattern counts as painted).
@@ -445,7 +454,8 @@ struct SkEl {
   sets: u8,
   /// use, pattern, gradients, textPath: the attribute spelled
   /// `xlink:href`, and the one svg_doc reads (dom::Doc::href), as indices
-  /// into the node's attributes.
+  /// into the node's attributes. On a textPath, `chosen` is None when it is
+  /// not `xlink` and does not name a `<path>` (see `Sk::read`).
   xlink: Option<usize>,
   chosen: Option<usize>,
 }
@@ -526,6 +536,37 @@ impl<'d> Sk<'d> {
       });
       for &c in doc.nodes[node].children.iter().rev() {
         stack.push((c, Some(index)));
+      }
+    }
+    // SkSVG lays a textPath's text along the outline of any element
+    // (SkSVGTextContext::PathData -> asPath); svg_doc, as Blink, only along
+    // a <path>. A renamed href to anything else would draw text that both
+    // leave out: it stays as written (SkSVG does not read it, and an
+    // `xlink:href` svg_doc does not read goes). A <path> must be the
+    // target in both id maps (SkSVG's last-wins, svg_doc's first-wins).
+    let check: Vec<usize> = (0..els.len())
+      .filter(|&i| {
+        els[i].tag == Tag::TextPath && els[i].chosen.is_some() && els[i].chosen != els[i].xlink
+      })
+      .collect();
+    if !check.is_empty() {
+      let mut first: HashMap<&str, NodeId> = HashMap::new();
+      for n in 0..doc.nodes.len() {
+        if let Some(id) = doc.attr(n, "id") {
+          first.entry(id).or_insert(n);
+        }
+      }
+      for i in check {
+        let Some(k) = els[i].chosen else { continue };
+        let value = doc.attrs(els[i].node)[k].value.as_str();
+        let sk = sk_iri(value)
+          .and_then(|id| ids.get(id))
+          .map(|&t| els[t as usize].node);
+        let svg_doc = local_ref(value).and_then(|id| first.get(id).copied());
+        let path = sk.is_some_and(|t| sk == svg_doc && doc.svg_name(t) == Some("path"));
+        if !path {
+          els[i].chosen = None;
+        }
       }
     }
     Sk { text, els, ids }
@@ -1058,12 +1099,18 @@ struct Graph {
   root: u32,
   class: Vec<Class>,
   /// The work of one call: 1, and for a shape, text or image 32 more plus
-  /// its attribute values; plus its text (GLYPH_WORK a byte in a text
-  /// element). CAP for an element a clipPath or a value with `dasharray`
-  /// in it reaches: SkSVG unions clip content one child at a time (a
-  /// `<clipPath>` of 1000 rects took 6 s), and a dash count follows the
-  /// geometry (`stroke-dasharray="0.01"` on a circle wrote 1.6 MB), so
-  /// neither may be added.
+  /// its attribute values (ARC_WORK a byte of path data with an arc); plus
+  /// its text (GLYPH_WORK a byte in a text element); for a <path> a
+  /// textPath names, the text bytes below each such textPath times the
+  /// path's attribute bytes.
+  /// CAP for an element that a clipPath, a filter or fe* element, a value
+  /// with `dasharray` in it, or a textPath (unless it is a <path> the
+  /// textPath names) reaches: SkSVG unions clip content one child at a
+  /// time (a `<clipPath>` of 1000 rects took 6 s) and so does a textPath's
+  /// outline of a container (asPath: 1000 rects took 4.8 s), a filter
+  /// works per pixel (feTurbulence on 4000x4000), and a dash count follows
+  /// the geometry (`stroke-dasharray="0.01"` on a circle wrote 1.6 MB), so
+  /// none of these may be added.
   own: Vec<u64>,
   /// Text children: each one more fill and stroke.
   texts: Vec<u64>,
@@ -1114,6 +1161,28 @@ impl Graph {
     let mut obb = Vec::with_capacity(n);
     let mut costly = Vec::with_capacity(n);
     let mut out = Vec::with_capacity(n);
+    // The text bytes below each node (its own included), and each
+    // element's attribute value bytes. Children come after their parent.
+    let mut below = vec![0u64; doc.nodes.len()];
+    for id in (0..doc.nodes.len()).rev() {
+      if let NodeData::Text(s) = &doc.nodes[id].data {
+        below[id] = add(below[id], s.len() as u64);
+      }
+      if let Some(p) = doc.nodes[id].parent {
+        below[p] = add(below[p], below[id]);
+      }
+    }
+    let attr_bytes = |id: NodeId| {
+      doc
+        .attrs(id)
+        .iter()
+        .fold(0u64, |s, a| add(s, a.value.len() as u64))
+    };
+    // Elements a textPath outlines (a reference of it whose value is an
+    // IRI) that are not a <path>.
+    let mut outlined = Vec::new();
+    // <path> elements a textPath names, with the glyph walks of one call.
+    let mut contours = Vec::new();
     for (k, &id) in scan.nodes.iter().enumerate() {
       let NodeData::Element { name, attrs, .. } = &doc.nodes[id].data else {
         unreachable!()
@@ -1146,7 +1215,9 @@ impl Graph {
       // A shape's path data, an image's data: URL (decoded per draw).
       if drawn {
         for a in attrs {
-          w = add(w, a.value.len() as u64);
+          let arc = a.name == "d" && a.value.bytes().any(|c| c | 0x20 == b'a');
+          let per = if arc { ARC_WORK } else { 1 };
+          w = add(w, mul(per, a.value.len() as u64));
         }
       }
       for &(ai, target, ek) in &scan.refs[k] {
@@ -1155,6 +1226,18 @@ impl Graph {
         let key = attrs[ai as usize].range.start;
         if !blanked.contains(&key) {
           edges.push((target, ek, renamed.contains(&key)));
+          if name == "textPath" && ek == Ek::Bare {
+            let t = scan.nodes[target as usize];
+            match &doc.nodes[t].data {
+              // Each glyph below looks for its contour from the first
+              // one (PathData::getMatrixAt): glyphs times contours, on
+              // the path's calls (a call through the href is the new one).
+              NodeData::Element { name, .. } if name == "path" => {
+                contours.push((target, mul(below[id], attr_bytes(t))));
+              }
+              _ => outlined.push(target),
+            }
+          }
         }
       }
       // Any spelling, anywhere: an over-approximation of what SkSVG reads.
@@ -1163,7 +1246,11 @@ impl Graph {
           .windows(9)
           .any(|w| w.eq_ignore_ascii_case(b"dasharray"))
       };
-      costly.push(name == "clipPath" || attrs.iter().any(|a| dash(&a.name) || dash(&a.value)));
+      costly.push(
+        matches!(name.as_str(), "clipPath" | "filter")
+          || name.starts_with("fe")
+          || attrs.iter().any(|a| dash(&a.name) || dash(&a.value)),
+      );
       class_of.push(c);
       fresh.push(matches!(
         name.as_str(),
@@ -1172,6 +1259,12 @@ impl Graph {
       own.push(w);
       texts.push(t);
       out.push(edges);
+    }
+    for t in outlined {
+      costly[t as usize] = true;
+    }
+    for (t, w) in contours {
+      own[t as usize] = add(own[t as usize], w);
     }
     let root = scan.dense[doc.root];
     // Depth first without recursion: a back edge is a cycle.
@@ -2070,6 +2163,112 @@ mod tests {
     ] {
       assert!(!renamed(&body), "{body}");
     }
+  }
+
+  #[test]
+  fn a_textpath_outline_of_anything_but_a_path_is_not_added() {
+    let renamed = |body: &str| !cleaned(body).contains(" href=");
+    // SkSVG outlines a textPath's target (asPath); a container unions its
+    // children one at a time (Codex cleanup round 4: 2500 rects through a
+    // renamed <use href> timed out).
+    let rects = r#"<rect width="1" height="1"/>"#.repeat(100);
+    for body in [
+      format!(
+        r##"<defs><g id="r">{rects}</g><g id="h"><use href="#r"/></g></defs><text><textPath xlink:href="#h">X</textPath></text>"##
+      ),
+      format!(
+        r##"<defs><g id="r">{rects}</g><use id="u" href="#r"/></defs><text><textPath xlink:href="#u">X</textPath></text>"##
+      ),
+      // A textPath drawn more through a renamed <use href>.
+      format!(
+        r##"<defs><g id="r">{rects}</g><text id="t"><textPath xlink:href="#r">X</textPath></text></defs><use href="#t"/>"##
+      ),
+    ] {
+      assert!(!renamed(&body), "{body}");
+    }
+    // A <path> target: renamed, and so is a <use href> of the text.
+    assert!(renamed(
+      r##"<defs><path id="p" d="M0 5H10"/><text id="t"><textPath xlink:href="#p">X</textPath></text></defs><use href="#t"/>"##
+    ));
+    // Each glyph walks the contours: 2000 glyphs on 200000 contours are
+    // too much, 20 on 2000 are not.
+    let tp = |glyphs: usize, contours: usize| {
+      format!(
+        r##"<defs><path id="p" d="{}"/></defs><text><textPath href="#p">{}</textPath></text>"##,
+        "M0 0h1".repeat(contours),
+        "W".repeat(glyphs)
+      )
+    };
+    assert!(!renamed(&tp(2000, 200_000)));
+    assert!(renamed(&tp(20, 2000)));
+    // An ATTLIST goes only where the outlines are bounded (round 4: an
+    // ATTLIST hid a textPath outline of 2500 rects).
+    let doc = |target: &str| {
+      format!(
+        r##"<!DOCTYPE svg [<!ATTLIST text display CDATA "none">]><svg {X}><defs>{target}</defs><text><textPath xlink:href="#r">X</textPath></text></svg>"##
+      )
+    };
+    let text = doc(&format!(r#"<g id="r">{rects}</g>"#));
+    assert_eq!(clean(&Doc::parse(&text).unwrap(), &text), Ok(None));
+    let text = doc(r#"<path id="r" d="M0 5H10"/>"#);
+    assert!(clean(&Doc::parse(&text).unwrap(), &text).unwrap().is_some());
+  }
+
+  #[test]
+  fn a_textpath_href_is_renamed_only_to_a_path() {
+    // svg_doc, as Blink, draws a textPath only along a <path>; SkSVG along
+    // anything (Codex cleanup round 4).
+    let tp = r##"<text><textPath href="#r">X</textPath></text>"##;
+    for target in [
+      r#"<rect id="r" width="8" height="8"/>"#,
+      r#"<g id="r"><path d="M0 5H10"/></g>"#,
+      r##"<path id="p" d="M0 5H10"/><use id="r" xlink:href="#p"/>"##,
+      // First-wins (svg_doc) and last-wins (SkSVG) differ.
+      r#"<g id="r"/><path id="r" d="M0 5H10"/>"#,
+    ] {
+      let body = format!("<defs>{target}</defs>{tp}");
+      assert_eq!(cleaned(&body), body, "{target}");
+    }
+    let body = format!(r#"<defs><path id="r" d="M0 5H10"/></defs>{tp}"#);
+    assert_eq!(cleaned(&body), body.replace(" href=", " xlink:href="));
+    // svg_doc reads href (a rect: no text); the xlink:href SkSVG reads goes.
+    let body = r##"<defs><rect id="r"/><path id="p" d="M0 5H10"/></defs><text><textPath href="#r" xlink:href="#p">X</textPath></text>"##;
+    assert_eq!(
+      cleaned(body),
+      blanked(body, r##"href="#r""##, r##"xlink:href="#p""##)
+    );
+  }
+
+  #[test]
+  fn filters_and_arcs_are_not_added_past_their_bytes() {
+    let renamed = |body: &str| !cleaned(body).contains(" href=");
+    // A filter works per pixel, whatever its bytes (feTurbulence on
+    // 4000x4000 through 64 <use href> draws timed out).
+    for body in [
+      r##"<defs><filter id="f"><feTurbulence baseFrequency="0.05"/></filter></defs><rect id="r" filter="url(#f)"/><use href="#r"/>"##,
+      r##"<defs><filter id="f"><feImage xlink:href="#r"/></filter></defs><rect id="r"/><rect filter="url(#f)"/><g id="g"/><use href="#g"/><rect id="s"/><use href="#r"/>"##,
+    ] {
+      assert!(!renamed(body), "{body}");
+    }
+    assert!(renamed(
+      r##"<defs><filter id="f"><feFlood/></filter></defs><rect id="r"/><use href="#r"/><rect filter="url(#f)"/>"##
+    ));
+    // Arcs: 8^3 draws of 400 are too much; 8^3 of a rounded corner are not.
+    let arcs = |n: usize| {
+      fan_defs(8, 3, "a").replace(
+        r#"<g id="a0"/>"#,
+        &format!(
+          r#"<g id="a0"><path d="M0 0{}"/></g>"#,
+          "A1e6 1e6 0 1 1 1 0".repeat(n)
+        ),
+      ) + r##"<use href="#a3"/>"##
+    };
+    assert!(!renamed(&arcs(400)));
+    assert!(renamed(&arcs(1)));
+    // The same bytes without an arc.
+    assert!(renamed(
+      &arcs(400).replace("A1e6 1e6 0 1 1 1 0", "L1e6 1e6 0 1 1 1 0")
+    ));
   }
 
   #[test]

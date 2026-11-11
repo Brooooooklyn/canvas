@@ -331,6 +331,89 @@ test('convertSVGTextToPath past the budget: SVG2 href to text, dashes or clip co
   }
 })
 
+// SkSVG lays a textPath along the outline of its target (asPath), and the
+// outline of a group or <use> unions their content one shape at a time; each
+// glyph on a <path> walks its contours from the first. The renames may not
+// add that work: a textPath reaching 2500 rects through SVG2 href (over 20 s),
+// one an ATTLIST hides, and 2000 glyphs on 200000 contours stay as on main.
+test('convertSVGTextToPath past the budget: SVG2 href to a textPath outline stays unread', (t) => {
+  let rects = ''
+  for (let i = 0; i < 2500; i++) {
+    rects += `<rect x="${(i % 100) / 10}" y="${Math.floor(i / 100) / 10}" width="0.05" height="0.05"/>`
+  }
+  const empty = convertSVGTextToPath(`<svg ${XLINK} width="10" height="10"></svg>`).toString()
+  for (const [doctype, body] of [
+    [
+      '',
+      `<defs><g id="r">${rects}</g><g id="h"><path d="M0 5H10"/><use href="#r"/></g></defs>` +
+        '<text><textPath xlink:href="#h">X</textPath></text>',
+    ],
+    [
+      '',
+      `<defs><g id="r">${rects}</g><use id="u" xlink:href="#r"/></defs><text><textPath href="#u">X</textPath></text>`,
+    ],
+    [
+      '<!DOCTYPE svg [<!ATTLIST text display CDATA "none">]>',
+      `<defs><g id="r">${rects}</g></defs><text><textPath xlink:href="#r">X</textPath></text>`,
+    ],
+    [
+      '',
+      `<defs><path id="p" d="${'M0 0h0.001'.repeat(200_000)}"/></defs>` +
+        `<text font-size="4"><textPath href="#p">${'W'.repeat(2000)}</textPath></text>`,
+    ],
+  ]) {
+    const child = convertInChild(`${doctype}<svg ${XLINK} width="10" height="10">${body}${fanOut(6)}</svg>`)
+    t.is(child.signal, null, `killed (time or output): ${body.slice(0, 80)}`)
+    t.is(child.status, 0, child.stderr)
+    t.is(child.stdout, empty, body.slice(0, 80))
+  }
+})
+
+// svg_doc, as Blink, lays a textPath only along a <path>; SkSVG along any
+// element. An SVG2 href to anything else stays unread, so past the budget
+// the text is left out as under it; one to a <path> is renamed and drawn.
+test('convertSVGTextToPath past the budget: a textPath SVG2 href is followed only to a path', (t) => {
+  const tp = '<text><textPath href="#r">X</textPath></text>'
+  for (const target of [
+    '<rect id="r" width="8" height="8"/>',
+    '<g id="r"><rect width="5" height="5"/><rect x="6" y="6" width="2" height="2"/></g>',
+    '<path id="p" d="M0 5H10"/><use id="r" xlink:href="#p"/>',
+  ]) {
+    const body = `<defs>${target}</defs>${tp}`
+    const under = convertSVGTextToPath(`<svg ${XLINK} width="10" height="10">${body}</svg>`).toString()
+    t.false(under.includes('<path'), target)
+    t.is(
+      convertSVGTextToPath(`<svg ${XLINK} width="10" height="10">${body}${fanOut(6)}</svg>`).toString(),
+      under,
+      target,
+    )
+  }
+  const path = `<svg ${XLINK} width="10" height="10"><defs><path id="r" d="M0 5H10"/></defs>${tp}${fanOut(6)}</svg>`
+  t.true(convertSVGTextToPath(path).toString().includes('<path'))
+})
+
+// A filter works per pixel (feTurbulence on 4000x4000 through 64 <use href>
+// draws: over 20 s), and the SVG canvas writes an arc as up to 128 quads
+// (64 draws of 100 arcs: 32 MB). The renames may not add either.
+test('convertSVGTextToPath past the budget: SVG2 href to a filter or to many arcs stays unread', (t) => {
+  const drawn = (leaf: string, k: number) =>
+    `${fanOutDefs(k, 'm').replace('<g id="m0"/>', `<g id="m0">${leaf}</g>`)}<use href="#m${k}"/>`
+  for (const [size, body] of [
+    [
+      4000,
+      '<defs><filter id="f"><feTurbulence baseFrequency="0.05" numOctaves="4"/></filter></defs>' +
+        drawn('<rect width="4000" height="4000" filter="url(#f)"/>', 2),
+    ],
+    [10, drawn(`<path d="M0 0${'A1e6 1e6 0 1 1 1 0A1e6 1e6 0 1 1 0 0'.repeat(50)}"/>`, 2)],
+  ] as const) {
+    const svg = (b: string) => `<svg ${XLINK} width="${size}" height="${size}">${b}${fanOut(6)}</svg>`
+    const child = convertInChild(svg(body))
+    t.is(child.signal, null, `killed (time or output): ${body.slice(0, 80)}`)
+    t.is(child.status, 0, child.stderr)
+    t.is(child.stdout, convertSVGTextToPath(svg('')).toString(), body.slice(0, 80))
+  }
+})
+
 // SkSVG reads a nested style="style:fill:url(#c)": the pattern c it paints
 // runs into the cycle a -> a, which is broken.
 test('convertSVGTextToPath past the budget: a pattern a nested style paints is walked', (t) => {
