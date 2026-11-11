@@ -373,7 +373,10 @@ class HanKerning {
 // as TextRunLayoutUnit, added to the last glyph of each cluster, not
 // clamped; then each run's width is its new 16.16 sum (not clamped at 0) and
 // each item's the float sum of its runs in visual order. Nothing changes when
-// both are 0 as TextRunLayoutUnit. shaper_spacing.cpp.
+// both are 0 as TextRunLayoutUnit. When the text starts with a space, the
+// items with the same text and direction as the item at 0 take the word
+// spacing of the first of them in `items` order on that space, as desktop
+// Chrome's FrameShapeCache gives within one call. shaper_spacing.cpp.
 void ApplySpacing(const PreparedText& prepared,
                   float letter_spacing,
                   float word_spacing,

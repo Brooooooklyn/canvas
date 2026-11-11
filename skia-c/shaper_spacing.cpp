@@ -4,6 +4,7 @@
 // PlainTextNode::Shape applies it to each item of a canvas text.
 
 #include <limits>
+#include <string>
 
 #include "icu_api.h"
 #include "shaper.hpp"
@@ -76,6 +77,13 @@ bool TreatAsZeroWidthSpace(char16_t c) {
                              UCHAR_DEFAULT_IGNORABLE_CODE_POINT);
 }
 
+// Whether two items have the same FrameShapeCache key: (item text,
+// direction). Compares the length, then the direction, then the text.
+bool SameShapeKey(const std::u16string& text, const Item& a, const Item& b) {
+  return a.length == b.length && a.rtl == b.rtl &&
+         text.compare(a.start, a.length, text, b.start, b.length) == 0;
+}
+
 }  // namespace
 
 void ApplySpacing(const PreparedText& prepared,
@@ -90,7 +98,42 @@ void ApplySpacing(const PreparedText& prepared,
     return;
   }
   const std::u16string& text = prepared.text;
+  // Desktop Chrome's FrameShapeCache (PlainTextNode::Shape,
+  // plain_text_node.cc) stores each item's result after spacing, keyed by
+  // (item text, direction), and an item whose key it has seen reuses that
+  // result. Spacing depends on the position only at index 0: a space there
+  // gets no word spacing (ComputeSpacing). So when the text starts with a
+  // space (09-0D are spaces here; NBSP gets word spacing anyway), every item
+  // with the key of the item at 0 takes the result of the first such item
+  // in shaping order (`items`, RTL runs already reversed): its space at
+  // local offset 0 gets word spacing only if that first item does not
+  // start at 0. Only within this call: Chrome's cache also carries results
+  // to later calls on the same canvas, which is not copied (DESIGN-SHAPER
+  // D26).
+  const Item* item_at_0 = nullptr;
+  bool key_spaced = false;
+  if (word && !text.empty() && text[0] == 0x20) {
+    for (const ShapedItem& shaped : *items) {
+      if (shaped.item.start == 0) {
+        item_at_0 = &shaped.item;
+        break;
+      }
+    }
+    if (item_at_0) {
+      // The first item with the key: the item at 0 or one before it.
+      for (const ShapedItem& shaped : *items) {
+        if (SameShapeKey(text, shaped.item, *item_at_0)) {
+          key_spaced = shaped.item.start != 0;
+          break;
+        }
+      }
+    }
+  }
   for (ShapedItem& shaped : *items) {
+    // Whether this item's space at local offset 0 gets word spacing like the
+    // first item with the same key, instead of by its own index.
+    const bool shares_key =
+        item_at_0 && SameShapeKey(text, shaped.item, *item_at_0);
     float total_advance = 0;
     for (ShapedRun& run : shaped.result.runs) {
       const uint32_t run_start_index = shaped.item.start + run.start;
@@ -119,7 +162,11 @@ void ApplySpacing(const PreparedText& prepared,
             (!cursive || treat_as_space)) {
           spacing = ClampAdd(spacing, letter);
         }
-        if (treat_as_space && (index || character == 0xA0)) {
+        bool word_spacing_here = index || character == 0xA0;
+        if (shares_key && run.start + glyph.character_index == 0) {
+          word_spacing_here = key_spaced;
+        }
+        if (treat_as_space && word_spacing_here) {
           spacing = ClampAdd(spacing, word);
         }
         glyph.advance = ClampAdd(glyph.advance, spacing);
