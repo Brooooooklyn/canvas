@@ -1,0 +1,2919 @@
+{
+  "note": "Chrome 157 (HeadlessChrome/157.0.0.0, headless, --disable-gpu, en-US host), macOS arm64. Each row runs its ops on a new <canvas> 2D context, then measureText(text); OffscreenCanvas gives the same rows. Fonts are FontFace loads of __test__/fonts files: BSLato = Lato-Regular.ttf, BSNKo = NotoSansNKo-Regular.ttf, BSSerif = SourceSerifPro-Regular.ttf. Blink's setLang re-sets a realized font from its own serialization (base_rendering_context_2d.cc:1161-1175).",
+  "rows": [
+    {
+      "id": "40px BSLato, BSNKo | caps=normal",
+      "ops": [
+        ["font", "40px BSLato, BSNKo"],
+        ["fontVariantCaps", "normal"]
+      ],
+      "text": "iI",
+      "chrome": {
+        "w": 22.519989013671875,
+        "caps": "normal",
+        "stretch": "normal",
+        "kern": "auto",
+        "ls": "0px",
+        "ws": "0px",
+        "tr": "auto",
+        "font": "40px BSLato, BSNKo",
+        "lang": "inherit"
+      }
+    },
+    {
+      "id": "40px BSLato, BSNKo | caps=normal then lang=tr",
+      "ops": [
+        ["font", "40px BSLato, BSNKo"],
+        ["fontVariantCaps", "normal"],
+        ["lang", "tr"]
+      ],
+      "text": "iI",
+      "chrome": {
+        "w": 22.519989013671875,
+        "caps": "normal",
+        "stretch": "normal",
+        "kern": "auto",
+        "ls": "0px",
+        "ws": "0px",
+        "tr": "auto",
+        "font": "40px BSLato, BSNKo",
+        "lang": "tr"
+      }
+    },
+    {
+      "id": "40px BSLato, BSNKo | lang=tr then caps=normal",
+      "ops": [
+        ["font", "40px BSLato, BSNKo"],
+        ["lang", "tr"],
+        ["fontVariantCaps", "normal"]
+      ],
+      "text": "iI",
+      "chrome": {
+        "w": 22.519989013671875,
+        "caps": "normal",
+        "stretch": "normal",
+        "kern": "auto",
+        "ls": "0px",
+        "ws": "0px",
+        "tr": "auto",
+        "font": "40px BSLato, BSNKo",
+        "lang": "tr"
+      }
+    },
+    {
+      "id": "40px BSLato, BSNKo | caps=normal then lang=en",
+      "ops": [
+        ["font", "40px BSLato, BSNKo"],
+        ["fontVariantCaps", "normal"],
+        ["lang", "en"]
+      ],
+      "text": "iI",
+      "chrome": {
+        "w": 22.519989013671875,
+        "caps": "normal",
+        "stretch": "normal",
+        "kern": "auto",
+        "ls": "0px",
+        "ws": "0px",
+        "tr": "auto",
+        "font": "40px BSLato, BSNKo",
+        "lang": "en"
+      }
+    },
+    {
+      "id": "40px BSLato, BSNKo | lang=en then caps=normal",
+      "ops": [
+        ["font", "40px BSLato, BSNKo"],
+        ["lang", "en"],
+        ["fontVariantCaps", "normal"]
+      ],
+      "text": "iI",
+      "chrome": {
+        "w": 22.519989013671875,
+        "caps": "normal",
+        "stretch": "normal",
+        "kern": "auto",
+        "ls": "0px",
+        "ws": "0px",
+        "tr": "auto",
+        "font": "40px BSLato, BSNKo",
+        "lang": "en"
+      }
+    },
+    {
+      "id": "40px BSLato, BSNKo | caps=small-caps",
+      "ops": [
+        ["font", "40px BSLato, BSNKo"],
+        ["fontVariantCaps", "small-caps"]
+      ],
+      "text": "iI",
+      "chrome": {
+        "w": 20.875991821289062,
+        "caps": "small-caps",
+        "stretch": "normal",
+        "kern": "auto",
+        "ls": "0px",
+        "ws": "0px",
+        "tr": "auto",
+        "font": "small-caps 40px BSLato, BSNKo",
+        "lang": "inherit"
+      }
+    },
+    {
+      "id": "40px BSLato, BSNKo | caps=small-caps then lang=tr",
+      "ops": [
+        ["font", "40px BSLato, BSNKo"],
+        ["fontVariantCaps", "small-caps"],
+        ["lang", "tr"]
+      ],
+      "text": "iI",
+      "chrome": {
+        "w": 21.771987915039062,
+        "caps": "small-caps",
+        "stretch": "normal",
+        "kern": "auto",
+        "ls": "0px",
+        "ws": "0px",
+        "tr": "auto",
+        "font": "small-caps 40px BSLato, BSNKo",
+        "lang": "tr"
+      }
+    },
+    {
+      "id": "40px BSLato, BSNKo | lang=tr then caps=small-caps",
+      "ops": [
+        ["font", "40px BSLato, BSNKo"],
+        ["lang", "tr"],
+        ["fontVariantCaps", "small-caps"]
+      ],
+      "text": "iI",
+      "chrome": {
+        "w": 21.771987915039062,
+        "caps": "small-caps",
+        "stretch": "normal",
+        "kern": "auto",
+        "ls": "0px",
+        "ws": "0px",
+        "tr": "auto",
+        "font": "small-caps 40px BSLato, BSNKo",
+        "lang": "tr"
+      }
+    },
+    {
+      "id": "40px BSLato, BSNKo | caps=small-caps then lang=en",
+      "ops": [
+        ["font", "40px BSLato, BSNKo"],
+        ["fontVariantCaps", "small-caps"],
+        ["lang", "en"]
+      ],
+      "text": "iI",
+      "chrome": {
+        "w": 20.875991821289062,
+        "caps": "small-caps",
+        "stretch": "normal",
+        "kern": "auto",
+        "ls": "0px",
+        "ws": "0px",
+        "tr": "auto",
+        "font": "small-caps 40px BSLato, BSNKo",
+        "lang": "en"
+      }
+    },
+    {
+      "id": "40px BSLato, BSNKo | lang=en then caps=small-caps",
+      "ops": [
+        ["font", "40px BSLato, BSNKo"],
+        ["lang", "en"],
+        ["fontVariantCaps", "small-caps"]
+      ],
+      "text": "iI",
+      "chrome": {
+        "w": 20.875991821289062,
+        "caps": "small-caps",
+        "stretch": "normal",
+        "kern": "auto",
+        "ls": "0px",
+        "ws": "0px",
+        "tr": "auto",
+        "font": "small-caps 40px BSLato, BSNKo",
+        "lang": "en"
+      }
+    },
+    {
+      "id": "40px BSLato, BSNKo | caps=all-small-caps",
+      "ops": [
+        ["font", "40px BSLato, BSNKo"],
+        ["fontVariantCaps", "all-small-caps"]
+      ],
+      "text": "iI",
+      "chrome": {
+        "w": 17.191986083984375,
+        "caps": "all-small-caps",
+        "stretch": "normal",
+        "kern": "auto",
+        "ls": "0px",
+        "ws": "0px",
+        "tr": "auto",
+        "font": "40px BSLato, BSNKo",
+        "lang": "inherit"
+      }
+    },
+    {
+      "id": "40px BSLato, BSNKo | caps=all-small-caps then lang=tr",
+      "ops": [
+        ["font", "40px BSLato, BSNKo"],
+        ["fontVariantCaps", "all-small-caps"],
+        ["lang", "tr"]
+      ],
+      "text": "iI",
+      "chrome": {
+        "w": 22.519989013671875,
+        "caps": "normal",
+        "stretch": "normal",
+        "kern": "auto",
+        "ls": "0px",
+        "ws": "0px",
+        "tr": "auto",
+        "font": "40px BSLato, BSNKo",
+        "lang": "tr"
+      }
+    },
+    {
+      "id": "40px BSLato, BSNKo | lang=tr then caps=all-small-caps",
+      "ops": [
+        ["font", "40px BSLato, BSNKo"],
+        ["lang", "tr"],
+        ["fontVariantCaps", "all-small-caps"]
+      ],
+      "text": "iI",
+      "chrome": {
+        "w": 18.087982177734375,
+        "caps": "all-small-caps",
+        "stretch": "normal",
+        "kern": "auto",
+        "ls": "0px",
+        "ws": "0px",
+        "tr": "auto",
+        "font": "40px BSLato, BSNKo",
+        "lang": "tr"
+      }
+    },
+    {
+      "id": "40px BSLato, BSNKo | caps=all-small-caps then lang=en",
+      "ops": [
+        ["font", "40px BSLato, BSNKo"],
+        ["fontVariantCaps", "all-small-caps"],
+        ["lang", "en"]
+      ],
+      "text": "iI",
+      "chrome": {
+        "w": 22.519989013671875,
+        "caps": "normal",
+        "stretch": "normal",
+        "kern": "auto",
+        "ls": "0px",
+        "ws": "0px",
+        "tr": "auto",
+        "font": "40px BSLato, BSNKo",
+        "lang": "en"
+      }
+    },
+    {
+      "id": "40px BSLato, BSNKo | lang=en then caps=all-small-caps",
+      "ops": [
+        ["font", "40px BSLato, BSNKo"],
+        ["lang", "en"],
+        ["fontVariantCaps", "all-small-caps"]
+      ],
+      "text": "iI",
+      "chrome": {
+        "w": 17.191986083984375,
+        "caps": "all-small-caps",
+        "stretch": "normal",
+        "kern": "auto",
+        "ls": "0px",
+        "ws": "0px",
+        "tr": "auto",
+        "font": "40px BSLato, BSNKo",
+        "lang": "en"
+      }
+    },
+    {
+      "id": "40px BSLato, BSNKo | caps=petite-caps",
+      "ops": [
+        ["font", "40px BSLato, BSNKo"],
+        ["fontVariantCaps", "petite-caps"]
+      ],
+      "text": "iI",
+      "chrome": {
+        "w": 20.875991821289062,
+        "caps": "petite-caps",
+        "stretch": "normal",
+        "kern": "auto",
+        "ls": "0px",
+        "ws": "0px",
+        "tr": "auto",
+        "font": "40px BSLato, BSNKo",
+        "lang": "inherit"
+      }
+    },
+    {
+      "id": "40px BSLato, BSNKo | caps=petite-caps then lang=tr",
+      "ops": [
+        ["font", "40px BSLato, BSNKo"],
+        ["fontVariantCaps", "petite-caps"],
+        ["lang", "tr"]
+      ],
+      "text": "iI",
+      "chrome": {
+        "w": 22.519989013671875,
+        "caps": "normal",
+        "stretch": "normal",
+        "kern": "auto",
+        "ls": "0px",
+        "ws": "0px",
+        "tr": "auto",
+        "font": "40px BSLato, BSNKo",
+        "lang": "tr"
+      }
+    },
+    {
+      "id": "40px BSLato, BSNKo | lang=tr then caps=petite-caps",
+      "ops": [
+        ["font", "40px BSLato, BSNKo"],
+        ["lang", "tr"],
+        ["fontVariantCaps", "petite-caps"]
+      ],
+      "text": "iI",
+      "chrome": {
+        "w": 21.771987915039062,
+        "caps": "petite-caps",
+        "stretch": "normal",
+        "kern": "auto",
+        "ls": "0px",
+        "ws": "0px",
+        "tr": "auto",
+        "font": "40px BSLato, BSNKo",
+        "lang": "tr"
+      }
+    },
+    {
+      "id": "40px BSLato, BSNKo | caps=petite-caps then lang=en",
+      "ops": [
+        ["font", "40px BSLato, BSNKo"],
+        ["fontVariantCaps", "petite-caps"],
+        ["lang", "en"]
+      ],
+      "text": "iI",
+      "chrome": {
+        "w": 22.519989013671875,
+        "caps": "normal",
+        "stretch": "normal",
+        "kern": "auto",
+        "ls": "0px",
+        "ws": "0px",
+        "tr": "auto",
+        "font": "40px BSLato, BSNKo",
+        "lang": "en"
+      }
+    },
+    {
+      "id": "40px BSLato, BSNKo | lang=en then caps=petite-caps",
+      "ops": [
+        ["font", "40px BSLato, BSNKo"],
+        ["lang", "en"],
+        ["fontVariantCaps", "petite-caps"]
+      ],
+      "text": "iI",
+      "chrome": {
+        "w": 20.875991821289062,
+        "caps": "petite-caps",
+        "stretch": "normal",
+        "kern": "auto",
+        "ls": "0px",
+        "ws": "0px",
+        "tr": "auto",
+        "font": "40px BSLato, BSNKo",
+        "lang": "en"
+      }
+    },
+    {
+      "id": "40px BSLato, BSNKo | caps=all-petite-caps",
+      "ops": [
+        ["font", "40px BSLato, BSNKo"],
+        ["fontVariantCaps", "all-petite-caps"]
+      ],
+      "text": "iI",
+      "chrome": {
+        "w": 17.191986083984375,
+        "caps": "all-petite-caps",
+        "stretch": "normal",
+        "kern": "auto",
+        "ls": "0px",
+        "ws": "0px",
+        "tr": "auto",
+        "font": "40px BSLato, BSNKo",
+        "lang": "inherit"
+      }
+    },
+    {
+      "id": "40px BSLato, BSNKo | caps=all-petite-caps then lang=tr",
+      "ops": [
+        ["font", "40px BSLato, BSNKo"],
+        ["fontVariantCaps", "all-petite-caps"],
+        ["lang", "tr"]
+      ],
+      "text": "iI",
+      "chrome": {
+        "w": 22.519989013671875,
+        "caps": "normal",
+        "stretch": "normal",
+        "kern": "auto",
+        "ls": "0px",
+        "ws": "0px",
+        "tr": "auto",
+        "font": "40px BSLato, BSNKo",
+        "lang": "tr"
+      }
+    },
+    {
+      "id": "40px BSLato, BSNKo | lang=tr then caps=all-petite-caps",
+      "ops": [
+        ["font", "40px BSLato, BSNKo"],
+        ["lang", "tr"],
+        ["fontVariantCaps", "all-petite-caps"]
+      ],
+      "text": "iI",
+      "chrome": {
+        "w": 18.087982177734375,
+        "caps": "all-petite-caps",
+        "stretch": "normal",
+        "kern": "auto",
+        "ls": "0px",
+        "ws": "0px",
+        "tr": "auto",
+        "font": "40px BSLato, BSNKo",
+        "lang": "tr"
+      }
+    },
+    {
+      "id": "40px BSLato, BSNKo | caps=all-petite-caps then lang=en",
+      "ops": [
+        ["font", "40px BSLato, BSNKo"],
+        ["fontVariantCaps", "all-petite-caps"],
+        ["lang", "en"]
+      ],
+      "text": "iI",
+      "chrome": {
+        "w": 22.519989013671875,
+        "caps": "normal",
+        "stretch": "normal",
+        "kern": "auto",
+        "ls": "0px",
+        "ws": "0px",
+        "tr": "auto",
+        "font": "40px BSLato, BSNKo",
+        "lang": "en"
+      }
+    },
+    {
+      "id": "40px BSLato, BSNKo | lang=en then caps=all-petite-caps",
+      "ops": [
+        ["font", "40px BSLato, BSNKo"],
+        ["lang", "en"],
+        ["fontVariantCaps", "all-petite-caps"]
+      ],
+      "text": "iI",
+      "chrome": {
+        "w": 17.191986083984375,
+        "caps": "all-petite-caps",
+        "stretch": "normal",
+        "kern": "auto",
+        "ls": "0px",
+        "ws": "0px",
+        "tr": "auto",
+        "font": "40px BSLato, BSNKo",
+        "lang": "en"
+      }
+    },
+    {
+      "id": "40px BSLato, BSNKo | caps=unicase",
+      "ops": [
+        ["font", "40px BSLato, BSNKo"],
+        ["fontVariantCaps", "unicase"]
+      ],
+      "text": "iI",
+      "chrome": {
+        "w": 18.835983276367188,
+        "caps": "unicase",
+        "stretch": "normal",
+        "kern": "auto",
+        "ls": "0px",
+        "ws": "0px",
+        "tr": "auto",
+        "font": "40px BSLato, BSNKo",
+        "lang": "inherit"
+      }
+    },
+    {
+      "id": "40px BSLato, BSNKo | caps=unicase then lang=tr",
+      "ops": [
+        ["font", "40px BSLato, BSNKo"],
+        ["fontVariantCaps", "unicase"],
+        ["lang", "tr"]
+      ],
+      "text": "iI",
+      "chrome": {
+        "w": 22.519989013671875,
+        "caps": "normal",
+        "stretch": "normal",
+        "kern": "auto",
+        "ls": "0px",
+        "ws": "0px",
+        "tr": "auto",
+        "font": "40px BSLato, BSNKo",
+        "lang": "tr"
+      }
+    },
+    {
+      "id": "40px BSLato, BSNKo | lang=tr then caps=unicase",
+      "ops": [
+        ["font", "40px BSLato, BSNKo"],
+        ["lang", "tr"],
+        ["fontVariantCaps", "unicase"]
+      ],
+      "text": "iI",
+      "chrome": {
+        "w": 18.835983276367188,
+        "caps": "unicase",
+        "stretch": "normal",
+        "kern": "auto",
+        "ls": "0px",
+        "ws": "0px",
+        "tr": "auto",
+        "font": "40px BSLato, BSNKo",
+        "lang": "tr"
+      }
+    },
+    {
+      "id": "40px BSLato, BSNKo | caps=unicase then lang=en",
+      "ops": [
+        ["font", "40px BSLato, BSNKo"],
+        ["fontVariantCaps", "unicase"],
+        ["lang", "en"]
+      ],
+      "text": "iI",
+      "chrome": {
+        "w": 22.519989013671875,
+        "caps": "normal",
+        "stretch": "normal",
+        "kern": "auto",
+        "ls": "0px",
+        "ws": "0px",
+        "tr": "auto",
+        "font": "40px BSLato, BSNKo",
+        "lang": "en"
+      }
+    },
+    {
+      "id": "40px BSLato, BSNKo | lang=en then caps=unicase",
+      "ops": [
+        ["font", "40px BSLato, BSNKo"],
+        ["lang", "en"],
+        ["fontVariantCaps", "unicase"]
+      ],
+      "text": "iI",
+      "chrome": {
+        "w": 18.835983276367188,
+        "caps": "unicase",
+        "stretch": "normal",
+        "kern": "auto",
+        "ls": "0px",
+        "ws": "0px",
+        "tr": "auto",
+        "font": "40px BSLato, BSNKo",
+        "lang": "en"
+      }
+    },
+    {
+      "id": "40px BSLato, BSNKo | caps=titling-caps",
+      "ops": [
+        ["font", "40px BSLato, BSNKo"],
+        ["fontVariantCaps", "titling-caps"]
+      ],
+      "text": "iI",
+      "chrome": {
+        "w": 22.519989013671875,
+        "caps": "titling-caps",
+        "stretch": "normal",
+        "kern": "auto",
+        "ls": "0px",
+        "ws": "0px",
+        "tr": "auto",
+        "font": "40px BSLato, BSNKo",
+        "lang": "inherit"
+      }
+    },
+    {
+      "id": "40px BSLato, BSNKo | caps=titling-caps then lang=tr",
+      "ops": [
+        ["font", "40px BSLato, BSNKo"],
+        ["fontVariantCaps", "titling-caps"],
+        ["lang", "tr"]
+      ],
+      "text": "iI",
+      "chrome": {
+        "w": 22.519989013671875,
+        "caps": "normal",
+        "stretch": "normal",
+        "kern": "auto",
+        "ls": "0px",
+        "ws": "0px",
+        "tr": "auto",
+        "font": "40px BSLato, BSNKo",
+        "lang": "tr"
+      }
+    },
+    {
+      "id": "40px BSLato, BSNKo | lang=tr then caps=titling-caps",
+      "ops": [
+        ["font", "40px BSLato, BSNKo"],
+        ["lang", "tr"],
+        ["fontVariantCaps", "titling-caps"]
+      ],
+      "text": "iI",
+      "chrome": {
+        "w": 22.519989013671875,
+        "caps": "titling-caps",
+        "stretch": "normal",
+        "kern": "auto",
+        "ls": "0px",
+        "ws": "0px",
+        "tr": "auto",
+        "font": "40px BSLato, BSNKo",
+        "lang": "tr"
+      }
+    },
+    {
+      "id": "40px BSLato, BSNKo | caps=titling-caps then lang=en",
+      "ops": [
+        ["font", "40px BSLato, BSNKo"],
+        ["fontVariantCaps", "titling-caps"],
+        ["lang", "en"]
+      ],
+      "text": "iI",
+      "chrome": {
+        "w": 22.519989013671875,
+        "caps": "normal",
+        "stretch": "normal",
+        "kern": "auto",
+        "ls": "0px",
+        "ws": "0px",
+        "tr": "auto",
+        "font": "40px BSLato, BSNKo",
+        "lang": "en"
+      }
+    },
+    {
+      "id": "40px BSLato, BSNKo | lang=en then caps=titling-caps",
+      "ops": [
+        ["font", "40px BSLato, BSNKo"],
+        ["lang", "en"],
+        ["fontVariantCaps", "titling-caps"]
+      ],
+      "text": "iI",
+      "chrome": {
+        "w": 22.519989013671875,
+        "caps": "titling-caps",
+        "stretch": "normal",
+        "kern": "auto",
+        "ls": "0px",
+        "ws": "0px",
+        "tr": "auto",
+        "font": "40px BSLato, BSNKo",
+        "lang": "en"
+      }
+    },
+    {
+      "id": "40px BSLato, BSNKo | lang=tr only",
+      "ops": [
+        ["font", "40px BSLato, BSNKo"],
+        ["lang", "tr"]
+      ],
+      "text": "iI",
+      "chrome": {
+        "w": 22.519989013671875,
+        "caps": "normal",
+        "stretch": "normal",
+        "kern": "auto",
+        "ls": "0px",
+        "ws": "0px",
+        "tr": "auto",
+        "font": "40px BSLato, BSNKo",
+        "lang": "tr"
+      }
+    },
+    {
+      "id": "40px BSLato, BSNKo | lang=en only",
+      "ops": [
+        ["font", "40px BSLato, BSNKo"],
+        ["lang", "en"]
+      ],
+      "text": "iI",
+      "chrome": {
+        "w": 22.519989013671875,
+        "caps": "normal",
+        "stretch": "normal",
+        "kern": "auto",
+        "ls": "0px",
+        "ws": "0px",
+        "tr": "auto",
+        "font": "40px BSLato, BSNKo",
+        "lang": "en"
+      }
+    },
+    {
+      "id": "40px BSLato, BSNKo | caps=all-small-caps, lang=en, font re-set",
+      "ops": [
+        ["font", "40px BSLato, BSNKo"],
+        ["fontVariantCaps", "all-small-caps"],
+        ["lang", "en"],
+        ["font", "40px BSLato, BSNKo"]
+      ],
+      "text": "iI",
+      "chrome": {
+        "w": 22.519989013671875,
+        "caps": "normal",
+        "stretch": "normal",
+        "kern": "auto",
+        "ls": "0px",
+        "ws": "0px",
+        "tr": "auto",
+        "font": "40px BSLato, BSNKo",
+        "lang": "en"
+      }
+    },
+    {
+      "id": "40px BSLato, BSNKo | lang=en, caps=all-small-caps, lang=en again",
+      "ops": [
+        ["font", "40px BSLato, BSNKo"],
+        ["lang", "en"],
+        ["fontVariantCaps", "all-small-caps"],
+        ["lang", "en"]
+      ],
+      "text": "iI",
+      "chrome": {
+        "w": 17.191986083984375,
+        "caps": "all-small-caps",
+        "stretch": "normal",
+        "kern": "auto",
+        "ls": "0px",
+        "ws": "0px",
+        "tr": "auto",
+        "font": "40px BSLato, BSNKo",
+        "lang": "en"
+      }
+    },
+    {
+      "id": "40px BSLato, BSNKo | caps=all-small-caps, lang=inherit (same)",
+      "ops": [
+        ["font", "40px BSLato, BSNKo"],
+        ["fontVariantCaps", "all-small-caps"],
+        ["lang", "inherit"]
+      ],
+      "text": "iI",
+      "chrome": {
+        "w": 17.191986083984375,
+        "caps": "all-small-caps",
+        "stretch": "normal",
+        "kern": "auto",
+        "ls": "0px",
+        "ws": "0px",
+        "tr": "auto",
+        "font": "40px BSLato, BSNKo",
+        "lang": "inherit"
+      }
+    },
+    {
+      "id": "40px BSLato, BSNKo | caps=all-small-caps, lang=en, lang=tr",
+      "ops": [
+        ["font", "40px BSLato, BSNKo"],
+        ["fontVariantCaps", "all-small-caps"],
+        ["lang", "en"],
+        ["lang", "tr"]
+      ],
+      "text": "iI",
+      "chrome": {
+        "w": 22.519989013671875,
+        "caps": "normal",
+        "stretch": "normal",
+        "kern": "auto",
+        "ls": "0px",
+        "ws": "0px",
+        "tr": "auto",
+        "font": "40px BSLato, BSNKo",
+        "lang": "tr"
+      }
+    },
+    {
+      "id": "40px BSLato, BSNKo | caps=all-small-caps, lang=en, lang=inherit",
+      "ops": [
+        ["font", "40px BSLato, BSNKo"],
+        ["fontVariantCaps", "all-small-caps"],
+        ["lang", "en"],
+        ["lang", "inherit"]
+      ],
+      "text": "iI",
+      "chrome": {
+        "w": 22.519989013671875,
+        "caps": "normal",
+        "stretch": "normal",
+        "kern": "auto",
+        "ls": "0px",
+        "ws": "0px",
+        "tr": "auto",
+        "font": "40px BSLato, BSNKo",
+        "lang": "inherit"
+      }
+    },
+    {
+      "id": "40px BSLato | caps=normal",
+      "ops": [
+        ["font", "40px BSLato"],
+        ["fontVariantCaps", "normal"]
+      ],
+      "text": "iI",
+      "chrome": {
+        "w": 22.519989013671875,
+        "caps": "normal",
+        "stretch": "normal",
+        "kern": "auto",
+        "ls": "0px",
+        "ws": "0px",
+        "tr": "auto",
+        "font": "40px BSLato",
+        "lang": "inherit"
+      }
+    },
+    {
+      "id": "40px BSLato | caps=normal then lang=tr",
+      "ops": [
+        ["font", "40px BSLato"],
+        ["fontVariantCaps", "normal"],
+        ["lang", "tr"]
+      ],
+      "text": "iI",
+      "chrome": {
+        "w": 22.519989013671875,
+        "caps": "normal",
+        "stretch": "normal",
+        "kern": "auto",
+        "ls": "0px",
+        "ws": "0px",
+        "tr": "auto",
+        "font": "40px BSLato",
+        "lang": "tr"
+      }
+    },
+    {
+      "id": "40px BSLato | lang=tr then caps=normal",
+      "ops": [
+        ["font", "40px BSLato"],
+        ["lang", "tr"],
+        ["fontVariantCaps", "normal"]
+      ],
+      "text": "iI",
+      "chrome": {
+        "w": 22.519989013671875,
+        "caps": "normal",
+        "stretch": "normal",
+        "kern": "auto",
+        "ls": "0px",
+        "ws": "0px",
+        "tr": "auto",
+        "font": "40px BSLato",
+        "lang": "tr"
+      }
+    },
+    {
+      "id": "40px BSLato | caps=normal then lang=en",
+      "ops": [
+        ["font", "40px BSLato"],
+        ["fontVariantCaps", "normal"],
+        ["lang", "en"]
+      ],
+      "text": "iI",
+      "chrome": {
+        "w": 22.519989013671875,
+        "caps": "normal",
+        "stretch": "normal",
+        "kern": "auto",
+        "ls": "0px",
+        "ws": "0px",
+        "tr": "auto",
+        "font": "40px BSLato",
+        "lang": "en"
+      }
+    },
+    {
+      "id": "40px BSLato | lang=en then caps=normal",
+      "ops": [
+        ["font", "40px BSLato"],
+        ["lang", "en"],
+        ["fontVariantCaps", "normal"]
+      ],
+      "text": "iI",
+      "chrome": {
+        "w": 22.519989013671875,
+        "caps": "normal",
+        "stretch": "normal",
+        "kern": "auto",
+        "ls": "0px",
+        "ws": "0px",
+        "tr": "auto",
+        "font": "40px BSLato",
+        "lang": "en"
+      }
+    },
+    {
+      "id": "40px BSLato | caps=small-caps",
+      "ops": [
+        ["font", "40px BSLato"],
+        ["fontVariantCaps", "small-caps"]
+      ],
+      "text": "iI",
+      "chrome": {
+        "w": 20.875991821289062,
+        "caps": "small-caps",
+        "stretch": "normal",
+        "kern": "auto",
+        "ls": "0px",
+        "ws": "0px",
+        "tr": "auto",
+        "font": "small-caps 40px BSLato",
+        "lang": "inherit"
+      }
+    },
+    {
+      "id": "40px BSLato | caps=small-caps then lang=tr",
+      "ops": [
+        ["font", "40px BSLato"],
+        ["fontVariantCaps", "small-caps"],
+        ["lang", "tr"]
+      ],
+      "text": "iI",
+      "chrome": {
+        "w": 21.604217529296875,
+        "caps": "small-caps",
+        "stretch": "normal",
+        "kern": "auto",
+        "ls": "0px",
+        "ws": "0px",
+        "tr": "auto",
+        "font": "small-caps 40px BSLato",
+        "lang": "tr"
+      }
+    },
+    {
+      "id": "40px BSLato | lang=tr then caps=small-caps",
+      "ops": [
+        ["font", "40px BSLato"],
+        ["lang", "tr"],
+        ["fontVariantCaps", "small-caps"]
+      ],
+      "text": "iI",
+      "chrome": {
+        "w": 21.604217529296875,
+        "caps": "small-caps",
+        "stretch": "normal",
+        "kern": "auto",
+        "ls": "0px",
+        "ws": "0px",
+        "tr": "auto",
+        "font": "small-caps 40px BSLato",
+        "lang": "tr"
+      }
+    },
+    {
+      "id": "40px BSLato | caps=small-caps then lang=en",
+      "ops": [
+        ["font", "40px BSLato"],
+        ["fontVariantCaps", "small-caps"],
+        ["lang", "en"]
+      ],
+      "text": "iI",
+      "chrome": {
+        "w": 20.875991821289062,
+        "caps": "small-caps",
+        "stretch": "normal",
+        "kern": "auto",
+        "ls": "0px",
+        "ws": "0px",
+        "tr": "auto",
+        "font": "small-caps 40px BSLato",
+        "lang": "en"
+      }
+    },
+    {
+      "id": "40px BSLato | lang=en then caps=small-caps",
+      "ops": [
+        ["font", "40px BSLato"],
+        ["lang", "en"],
+        ["fontVariantCaps", "small-caps"]
+      ],
+      "text": "iI",
+      "chrome": {
+        "w": 20.875991821289062,
+        "caps": "small-caps",
+        "stretch": "normal",
+        "kern": "auto",
+        "ls": "0px",
+        "ws": "0px",
+        "tr": "auto",
+        "font": "small-caps 40px BSLato",
+        "lang": "en"
+      }
+    },
+    {
+      "id": "40px BSLato | caps=all-small-caps",
+      "ops": [
+        ["font", "40px BSLato"],
+        ["fontVariantCaps", "all-small-caps"]
+      ],
+      "text": "iI",
+      "chrome": {
+        "w": 17.191986083984375,
+        "caps": "all-small-caps",
+        "stretch": "normal",
+        "kern": "auto",
+        "ls": "0px",
+        "ws": "0px",
+        "tr": "auto",
+        "font": "40px BSLato",
+        "lang": "inherit"
+      }
+    },
+    {
+      "id": "40px BSLato | caps=all-small-caps then lang=tr",
+      "ops": [
+        ["font", "40px BSLato"],
+        ["fontVariantCaps", "all-small-caps"],
+        ["lang", "tr"]
+      ],
+      "text": "iI",
+      "chrome": {
+        "w": 22.519989013671875,
+        "caps": "normal",
+        "stretch": "normal",
+        "kern": "auto",
+        "ls": "0px",
+        "ws": "0px",
+        "tr": "auto",
+        "font": "40px BSLato",
+        "lang": "tr"
+      }
+    },
+    {
+      "id": "40px BSLato | lang=tr then caps=all-small-caps",
+      "ops": [
+        ["font", "40px BSLato"],
+        ["lang", "tr"],
+        ["fontVariantCaps", "all-small-caps"]
+      ],
+      "text": "iI",
+      "chrome": {
+        "w": 17.920211791992188,
+        "caps": "all-small-caps",
+        "stretch": "normal",
+        "kern": "auto",
+        "ls": "0px",
+        "ws": "0px",
+        "tr": "auto",
+        "font": "40px BSLato",
+        "lang": "tr"
+      }
+    },
+    {
+      "id": "40px BSLato | caps=all-small-caps then lang=en",
+      "ops": [
+        ["font", "40px BSLato"],
+        ["fontVariantCaps", "all-small-caps"],
+        ["lang", "en"]
+      ],
+      "text": "iI",
+      "chrome": {
+        "w": 22.519989013671875,
+        "caps": "normal",
+        "stretch": "normal",
+        "kern": "auto",
+        "ls": "0px",
+        "ws": "0px",
+        "tr": "auto",
+        "font": "40px BSLato",
+        "lang": "en"
+      }
+    },
+    {
+      "id": "40px BSLato | lang=en then caps=all-small-caps",
+      "ops": [
+        ["font", "40px BSLato"],
+        ["lang", "en"],
+        ["fontVariantCaps", "all-small-caps"]
+      ],
+      "text": "iI",
+      "chrome": {
+        "w": 17.191986083984375,
+        "caps": "all-small-caps",
+        "stretch": "normal",
+        "kern": "auto",
+        "ls": "0px",
+        "ws": "0px",
+        "tr": "auto",
+        "font": "40px BSLato",
+        "lang": "en"
+      }
+    },
+    {
+      "id": "40px BSLato | caps=petite-caps",
+      "ops": [
+        ["font", "40px BSLato"],
+        ["fontVariantCaps", "petite-caps"]
+      ],
+      "text": "iI",
+      "chrome": {
+        "w": 20.875991821289062,
+        "caps": "petite-caps",
+        "stretch": "normal",
+        "kern": "auto",
+        "ls": "0px",
+        "ws": "0px",
+        "tr": "auto",
+        "font": "40px BSLato",
+        "lang": "inherit"
+      }
+    },
+    {
+      "id": "40px BSLato | caps=petite-caps then lang=tr",
+      "ops": [
+        ["font", "40px BSLato"],
+        ["fontVariantCaps", "petite-caps"],
+        ["lang", "tr"]
+      ],
+      "text": "iI",
+      "chrome": {
+        "w": 22.519989013671875,
+        "caps": "normal",
+        "stretch": "normal",
+        "kern": "auto",
+        "ls": "0px",
+        "ws": "0px",
+        "tr": "auto",
+        "font": "40px BSLato",
+        "lang": "tr"
+      }
+    },
+    {
+      "id": "40px BSLato | lang=tr then caps=petite-caps",
+      "ops": [
+        ["font", "40px BSLato"],
+        ["lang", "tr"],
+        ["fontVariantCaps", "petite-caps"]
+      ],
+      "text": "iI",
+      "chrome": {
+        "w": 21.604217529296875,
+        "caps": "petite-caps",
+        "stretch": "normal",
+        "kern": "auto",
+        "ls": "0px",
+        "ws": "0px",
+        "tr": "auto",
+        "font": "40px BSLato",
+        "lang": "tr"
+      }
+    },
+    {
+      "id": "40px BSLato | caps=petite-caps then lang=en",
+      "ops": [
+        ["font", "40px BSLato"],
+        ["fontVariantCaps", "petite-caps"],
+        ["lang", "en"]
+      ],
+      "text": "iI",
+      "chrome": {
+        "w": 22.519989013671875,
+        "caps": "normal",
+        "stretch": "normal",
+        "kern": "auto",
+        "ls": "0px",
+        "ws": "0px",
+        "tr": "auto",
+        "font": "40px BSLato",
+        "lang": "en"
+      }
+    },
+    {
+      "id": "40px BSLato | lang=en then caps=petite-caps",
+      "ops": [
+        ["font", "40px BSLato"],
+        ["lang", "en"],
+        ["fontVariantCaps", "petite-caps"]
+      ],
+      "text": "iI",
+      "chrome": {
+        "w": 20.875991821289062,
+        "caps": "petite-caps",
+        "stretch": "normal",
+        "kern": "auto",
+        "ls": "0px",
+        "ws": "0px",
+        "tr": "auto",
+        "font": "40px BSLato",
+        "lang": "en"
+      }
+    },
+    {
+      "id": "40px BSLato | caps=all-petite-caps",
+      "ops": [
+        ["font", "40px BSLato"],
+        ["fontVariantCaps", "all-petite-caps"]
+      ],
+      "text": "iI",
+      "chrome": {
+        "w": 17.191986083984375,
+        "caps": "all-petite-caps",
+        "stretch": "normal",
+        "kern": "auto",
+        "ls": "0px",
+        "ws": "0px",
+        "tr": "auto",
+        "font": "40px BSLato",
+        "lang": "inherit"
+      }
+    },
+    {
+      "id": "40px BSLato | caps=all-petite-caps then lang=tr",
+      "ops": [
+        ["font", "40px BSLato"],
+        ["fontVariantCaps", "all-petite-caps"],
+        ["lang", "tr"]
+      ],
+      "text": "iI",
+      "chrome": {
+        "w": 22.519989013671875,
+        "caps": "normal",
+        "stretch": "normal",
+        "kern": "auto",
+        "ls": "0px",
+        "ws": "0px",
+        "tr": "auto",
+        "font": "40px BSLato",
+        "lang": "tr"
+      }
+    },
+    {
+      "id": "40px BSLato | lang=tr then caps=all-petite-caps",
+      "ops": [
+        ["font", "40px BSLato"],
+        ["lang", "tr"],
+        ["fontVariantCaps", "all-petite-caps"]
+      ],
+      "text": "iI",
+      "chrome": {
+        "w": 17.920211791992188,
+        "caps": "all-petite-caps",
+        "stretch": "normal",
+        "kern": "auto",
+        "ls": "0px",
+        "ws": "0px",
+        "tr": "auto",
+        "font": "40px BSLato",
+        "lang": "tr"
+      }
+    },
+    {
+      "id": "40px BSLato | caps=all-petite-caps then lang=en",
+      "ops": [
+        ["font", "40px BSLato"],
+        ["fontVariantCaps", "all-petite-caps"],
+        ["lang", "en"]
+      ],
+      "text": "iI",
+      "chrome": {
+        "w": 22.519989013671875,
+        "caps": "normal",
+        "stretch": "normal",
+        "kern": "auto",
+        "ls": "0px",
+        "ws": "0px",
+        "tr": "auto",
+        "font": "40px BSLato",
+        "lang": "en"
+      }
+    },
+    {
+      "id": "40px BSLato | lang=en then caps=all-petite-caps",
+      "ops": [
+        ["font", "40px BSLato"],
+        ["lang", "en"],
+        ["fontVariantCaps", "all-petite-caps"]
+      ],
+      "text": "iI",
+      "chrome": {
+        "w": 17.191986083984375,
+        "caps": "all-petite-caps",
+        "stretch": "normal",
+        "kern": "auto",
+        "ls": "0px",
+        "ws": "0px",
+        "tr": "auto",
+        "font": "40px BSLato",
+        "lang": "en"
+      }
+    },
+    {
+      "id": "40px BSLato | caps=unicase",
+      "ops": [
+        ["font", "40px BSLato"],
+        ["fontVariantCaps", "unicase"]
+      ],
+      "text": "iI",
+      "chrome": {
+        "w": 18.835983276367188,
+        "caps": "unicase",
+        "stretch": "normal",
+        "kern": "auto",
+        "ls": "0px",
+        "ws": "0px",
+        "tr": "auto",
+        "font": "40px BSLato",
+        "lang": "inherit"
+      }
+    },
+    {
+      "id": "40px BSLato | caps=unicase then lang=tr",
+      "ops": [
+        ["font", "40px BSLato"],
+        ["fontVariantCaps", "unicase"],
+        ["lang", "tr"]
+      ],
+      "text": "iI",
+      "chrome": {
+        "w": 22.519989013671875,
+        "caps": "normal",
+        "stretch": "normal",
+        "kern": "auto",
+        "ls": "0px",
+        "ws": "0px",
+        "tr": "auto",
+        "font": "40px BSLato",
+        "lang": "tr"
+      }
+    },
+    {
+      "id": "40px BSLato | lang=tr then caps=unicase",
+      "ops": [
+        ["font", "40px BSLato"],
+        ["lang", "tr"],
+        ["fontVariantCaps", "unicase"]
+      ],
+      "text": "iI",
+      "chrome": {
+        "w": 18.835983276367188,
+        "caps": "unicase",
+        "stretch": "normal",
+        "kern": "auto",
+        "ls": "0px",
+        "ws": "0px",
+        "tr": "auto",
+        "font": "40px BSLato",
+        "lang": "tr"
+      }
+    },
+    {
+      "id": "40px BSLato | caps=unicase then lang=en",
+      "ops": [
+        ["font", "40px BSLato"],
+        ["fontVariantCaps", "unicase"],
+        ["lang", "en"]
+      ],
+      "text": "iI",
+      "chrome": {
+        "w": 22.519989013671875,
+        "caps": "normal",
+        "stretch": "normal",
+        "kern": "auto",
+        "ls": "0px",
+        "ws": "0px",
+        "tr": "auto",
+        "font": "40px BSLato",
+        "lang": "en"
+      }
+    },
+    {
+      "id": "40px BSLato | lang=en then caps=unicase",
+      "ops": [
+        ["font", "40px BSLato"],
+        ["lang", "en"],
+        ["fontVariantCaps", "unicase"]
+      ],
+      "text": "iI",
+      "chrome": {
+        "w": 18.835983276367188,
+        "caps": "unicase",
+        "stretch": "normal",
+        "kern": "auto",
+        "ls": "0px",
+        "ws": "0px",
+        "tr": "auto",
+        "font": "40px BSLato",
+        "lang": "en"
+      }
+    },
+    {
+      "id": "40px BSLato | caps=titling-caps",
+      "ops": [
+        ["font", "40px BSLato"],
+        ["fontVariantCaps", "titling-caps"]
+      ],
+      "text": "iI",
+      "chrome": {
+        "w": 22.519989013671875,
+        "caps": "titling-caps",
+        "stretch": "normal",
+        "kern": "auto",
+        "ls": "0px",
+        "ws": "0px",
+        "tr": "auto",
+        "font": "40px BSLato",
+        "lang": "inherit"
+      }
+    },
+    {
+      "id": "40px BSLato | caps=titling-caps then lang=tr",
+      "ops": [
+        ["font", "40px BSLato"],
+        ["fontVariantCaps", "titling-caps"],
+        ["lang", "tr"]
+      ],
+      "text": "iI",
+      "chrome": {
+        "w": 22.519989013671875,
+        "caps": "normal",
+        "stretch": "normal",
+        "kern": "auto",
+        "ls": "0px",
+        "ws": "0px",
+        "tr": "auto",
+        "font": "40px BSLato",
+        "lang": "tr"
+      }
+    },
+    {
+      "id": "40px BSLato | lang=tr then caps=titling-caps",
+      "ops": [
+        ["font", "40px BSLato"],
+        ["lang", "tr"],
+        ["fontVariantCaps", "titling-caps"]
+      ],
+      "text": "iI",
+      "chrome": {
+        "w": 22.519989013671875,
+        "caps": "titling-caps",
+        "stretch": "normal",
+        "kern": "auto",
+        "ls": "0px",
+        "ws": "0px",
+        "tr": "auto",
+        "font": "40px BSLato",
+        "lang": "tr"
+      }
+    },
+    {
+      "id": "40px BSLato | caps=titling-caps then lang=en",
+      "ops": [
+        ["font", "40px BSLato"],
+        ["fontVariantCaps", "titling-caps"],
+        ["lang", "en"]
+      ],
+      "text": "iI",
+      "chrome": {
+        "w": 22.519989013671875,
+        "caps": "normal",
+        "stretch": "normal",
+        "kern": "auto",
+        "ls": "0px",
+        "ws": "0px",
+        "tr": "auto",
+        "font": "40px BSLato",
+        "lang": "en"
+      }
+    },
+    {
+      "id": "40px BSLato | lang=en then caps=titling-caps",
+      "ops": [
+        ["font", "40px BSLato"],
+        ["lang", "en"],
+        ["fontVariantCaps", "titling-caps"]
+      ],
+      "text": "iI",
+      "chrome": {
+        "w": 22.519989013671875,
+        "caps": "titling-caps",
+        "stretch": "normal",
+        "kern": "auto",
+        "ls": "0px",
+        "ws": "0px",
+        "tr": "auto",
+        "font": "40px BSLato",
+        "lang": "en"
+      }
+    },
+    {
+      "id": "40px BSLato | lang=tr only",
+      "ops": [
+        ["font", "40px BSLato"],
+        ["lang", "tr"]
+      ],
+      "text": "iI",
+      "chrome": {
+        "w": 22.519989013671875,
+        "caps": "normal",
+        "stretch": "normal",
+        "kern": "auto",
+        "ls": "0px",
+        "ws": "0px",
+        "tr": "auto",
+        "font": "40px BSLato",
+        "lang": "tr"
+      }
+    },
+    {
+      "id": "40px BSLato | lang=en only",
+      "ops": [
+        ["font", "40px BSLato"],
+        ["lang", "en"]
+      ],
+      "text": "iI",
+      "chrome": {
+        "w": 22.519989013671875,
+        "caps": "normal",
+        "stretch": "normal",
+        "kern": "auto",
+        "ls": "0px",
+        "ws": "0px",
+        "tr": "auto",
+        "font": "40px BSLato",
+        "lang": "en"
+      }
+    },
+    {
+      "id": "40px BSLato | caps=all-small-caps, lang=en, font re-set",
+      "ops": [
+        ["font", "40px BSLato"],
+        ["fontVariantCaps", "all-small-caps"],
+        ["lang", "en"],
+        ["font", "40px BSLato"]
+      ],
+      "text": "iI",
+      "chrome": {
+        "w": 22.519989013671875,
+        "caps": "normal",
+        "stretch": "normal",
+        "kern": "auto",
+        "ls": "0px",
+        "ws": "0px",
+        "tr": "auto",
+        "font": "40px BSLato",
+        "lang": "en"
+      }
+    },
+    {
+      "id": "40px BSLato | lang=en, caps=all-small-caps, lang=en again",
+      "ops": [
+        ["font", "40px BSLato"],
+        ["lang", "en"],
+        ["fontVariantCaps", "all-small-caps"],
+        ["lang", "en"]
+      ],
+      "text": "iI",
+      "chrome": {
+        "w": 17.191986083984375,
+        "caps": "all-small-caps",
+        "stretch": "normal",
+        "kern": "auto",
+        "ls": "0px",
+        "ws": "0px",
+        "tr": "auto",
+        "font": "40px BSLato",
+        "lang": "en"
+      }
+    },
+    {
+      "id": "40px BSLato | caps=all-small-caps, lang=inherit (same)",
+      "ops": [
+        ["font", "40px BSLato"],
+        ["fontVariantCaps", "all-small-caps"],
+        ["lang", "inherit"]
+      ],
+      "text": "iI",
+      "chrome": {
+        "w": 17.191986083984375,
+        "caps": "all-small-caps",
+        "stretch": "normal",
+        "kern": "auto",
+        "ls": "0px",
+        "ws": "0px",
+        "tr": "auto",
+        "font": "40px BSLato",
+        "lang": "inherit"
+      }
+    },
+    {
+      "id": "40px BSLato | caps=all-small-caps, lang=en, lang=tr",
+      "ops": [
+        ["font", "40px BSLato"],
+        ["fontVariantCaps", "all-small-caps"],
+        ["lang", "en"],
+        ["lang", "tr"]
+      ],
+      "text": "iI",
+      "chrome": {
+        "w": 22.519989013671875,
+        "caps": "normal",
+        "stretch": "normal",
+        "kern": "auto",
+        "ls": "0px",
+        "ws": "0px",
+        "tr": "auto",
+        "font": "40px BSLato",
+        "lang": "tr"
+      }
+    },
+    {
+      "id": "40px BSLato | caps=all-small-caps, lang=en, lang=inherit",
+      "ops": [
+        ["font", "40px BSLato"],
+        ["fontVariantCaps", "all-small-caps"],
+        ["lang", "en"],
+        ["lang", "inherit"]
+      ],
+      "text": "iI",
+      "chrome": {
+        "w": 22.519989013671875,
+        "caps": "normal",
+        "stretch": "normal",
+        "kern": "auto",
+        "ls": "0px",
+        "ws": "0px",
+        "tr": "auto",
+        "font": "40px BSLato",
+        "lang": "inherit"
+      }
+    },
+    {
+      "id": "40px BSSerif | caps=normal",
+      "ops": [
+        ["font", "40px BSSerif"],
+        ["fontVariantCaps", "normal"]
+      ],
+      "text": "iI",
+      "chrome": {
+        "w": 26.759994506835938,
+        "caps": "normal",
+        "stretch": "normal",
+        "kern": "auto",
+        "ls": "0px",
+        "ws": "0px",
+        "tr": "auto",
+        "font": "40px BSSerif",
+        "lang": "inherit"
+      }
+    },
+    {
+      "id": "40px BSSerif | caps=normal then lang=tr",
+      "ops": [
+        ["font", "40px BSSerif"],
+        ["fontVariantCaps", "normal"],
+        ["lang", "tr"]
+      ],
+      "text": "iI",
+      "chrome": {
+        "w": 26.759994506835938,
+        "caps": "normal",
+        "stretch": "normal",
+        "kern": "auto",
+        "ls": "0px",
+        "ws": "0px",
+        "tr": "auto",
+        "font": "40px BSSerif",
+        "lang": "tr"
+      }
+    },
+    {
+      "id": "40px BSSerif | lang=tr then caps=normal",
+      "ops": [
+        ["font", "40px BSSerif"],
+        ["lang", "tr"],
+        ["fontVariantCaps", "normal"]
+      ],
+      "text": "iI",
+      "chrome": {
+        "w": 26.759994506835938,
+        "caps": "normal",
+        "stretch": "normal",
+        "kern": "auto",
+        "ls": "0px",
+        "ws": "0px",
+        "tr": "auto",
+        "font": "40px BSSerif",
+        "lang": "tr"
+      }
+    },
+    {
+      "id": "40px BSSerif | caps=normal then lang=en",
+      "ops": [
+        ["font", "40px BSSerif"],
+        ["fontVariantCaps", "normal"],
+        ["lang", "en"]
+      ],
+      "text": "iI",
+      "chrome": {
+        "w": 26.759994506835938,
+        "caps": "normal",
+        "stretch": "normal",
+        "kern": "auto",
+        "ls": "0px",
+        "ws": "0px",
+        "tr": "auto",
+        "font": "40px BSSerif",
+        "lang": "en"
+      }
+    },
+    {
+      "id": "40px BSSerif | lang=en then caps=normal",
+      "ops": [
+        ["font", "40px BSSerif"],
+        ["lang", "en"],
+        ["fontVariantCaps", "normal"]
+      ],
+      "text": "iI",
+      "chrome": {
+        "w": 26.759994506835938,
+        "caps": "normal",
+        "stretch": "normal",
+        "kern": "auto",
+        "ls": "0px",
+        "ws": "0px",
+        "tr": "auto",
+        "font": "40px BSSerif",
+        "lang": "en"
+      }
+    },
+    {
+      "id": "40px BSSerif | caps=small-caps",
+      "ops": [
+        ["font", "40px BSSerif"],
+        ["fontVariantCaps", "small-caps"]
+      ],
+      "text": "iI",
+      "chrome": {
+        "w": 29.3599853515625,
+        "caps": "small-caps",
+        "stretch": "normal",
+        "kern": "auto",
+        "ls": "0px",
+        "ws": "0px",
+        "tr": "auto",
+        "font": "small-caps 40px BSSerif",
+        "lang": "inherit"
+      }
+    },
+    {
+      "id": "40px BSSerif | caps=small-caps then lang=tr",
+      "ops": [
+        ["font", "40px BSSerif"],
+        ["fontVariantCaps", "small-caps"],
+        ["lang", "tr"]
+      ],
+      "text": "iI",
+      "chrome": {
+        "w": 29.3599853515625,
+        "caps": "small-caps",
+        "stretch": "normal",
+        "kern": "auto",
+        "ls": "0px",
+        "ws": "0px",
+        "tr": "auto",
+        "font": "small-caps 40px BSSerif",
+        "lang": "tr"
+      }
+    },
+    {
+      "id": "40px BSSerif | lang=tr then caps=small-caps",
+      "ops": [
+        ["font", "40px BSSerif"],
+        ["lang", "tr"],
+        ["fontVariantCaps", "small-caps"]
+      ],
+      "text": "iI",
+      "chrome": {
+        "w": 29.3599853515625,
+        "caps": "small-caps",
+        "stretch": "normal",
+        "kern": "auto",
+        "ls": "0px",
+        "ws": "0px",
+        "tr": "auto",
+        "font": "small-caps 40px BSSerif",
+        "lang": "tr"
+      }
+    },
+    {
+      "id": "40px BSSerif | caps=small-caps then lang=en",
+      "ops": [
+        ["font", "40px BSSerif"],
+        ["fontVariantCaps", "small-caps"],
+        ["lang", "en"]
+      ],
+      "text": "iI",
+      "chrome": {
+        "w": 29.3599853515625,
+        "caps": "small-caps",
+        "stretch": "normal",
+        "kern": "auto",
+        "ls": "0px",
+        "ws": "0px",
+        "tr": "auto",
+        "font": "small-caps 40px BSSerif",
+        "lang": "en"
+      }
+    },
+    {
+      "id": "40px BSSerif | lang=en then caps=small-caps",
+      "ops": [
+        ["font", "40px BSSerif"],
+        ["lang", "en"],
+        ["fontVariantCaps", "small-caps"]
+      ],
+      "text": "iI",
+      "chrome": {
+        "w": 29.3599853515625,
+        "caps": "small-caps",
+        "stretch": "normal",
+        "kern": "auto",
+        "ls": "0px",
+        "ws": "0px",
+        "tr": "auto",
+        "font": "small-caps 40px BSSerif",
+        "lang": "en"
+      }
+    },
+    {
+      "id": "40px BSSerif | caps=all-small-caps",
+      "ops": [
+        ["font", "40px BSSerif"],
+        ["fontVariantCaps", "all-small-caps"]
+      ],
+      "text": "iI",
+      "chrome": {
+        "w": 29.03997802734375,
+        "caps": "all-small-caps",
+        "stretch": "normal",
+        "kern": "auto",
+        "ls": "0px",
+        "ws": "0px",
+        "tr": "auto",
+        "font": "40px BSSerif",
+        "lang": "inherit"
+      }
+    },
+    {
+      "id": "40px BSSerif | caps=all-small-caps then lang=tr",
+      "ops": [
+        ["font", "40px BSSerif"],
+        ["fontVariantCaps", "all-small-caps"],
+        ["lang", "tr"]
+      ],
+      "text": "iI",
+      "chrome": {
+        "w": 26.759994506835938,
+        "caps": "normal",
+        "stretch": "normal",
+        "kern": "auto",
+        "ls": "0px",
+        "ws": "0px",
+        "tr": "auto",
+        "font": "40px BSSerif",
+        "lang": "tr"
+      }
+    },
+    {
+      "id": "40px BSSerif | lang=tr then caps=all-small-caps",
+      "ops": [
+        ["font", "40px BSSerif"],
+        ["lang", "tr"],
+        ["fontVariantCaps", "all-small-caps"]
+      ],
+      "text": "iI",
+      "chrome": {
+        "w": 29.03997802734375,
+        "caps": "all-small-caps",
+        "stretch": "normal",
+        "kern": "auto",
+        "ls": "0px",
+        "ws": "0px",
+        "tr": "auto",
+        "font": "40px BSSerif",
+        "lang": "tr"
+      }
+    },
+    {
+      "id": "40px BSSerif | caps=all-small-caps then lang=en",
+      "ops": [
+        ["font", "40px BSSerif"],
+        ["fontVariantCaps", "all-small-caps"],
+        ["lang", "en"]
+      ],
+      "text": "iI",
+      "chrome": {
+        "w": 26.759994506835938,
+        "caps": "normal",
+        "stretch": "normal",
+        "kern": "auto",
+        "ls": "0px",
+        "ws": "0px",
+        "tr": "auto",
+        "font": "40px BSSerif",
+        "lang": "en"
+      }
+    },
+    {
+      "id": "40px BSSerif | lang=en then caps=all-small-caps",
+      "ops": [
+        ["font", "40px BSSerif"],
+        ["lang", "en"],
+        ["fontVariantCaps", "all-small-caps"]
+      ],
+      "text": "iI",
+      "chrome": {
+        "w": 29.03997802734375,
+        "caps": "all-small-caps",
+        "stretch": "normal",
+        "kern": "auto",
+        "ls": "0px",
+        "ws": "0px",
+        "tr": "auto",
+        "font": "40px BSSerif",
+        "lang": "en"
+      }
+    },
+    {
+      "id": "40px BSSerif | caps=petite-caps",
+      "ops": [
+        ["font", "40px BSSerif"],
+        ["fontVariantCaps", "petite-caps"]
+      ],
+      "text": "iI",
+      "chrome": {
+        "w": 29.3599853515625,
+        "caps": "petite-caps",
+        "stretch": "normal",
+        "kern": "auto",
+        "ls": "0px",
+        "ws": "0px",
+        "tr": "auto",
+        "font": "40px BSSerif",
+        "lang": "inherit"
+      }
+    },
+    {
+      "id": "40px BSSerif | caps=petite-caps then lang=tr",
+      "ops": [
+        ["font", "40px BSSerif"],
+        ["fontVariantCaps", "petite-caps"],
+        ["lang", "tr"]
+      ],
+      "text": "iI",
+      "chrome": {
+        "w": 26.759994506835938,
+        "caps": "normal",
+        "stretch": "normal",
+        "kern": "auto",
+        "ls": "0px",
+        "ws": "0px",
+        "tr": "auto",
+        "font": "40px BSSerif",
+        "lang": "tr"
+      }
+    },
+    {
+      "id": "40px BSSerif | lang=tr then caps=petite-caps",
+      "ops": [
+        ["font", "40px BSSerif"],
+        ["lang", "tr"],
+        ["fontVariantCaps", "petite-caps"]
+      ],
+      "text": "iI",
+      "chrome": {
+        "w": 29.3599853515625,
+        "caps": "petite-caps",
+        "stretch": "normal",
+        "kern": "auto",
+        "ls": "0px",
+        "ws": "0px",
+        "tr": "auto",
+        "font": "40px BSSerif",
+        "lang": "tr"
+      }
+    },
+    {
+      "id": "40px BSSerif | caps=petite-caps then lang=en",
+      "ops": [
+        ["font", "40px BSSerif"],
+        ["fontVariantCaps", "petite-caps"],
+        ["lang", "en"]
+      ],
+      "text": "iI",
+      "chrome": {
+        "w": 26.759994506835938,
+        "caps": "normal",
+        "stretch": "normal",
+        "kern": "auto",
+        "ls": "0px",
+        "ws": "0px",
+        "tr": "auto",
+        "font": "40px BSSerif",
+        "lang": "en"
+      }
+    },
+    {
+      "id": "40px BSSerif | lang=en then caps=petite-caps",
+      "ops": [
+        ["font", "40px BSSerif"],
+        ["lang", "en"],
+        ["fontVariantCaps", "petite-caps"]
+      ],
+      "text": "iI",
+      "chrome": {
+        "w": 29.3599853515625,
+        "caps": "petite-caps",
+        "stretch": "normal",
+        "kern": "auto",
+        "ls": "0px",
+        "ws": "0px",
+        "tr": "auto",
+        "font": "40px BSSerif",
+        "lang": "en"
+      }
+    },
+    {
+      "id": "40px BSSerif | caps=all-petite-caps",
+      "ops": [
+        ["font", "40px BSSerif"],
+        ["fontVariantCaps", "all-petite-caps"]
+      ],
+      "text": "iI",
+      "chrome": {
+        "w": 29.03997802734375,
+        "caps": "all-petite-caps",
+        "stretch": "normal",
+        "kern": "auto",
+        "ls": "0px",
+        "ws": "0px",
+        "tr": "auto",
+        "font": "40px BSSerif",
+        "lang": "inherit"
+      }
+    },
+    {
+      "id": "40px BSSerif | caps=all-petite-caps then lang=tr",
+      "ops": [
+        ["font", "40px BSSerif"],
+        ["fontVariantCaps", "all-petite-caps"],
+        ["lang", "tr"]
+      ],
+      "text": "iI",
+      "chrome": {
+        "w": 26.759994506835938,
+        "caps": "normal",
+        "stretch": "normal",
+        "kern": "auto",
+        "ls": "0px",
+        "ws": "0px",
+        "tr": "auto",
+        "font": "40px BSSerif",
+        "lang": "tr"
+      }
+    },
+    {
+      "id": "40px BSSerif | lang=tr then caps=all-petite-caps",
+      "ops": [
+        ["font", "40px BSSerif"],
+        ["lang", "tr"],
+        ["fontVariantCaps", "all-petite-caps"]
+      ],
+      "text": "iI",
+      "chrome": {
+        "w": 29.03997802734375,
+        "caps": "all-petite-caps",
+        "stretch": "normal",
+        "kern": "auto",
+        "ls": "0px",
+        "ws": "0px",
+        "tr": "auto",
+        "font": "40px BSSerif",
+        "lang": "tr"
+      }
+    },
+    {
+      "id": "40px BSSerif | caps=all-petite-caps then lang=en",
+      "ops": [
+        ["font", "40px BSSerif"],
+        ["fontVariantCaps", "all-petite-caps"],
+        ["lang", "en"]
+      ],
+      "text": "iI",
+      "chrome": {
+        "w": 26.759994506835938,
+        "caps": "normal",
+        "stretch": "normal",
+        "kern": "auto",
+        "ls": "0px",
+        "ws": "0px",
+        "tr": "auto",
+        "font": "40px BSSerif",
+        "lang": "en"
+      }
+    },
+    {
+      "id": "40px BSSerif | lang=en then caps=all-petite-caps",
+      "ops": [
+        ["font", "40px BSSerif"],
+        ["lang", "en"],
+        ["fontVariantCaps", "all-petite-caps"]
+      ],
+      "text": "iI",
+      "chrome": {
+        "w": 29.03997802734375,
+        "caps": "all-petite-caps",
+        "stretch": "normal",
+        "kern": "auto",
+        "ls": "0px",
+        "ws": "0px",
+        "tr": "auto",
+        "font": "40px BSSerif",
+        "lang": "en"
+      }
+    },
+    {
+      "id": "40px BSSerif | caps=unicase",
+      "ops": [
+        ["font", "40px BSSerif"],
+        ["fontVariantCaps", "unicase"]
+      ],
+      "text": "iI",
+      "chrome": {
+        "w": 26.439987182617188,
+        "caps": "unicase",
+        "stretch": "normal",
+        "kern": "auto",
+        "ls": "0px",
+        "ws": "0px",
+        "tr": "auto",
+        "font": "40px BSSerif",
+        "lang": "inherit"
+      }
+    },
+    {
+      "id": "40px BSSerif | caps=unicase then lang=tr",
+      "ops": [
+        ["font", "40px BSSerif"],
+        ["fontVariantCaps", "unicase"],
+        ["lang", "tr"]
+      ],
+      "text": "iI",
+      "chrome": {
+        "w": 26.759994506835938,
+        "caps": "normal",
+        "stretch": "normal",
+        "kern": "auto",
+        "ls": "0px",
+        "ws": "0px",
+        "tr": "auto",
+        "font": "40px BSSerif",
+        "lang": "tr"
+      }
+    },
+    {
+      "id": "40px BSSerif | lang=tr then caps=unicase",
+      "ops": [
+        ["font", "40px BSSerif"],
+        ["lang", "tr"],
+        ["fontVariantCaps", "unicase"]
+      ],
+      "text": "iI",
+      "chrome": {
+        "w": 26.439987182617188,
+        "caps": "unicase",
+        "stretch": "normal",
+        "kern": "auto",
+        "ls": "0px",
+        "ws": "0px",
+        "tr": "auto",
+        "font": "40px BSSerif",
+        "lang": "tr"
+      }
+    },
+    {
+      "id": "40px BSSerif | caps=unicase then lang=en",
+      "ops": [
+        ["font", "40px BSSerif"],
+        ["fontVariantCaps", "unicase"],
+        ["lang", "en"]
+      ],
+      "text": "iI",
+      "chrome": {
+        "w": 26.759994506835938,
+        "caps": "normal",
+        "stretch": "normal",
+        "kern": "auto",
+        "ls": "0px",
+        "ws": "0px",
+        "tr": "auto",
+        "font": "40px BSSerif",
+        "lang": "en"
+      }
+    },
+    {
+      "id": "40px BSSerif | lang=en then caps=unicase",
+      "ops": [
+        ["font", "40px BSSerif"],
+        ["lang", "en"],
+        ["fontVariantCaps", "unicase"]
+      ],
+      "text": "iI",
+      "chrome": {
+        "w": 26.439987182617188,
+        "caps": "unicase",
+        "stretch": "normal",
+        "kern": "auto",
+        "ls": "0px",
+        "ws": "0px",
+        "tr": "auto",
+        "font": "40px BSSerif",
+        "lang": "en"
+      }
+    },
+    {
+      "id": "40px BSSerif | caps=titling-caps",
+      "ops": [
+        ["font", "40px BSSerif"],
+        ["fontVariantCaps", "titling-caps"]
+      ],
+      "text": "iI",
+      "chrome": {
+        "w": 26.759994506835938,
+        "caps": "titling-caps",
+        "stretch": "normal",
+        "kern": "auto",
+        "ls": "0px",
+        "ws": "0px",
+        "tr": "auto",
+        "font": "40px BSSerif",
+        "lang": "inherit"
+      }
+    },
+    {
+      "id": "40px BSSerif | caps=titling-caps then lang=tr",
+      "ops": [
+        ["font", "40px BSSerif"],
+        ["fontVariantCaps", "titling-caps"],
+        ["lang", "tr"]
+      ],
+      "text": "iI",
+      "chrome": {
+        "w": 26.759994506835938,
+        "caps": "normal",
+        "stretch": "normal",
+        "kern": "auto",
+        "ls": "0px",
+        "ws": "0px",
+        "tr": "auto",
+        "font": "40px BSSerif",
+        "lang": "tr"
+      }
+    },
+    {
+      "id": "40px BSSerif | lang=tr then caps=titling-caps",
+      "ops": [
+        ["font", "40px BSSerif"],
+        ["lang", "tr"],
+        ["fontVariantCaps", "titling-caps"]
+      ],
+      "text": "iI",
+      "chrome": {
+        "w": 26.759994506835938,
+        "caps": "titling-caps",
+        "stretch": "normal",
+        "kern": "auto",
+        "ls": "0px",
+        "ws": "0px",
+        "tr": "auto",
+        "font": "40px BSSerif",
+        "lang": "tr"
+      }
+    },
+    {
+      "id": "40px BSSerif | caps=titling-caps then lang=en",
+      "ops": [
+        ["font", "40px BSSerif"],
+        ["fontVariantCaps", "titling-caps"],
+        ["lang", "en"]
+      ],
+      "text": "iI",
+      "chrome": {
+        "w": 26.759994506835938,
+        "caps": "normal",
+        "stretch": "normal",
+        "kern": "auto",
+        "ls": "0px",
+        "ws": "0px",
+        "tr": "auto",
+        "font": "40px BSSerif",
+        "lang": "en"
+      }
+    },
+    {
+      "id": "40px BSSerif | lang=en then caps=titling-caps",
+      "ops": [
+        ["font", "40px BSSerif"],
+        ["lang", "en"],
+        ["fontVariantCaps", "titling-caps"]
+      ],
+      "text": "iI",
+      "chrome": {
+        "w": 26.759994506835938,
+        "caps": "titling-caps",
+        "stretch": "normal",
+        "kern": "auto",
+        "ls": "0px",
+        "ws": "0px",
+        "tr": "auto",
+        "font": "40px BSSerif",
+        "lang": "en"
+      }
+    },
+    {
+      "id": "40px BSSerif | lang=tr only",
+      "ops": [
+        ["font", "40px BSSerif"],
+        ["lang", "tr"]
+      ],
+      "text": "iI",
+      "chrome": {
+        "w": 26.759994506835938,
+        "caps": "normal",
+        "stretch": "normal",
+        "kern": "auto",
+        "ls": "0px",
+        "ws": "0px",
+        "tr": "auto",
+        "font": "40px BSSerif",
+        "lang": "tr"
+      }
+    },
+    {
+      "id": "40px BSSerif | lang=en only",
+      "ops": [
+        ["font", "40px BSSerif"],
+        ["lang", "en"]
+      ],
+      "text": "iI",
+      "chrome": {
+        "w": 26.759994506835938,
+        "caps": "normal",
+        "stretch": "normal",
+        "kern": "auto",
+        "ls": "0px",
+        "ws": "0px",
+        "tr": "auto",
+        "font": "40px BSSerif",
+        "lang": "en"
+      }
+    },
+    {
+      "id": "40px BSSerif | caps=all-small-caps, lang=en, font re-set",
+      "ops": [
+        ["font", "40px BSSerif"],
+        ["fontVariantCaps", "all-small-caps"],
+        ["lang", "en"],
+        ["font", "40px BSSerif"]
+      ],
+      "text": "iI",
+      "chrome": {
+        "w": 26.759994506835938,
+        "caps": "normal",
+        "stretch": "normal",
+        "kern": "auto",
+        "ls": "0px",
+        "ws": "0px",
+        "tr": "auto",
+        "font": "40px BSSerif",
+        "lang": "en"
+      }
+    },
+    {
+      "id": "40px BSSerif | lang=en, caps=all-small-caps, lang=en again",
+      "ops": [
+        ["font", "40px BSSerif"],
+        ["lang", "en"],
+        ["fontVariantCaps", "all-small-caps"],
+        ["lang", "en"]
+      ],
+      "text": "iI",
+      "chrome": {
+        "w": 29.03997802734375,
+        "caps": "all-small-caps",
+        "stretch": "normal",
+        "kern": "auto",
+        "ls": "0px",
+        "ws": "0px",
+        "tr": "auto",
+        "font": "40px BSSerif",
+        "lang": "en"
+      }
+    },
+    {
+      "id": "40px BSSerif | caps=all-small-caps, lang=inherit (same)",
+      "ops": [
+        ["font", "40px BSSerif"],
+        ["fontVariantCaps", "all-small-caps"],
+        ["lang", "inherit"]
+      ],
+      "text": "iI",
+      "chrome": {
+        "w": 29.03997802734375,
+        "caps": "all-small-caps",
+        "stretch": "normal",
+        "kern": "auto",
+        "ls": "0px",
+        "ws": "0px",
+        "tr": "auto",
+        "font": "40px BSSerif",
+        "lang": "inherit"
+      }
+    },
+    {
+      "id": "40px BSSerif | caps=all-small-caps, lang=en, lang=tr",
+      "ops": [
+        ["font", "40px BSSerif"],
+        ["fontVariantCaps", "all-small-caps"],
+        ["lang", "en"],
+        ["lang", "tr"]
+      ],
+      "text": "iI",
+      "chrome": {
+        "w": 26.759994506835938,
+        "caps": "normal",
+        "stretch": "normal",
+        "kern": "auto",
+        "ls": "0px",
+        "ws": "0px",
+        "tr": "auto",
+        "font": "40px BSSerif",
+        "lang": "tr"
+      }
+    },
+    {
+      "id": "40px BSSerif | caps=all-small-caps, lang=en, lang=inherit",
+      "ops": [
+        ["font", "40px BSSerif"],
+        ["fontVariantCaps", "all-small-caps"],
+        ["lang", "en"],
+        ["lang", "inherit"]
+      ],
+      "text": "iI",
+      "chrome": {
+        "w": 26.759994506835938,
+        "caps": "normal",
+        "stretch": "normal",
+        "kern": "auto",
+        "ls": "0px",
+        "ws": "0px",
+        "tr": "auto",
+        "font": "40px BSSerif",
+        "lang": "inherit"
+      }
+    },
+    {
+      "id": "stretch=condensed then lang=en",
+      "ops": [
+        ["font", "40px BSLato, BSNKo"],
+        ["fontStretch", "condensed"],
+        ["lang", "en"]
+      ],
+      "text": "iI",
+      "chrome": {
+        "w": 22.519989013671875,
+        "caps": "normal",
+        "stretch": "normal",
+        "kern": "auto",
+        "ls": "0px",
+        "ws": "0px",
+        "tr": "auto",
+        "font": "40px BSLato, BSNKo",
+        "lang": "en"
+      }
+    },
+    {
+      "id": "font condensed shorthand then lang=en",
+      "ops": [["font", "condensed 40px BSLato"]],
+      "text": "iI",
+      "chrome": {
+        "w": 22.519989013671875,
+        "caps": "normal",
+        "stretch": "condensed",
+        "kern": "auto",
+        "ls": "0px",
+        "ws": "0px",
+        "tr": "auto",
+        "font": "40px BSLato",
+        "lang": "inherit"
+      }
+    },
+    {
+      "id": "font condensed shorthand + lang=en",
+      "ops": [
+        ["font", "condensed 40px BSLato"],
+        ["lang", "en"]
+      ],
+      "text": "iI",
+      "chrome": {
+        "w": 22.519989013671875,
+        "caps": "normal",
+        "stretch": "normal",
+        "kern": "auto",
+        "ls": "0px",
+        "ws": "0px",
+        "tr": "auto",
+        "font": "40px BSLato",
+        "lang": "en"
+      }
+    },
+    {
+      "id": "kerning=none then lang=en",
+      "ops": [
+        ["font", "40px BSLato, BSNKo"],
+        ["fontKerning", "none"],
+        ["lang", "en"]
+      ],
+      "text": "AV",
+      "chrome": {
+        "w": 54.399993896484375,
+        "caps": "normal",
+        "stretch": "normal",
+        "kern": "none",
+        "ls": "0px",
+        "ws": "0px",
+        "tr": "auto",
+        "font": "40px BSLato, BSNKo",
+        "lang": "en"
+      }
+    },
+    {
+      "id": "letterSpacing=5px then lang=en",
+      "ops": [
+        ["font", "40px BSLato, BSNKo"],
+        ["letterSpacing", "5px"],
+        ["lang", "en"]
+      ],
+      "text": "iI",
+      "chrome": {
+        "w": 32.519989013671875,
+        "caps": "normal",
+        "stretch": "normal",
+        "kern": "auto",
+        "ls": "5px",
+        "ws": "0px",
+        "tr": "auto",
+        "font": "40px BSLato, BSNKo",
+        "lang": "en"
+      }
+    },
+    {
+      "id": "textRendering=optimizeSpeed then lang=en",
+      "ops": [
+        ["font", "40px BSLato, BSNKo"],
+        ["textRendering", "optimizeSpeed"],
+        ["lang", "en"]
+      ],
+      "text": "iI",
+      "chrome": {
+        "w": 22.519989013671875,
+        "caps": "normal",
+        "stretch": "normal",
+        "kern": "auto",
+        "ls": "0px",
+        "ws": "0px",
+        "tr": "optimizeSpeed",
+        "font": "40px BSLato, BSNKo",
+        "lang": "en"
+      }
+    },
+    {
+      "id": "bold italic small-caps font then lang=en",
+      "ops": [
+        ["font", "italic bold small-caps 40px BSLato"],
+        ["lang", "en"]
+      ],
+      "text": "iI",
+      "chrome": {
+        "w": 20.875991821289062,
+        "caps": "small-caps",
+        "stretch": "normal",
+        "kern": "auto",
+        "ls": "0px",
+        "ws": "0px",
+        "tr": "auto",
+        "font": "italic bold small-caps 40px BSLato",
+        "lang": "en"
+      }
+    },
+    {
+      "id": "oblique 20deg font then lang=en",
+      "ops": [
+        ["font", "oblique 20deg 40px BSLato"],
+        ["lang", "en"]
+      ],
+      "text": "iI",
+      "chrome": {
+        "w": 22.519989013671875,
+        "caps": "normal",
+        "stretch": "normal",
+        "kern": "auto",
+        "ls": "0px",
+        "ws": "0px",
+        "tr": "auto",
+        "font": "40px BSLato",
+        "lang": "en"
+      }
+    },
+    {
+      "id": "font 2em serif then lang=en",
+      "ops": [
+        ["font", "2em BSLato"],
+        ["lang", "en"]
+      ],
+      "text": "iI",
+      "chrome": {
+        "w": 11.259994506835938,
+        "caps": "normal",
+        "stretch": "normal",
+        "kern": "auto",
+        "ls": "0px",
+        "ws": "0px",
+        "tr": "auto",
+        "font": "20px BSLato",
+        "lang": "en"
+      }
+    },
+    {
+      "id": "fresh ctx: lang=en then caps=all-small-caps (no font set)",
+      "ops": [
+        ["lang", "en"],
+        ["fontVariantCaps", "all-small-caps"]
+      ],
+      "text": "iI",
+      "chrome": {
+        "w": 3.8896484375,
+        "caps": "all-small-caps",
+        "stretch": "normal",
+        "kern": "auto",
+        "ls": "0px",
+        "ws": "0px",
+        "tr": "auto",
+        "font": "10px sans-serif",
+        "lang": "en"
+      }
+    },
+    {
+      "id": "fresh ctx: caps=all-small-caps then lang=en (no font set)",
+      "ops": [
+        ["fontVariantCaps", "all-small-caps"],
+        ["lang", "en"]
+      ],
+      "text": "iI",
+      "chrome": {
+        "w": 5,
+        "caps": "normal",
+        "stretch": "normal",
+        "kern": "auto",
+        "ls": "0px",
+        "ws": "0px",
+        "tr": "auto",
+        "font": "10px sans-serif",
+        "lang": "en"
+      }
+    },
+    {
+      "id": "save, caps, lang, restore",
+      "ops": [
+        ["font", "40px BSLato, BSNKo"],
+        ["save"],
+        ["fontVariantCaps", "all-small-caps"],
+        ["lang", "en"],
+        ["restore"]
+      ],
+      "text": "iI",
+      "chrome": {
+        "w": 22.519989013671875,
+        "caps": "normal",
+        "stretch": "normal",
+        "kern": "auto",
+        "ls": "0px",
+        "ws": "0px",
+        "tr": "auto",
+        "font": "40px BSLato, BSNKo",
+        "lang": "inherit"
+      }
+    },
+    {
+      "id": "caps, save, lang, restore",
+      "ops": [
+        ["font", "40px BSLato, BSNKo"],
+        ["fontVariantCaps", "all-small-caps"],
+        ["save"],
+        ["lang", "en"],
+        ["restore"]
+      ],
+      "text": "iI",
+      "chrome": {
+        "w": 17.191986083984375,
+        "caps": "all-small-caps",
+        "stretch": "normal",
+        "kern": "auto",
+        "ls": "0px",
+        "ws": "0px",
+        "tr": "auto",
+        "font": "40px BSLato, BSNKo",
+        "lang": "inherit"
+      }
+    },
+    {
+      "id": "lang, caps, save, lang=tr, restore",
+      "ops": [
+        ["font", "40px BSLato, BSNKo"],
+        ["lang", "en"],
+        ["fontVariantCaps", "all-small-caps"],
+        ["save"],
+        ["lang", "tr"],
+        ["restore"]
+      ],
+      "text": "iI",
+      "chrome": {
+        "w": 17.191986083984375,
+        "caps": "all-small-caps",
+        "stretch": "normal",
+        "kern": "auto",
+        "ls": "0px",
+        "ws": "0px",
+        "tr": "auto",
+        "font": "40px BSLato, BSNKo",
+        "lang": "en"
+      }
+    },
+    {
+      "id": "14.999999px BSLato then lang=en",
+      "ops": [
+        ["font", "14.999999px BSLato"],
+        ["lang", "en"]
+      ],
+      "text": "Hamburg office",
+      "chrome": {
+        "w": 101.39990234375,
+        "caps": "normal",
+        "stretch": "normal",
+        "kern": "auto",
+        "ls": "0px",
+        "ws": "0px",
+        "tr": "auto",
+        "font": "15px BSLato",
+        "lang": "en"
+      }
+    },
+    {
+      "id": "14.999999px BSLato only",
+      "ops": [["font", "14.999999px BSLato"]],
+      "text": "Hamburg office",
+      "chrome": {
+        "w": 101.33230590820312,
+        "caps": "normal",
+        "stretch": "normal",
+        "kern": "auto",
+        "ls": "0px",
+        "ws": "0px",
+        "tr": "auto",
+        "font": "15px BSLato",
+        "lang": "inherit"
+      }
+    },
+    {
+      "id": "quoted family then caps, lang=en",
+      "ops": [
+        ["font", "40px \"BS Lato Q\", BSLato"],
+        ["fontVariantCaps", "unicase"],
+        ["lang", "en"]
+      ],
+      "text": "iI",
+      "chrome": {
+        "w": 22.519989013671875,
+        "caps": "normal",
+        "stretch": "normal",
+        "kern": "auto",
+        "ls": "0px",
+        "ws": "0px",
+        "tr": "auto",
+        "font": "40px \"BS Lato Q\", BSLato",
+        "lang": "en"
+      }
+    },
+    {
+      "id": "lang=inherit then caps (same lang)",
+      "ops": [
+        ["font", "40px BSLato, BSNKo"],
+        ["fontVariantCaps", "unicase"],
+        ["lang", "inherit"]
+      ],
+      "text": "iI",
+      "chrome": {
+        "w": 18.835983276367188,
+        "caps": "unicase",
+        "stretch": "normal",
+        "kern": "auto",
+        "ls": "0px",
+        "ws": "0px",
+        "tr": "auto",
+        "font": "40px BSLato, BSNKo",
+        "lang": "inherit"
+      }
+    },
+    {
+      "id": "lang=\"\" then caps, lang=\"\"",
+      "ops": [
+        ["font", "40px BSLato, BSNKo"],
+        ["lang", ""],
+        ["fontVariantCaps", "unicase"],
+        ["lang", ""]
+      ],
+      "text": "iI",
+      "chrome": {
+        "w": 18.835983276367188,
+        "caps": "unicase",
+        "stretch": "normal",
+        "kern": "auto",
+        "ls": "0px",
+        "ws": "0px",
+        "tr": "auto",
+        "font": "40px BSLato, BSNKo",
+        "lang": ""
+      }
+    },
+    {
+      "id": "stretch=condensed, save, lang=en, restore",
+      "ops": [["font", "40px BSLato, BSNKo"], ["fontStretch", "condensed"], ["save"], ["lang", "en"], ["restore"]],
+      "text": "iI",
+      "chrome": {
+        "w": 22.519989013671875,
+        "caps": "normal",
+        "stretch": "condensed",
+        "kern": "auto",
+        "ls": "0px",
+        "ws": "0px",
+        "tr": "auto",
+        "font": "40px BSLato, BSNKo",
+        "lang": "inherit"
+      }
+    },
+    {
+      "id": "wordSpacing=7px then lang=en",
+      "ops": [
+        ["font", "40px BSLato, BSNKo"],
+        ["wordSpacing", "7px"],
+        ["lang", "en"]
+      ],
+      "text": "a b",
+      "chrome": {
+        "w": 57.3599853515625,
+        "caps": "normal",
+        "stretch": "normal",
+        "kern": "auto",
+        "ls": "0px",
+        "ws": "7px",
+        "tr": "auto",
+        "font": "40px BSLato, BSNKo",
+        "lang": "en"
+      }
+    }
+  ]
+}
