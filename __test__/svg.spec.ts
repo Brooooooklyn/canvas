@@ -305,6 +305,32 @@ test('convertSVGTextToPath past the budget: an ATTLIST default that hides a fan-
   }
 })
 
+// Some draws cost far more than their bytes: text (about 1.4 KB of outline
+// a glyph), a dashed stroke (dashes follow the geometry), clip content
+// (SkSVG unions it one child at a time). The renames may not add them: 8^3
+// <use href> draws of 100 "W", 64 of a dashed circle and a clip path of
+// 4000 rects through <use href> (over 20 s) stay unread, as on main.
+test('convertSVGTextToPath past the budget: SVG2 href to text, dashes or clip content stays unread', (t) => {
+  const drawn = (leaf: string, k: number) =>
+    `${fanOutDefs(k, 'm').replace('<g id="m0"/>', `<g id="m0">${leaf}</g>`)}<use href="#m${k}"/>`
+  let rects = ''
+  for (let i = 0; i < 4000; i++) {
+    rects += `<rect x="${(i % 100) / 10}" y="${Math.floor(i / 100) / 10}" width="0.05" height="0.05"/>`
+  }
+  const empty = convertSVGTextToPath(`<svg ${XLINK} width="10" height="10"></svg>`).toString()
+  for (const body of [
+    drawn(`<text y="9">${'W'.repeat(100)}</text>`, 3),
+    drawn('<circle cx="5" cy="5" r="5" fill="none" stroke="black" stroke-dasharray="0.01"/>', 2),
+    `<defs><g id="r">${rects}</g><clipPath id="k"><use href="#r"/></clipPath></defs>` +
+      '<rect width="10" height="10" clip-path="url(#k)"/>',
+  ]) {
+    const child = convertInChild(`<svg ${XLINK} width="10" height="10">${body}${fanOut(6)}</svg>`)
+    t.is(child.signal, null, `killed (time or output): ${body.slice(0, 80)}`)
+    t.is(child.status, 0, child.stderr)
+    t.is(child.stdout, empty, body.slice(0, 80))
+  }
+})
+
 // SkSVG reads a nested style="style:fill:url(#c)": the pattern c it paints
 // runs into the cycle a -> a, which is broken.
 test('convertSVGTextToPath past the budget: a pattern a nested style paints is walked', (t) => {

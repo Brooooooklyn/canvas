@@ -18,7 +18,9 @@
 //!   fan-out). The renames are made only when `Graph` bounds the work and
 //!   stack depth they add (all or none). `Graph` over-approximates what
 //!   SkSVG may follow, so a value SkSVG parses in a way this module does
-//!   not model cannot hide a reference from it.
+//!   not model cannot hide a reference from it. A draw whose cost is not
+//!   bounded by its bytes (clip content, a dashed stroke) may not be added
+//!   at all.
 //! - `<!ATTLIST>` declarations are blanked: expat applies their defaults,
 //!   roxmltree (so svg_doc) does not. Any default may hide content (display,
 //!   an empty viewBox, a pattern width of 0), so they are blanked only when
@@ -48,6 +50,10 @@ const DEPTH_LIMIT: u64 = 1024;
 
 /// Counts and work saturate here.
 const CAP: u64 = 1 << 50;
+
+/// The work of a text byte, per call: a glyph outline is about 1.4 KB of
+/// path data (8^4 `<use>` draws of 100 "W" went past 1 GB).
+const GLYPH_WORK: u64 = 1024;
 
 /// Bytes the reference scan may compare; past them the references are not
 /// known (no renames; every pattern counts as painted).
@@ -1052,7 +1058,12 @@ struct Graph {
   root: u32,
   class: Vec<Class>,
   /// The work of one call: 1, and for a shape, text or image 32 more plus
-  /// its attribute values; plus its text.
+  /// its attribute values; plus its text (GLYPH_WORK a byte in a text
+  /// element). CAP for an element a clipPath or a value with `dasharray`
+  /// in it reaches: SkSVG unions clip content one child at a time (a
+  /// `<clipPath>` of 1000 rects took 6 s), and a dash count follows the
+  /// geometry (`stroke-dasharray="0.01"` on a circle wrote 1.6 MB), so
+  /// neither may be added.
   own: Vec<u64>,
   /// Text children: each one more fill and stroke.
   texts: Vec<u64>,
@@ -1101,6 +1112,7 @@ impl Graph {
     let mut texts = Vec::with_capacity(n);
     let mut fresh = Vec::with_capacity(n);
     let mut obb = Vec::with_capacity(n);
+    let mut costly = Vec::with_capacity(n);
     let mut out = Vec::with_capacity(n);
     for (k, &id) in scan.nodes.iter().enumerate() {
       let NodeData::Element { name, attrs, .. } = &doc.nodes[id].data else {
@@ -1125,7 +1137,8 @@ impl Graph {
         match &doc.nodes[ch].data {
           NodeData::Text(s) => {
             t += 1;
-            w = add(w, s.len() as u64);
+            let per = if c == Class::Text { GLYPH_WORK } else { 1 };
+            w = add(w, mul(per, s.len() as u64));
           }
           NodeData::Element { .. } => edges.push((scan.dense[ch], Ek::Tree, false)),
         }
@@ -1144,6 +1157,13 @@ impl Graph {
           edges.push((target, ek, renamed.contains(&key)));
         }
       }
+      // Any spelling, anywhere: an over-approximation of what SkSVG reads.
+      let dash = |v: &str| {
+        v.as_bytes()
+          .windows(9)
+          .any(|w| w.eq_ignore_ascii_case(b"dasharray"))
+      };
+      costly.push(name == "clipPath" || attrs.iter().any(|a| dash(&a.name) || dash(&a.value)));
       class_of.push(c);
       fresh.push(matches!(
         name.as_str(),
@@ -1179,6 +1199,20 @@ impl Graph {
       }
     }
     post.reverse();
+    // What a costly element reaches is costly: clip content, and what may
+    // inherit a dash (followed along every edge).
+    for &x in &post {
+      if costly[x as usize] {
+        for &(y, _, _) in &out[x as usize] {
+          costly[y as usize] = true;
+        }
+      }
+    }
+    for (w, &c) in own.iter_mut().zip(&costly) {
+      if c {
+        *w = CAP;
+      }
+    }
     Some(Graph {
       root,
       class: class_of,
@@ -2000,6 +2034,42 @@ mod tests {
       fan_defs(8, 4, "m")
     );
     assert_eq!(cleaned(&body), body);
+  }
+
+  #[test]
+  fn a_draw_its_bytes_do_not_bound_is_not_added() {
+    let renamed = |body: &str| !cleaned(body).contains(" href=");
+    // Text: 8^3 draws of 100 "W" through <use href> are too much, one is
+    // not.
+    let text = format!(r#"<text id="w">{}</text>"#, "W".repeat(100));
+    let fan = fan_defs(8, 3, "t").replace(r#"<g id="t0"/>"#, &format!(r#"<g id="t0">{text}</g>"#));
+    assert!(!renamed(&format!(r##"{fan}<use href="#t3"/>"##)));
+    assert!(renamed(&format!(
+      r##"<defs>{text}</defs><use href="#w"/>"##
+    )));
+    // A dashed stroke, set on the shape, on the <use> or in a style.
+    for body in [
+      r##"<circle id="c" r="50" stroke="black" stroke-dasharray="0.01"/><use href="#c"/>"##,
+      r##"<circle id="c" r="50" stroke="black"/><use href="#c" stroke-dasharray="0.01"/>"##,
+      r##"<circle id="c" r="50" stroke="black"/><g style="stroke-DashArray:0.01"><use href="#c"/></g>"##,
+    ] {
+      assert!(!renamed(body), "{body}");
+    }
+    assert!(renamed(
+      r##"<circle id="c" r="50" stroke="black"/><use href="#c"/><line stroke-dasharray="1"/>"##
+    ));
+    // Clip content, and a clipPath called more (Independent check of
+    // 4adc2c9c: 4000 rects through <use href> in a clipPath took over
+    // 20 s).
+    let rects = r#"<rect width="1" height="1"/>"#.repeat(4000);
+    for body in [
+      format!(
+        r##"<defs><g id="m">{rects}</g><clipPath id="k"><use href="#m"/></clipPath></defs><rect width="9" height="9" clip-path="url(#k)"/>"##
+      ),
+      r##"<defs><clipPath id="k"><rect width="1" height="1"/></clipPath></defs><rect id="r" width="9" height="9" clip-path="url(#k)"/><use href="#r"/>"##.to_owned(),
+    ] {
+      assert!(!renamed(&body), "{body}");
+    }
   }
 
   #[test]
