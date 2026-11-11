@@ -61,7 +61,7 @@ const UNREGISTERED = Object.entries(FIXTURE.fonts).flatMap(([family, file]) =>
 )
 
 // The last shaper stage on this branch.
-const LANDED = 'S0'
+const LANDED = 'S0a'
 const STAGES = ['S0', 'S0a', 'S1', 'S2', 'S3', 'S4', 'S5', 'S6', 'S7', 'S8', 'S9', 'S10']
 const BLINK = process.env.NAPI_RS_CANVAS_SHAPER === 'blink'
 

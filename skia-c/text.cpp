@@ -549,7 +549,7 @@ void LayOutLine(skiac_font_collection* c_collection,
       font_collection->findTypefaces(text_style.getFontFamilies(), font_style);
   // font-size-adjust: the primary font's size, opsz, and a size for each
   // family that has its own (text_styles.cpp ComputeUsedSizes). Without it,
-  // the request's size.
+  // the request's size. Both floored to 1/100 px (EffectiveFontSize).
   const UsedSizes sizes = ComputeUsedSizes(c_collection, base_faces, request);
   text_style.setFontSize(sizes.effective);
   const std::vector<SkFontArguments::VariationPosition::Coordinate> coords =
