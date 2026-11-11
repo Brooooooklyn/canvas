@@ -26,6 +26,11 @@ pub(crate) struct Attr {
   pub ns: Ns,
   pub name: String,
   pub value: String,
+  /// Bytes of `q:name="value"` in the text, and the end of `q:name`
+  /// (fallback::clean edits them). An attribute from an entity has them in
+  /// the entity's value.
+  pub range: std::ops::Range<usize>,
+  pub qname_end: usize,
 }
 
 #[derive(Debug)]
@@ -41,6 +46,8 @@ pub(crate) enum NodeData {
 #[derive(Debug)]
 pub(crate) struct Node {
   pub data: NodeData,
+  /// Where the node starts in the text: an element's `<`.
+  pub start: usize,
   pub parent: Option<NodeId>,
   pub children: Vec<NodeId>,
 }
@@ -240,6 +247,8 @@ impl Doc {
               ns: map_ns(a.namespace()),
               name: a.name().to_owned(),
               value: a.value().to_owned(),
+              range: a.range(),
+              qname_end: a.range_qname().end,
             })
             .collect(),
         }
@@ -248,6 +257,7 @@ impl Doc {
       };
       doc.nodes.push(Node {
         data,
+        start: node.range().start,
         parent,
         children: Vec::new(),
       });

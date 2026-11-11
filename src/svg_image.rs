@@ -172,7 +172,7 @@ impl SvgImage {
       // Deeper than Chrome's XML parser takes: onerror.
       Err(PrepareError::TooDeep) => return Ok(None),
       // Left to SkSVGDOM as it is.
-      Err(PrepareError::Unsupported) => None,
+      Err(PrepareError::Unsupported | PrepareError::OverBudget(_) | PrepareError::Loops) => None,
     };
     let font = get_font().map_err(crate::error::SkError::from)?;
     let (document, sizing) = match prepared {

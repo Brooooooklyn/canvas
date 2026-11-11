@@ -17,6 +17,7 @@
 mod build;
 mod cascade;
 mod dom;
+mod fallback;
 mod props;
 mod select;
 mod sheet;
@@ -83,9 +84,15 @@ pub(crate) enum PrepareError {
   /// Deeper than Chrome's XML parser takes: the image fails to load.
   TooDeep,
   /// Not something this module reads (not UTF-8, not well-formed, not an
-  /// SVG root; for convertSVGTextToPath, past `ELEMENT_BUDGET` or the
-  /// reference check's budget): left to SkSVGDOM as before.
+  /// SVG root): left to SkSVGDOM as before.
   Unsupported,
+  /// convertSVGTextToPath past `ELEMENT_BUDGET` or the reference check's
+  /// budget: left to SkSVGDOM, with the edits `fallback::clean` made (None:
+  /// as it is).
+  OverBudget(Option<Vec<u8>>),
+  /// The same, with a pattern cycle SkSVG would loop on that
+  /// `fallback::clean` could not break: convertSVGTextToPath fails.
+  Loops,
 }
 
 /// The root attributes that size an SVG image, as written.
@@ -334,7 +341,10 @@ fn prepare_root(
   };
   let svg = build::emit_document(&doc, root, &mut shared).ok_or(PrepareError::Unsupported)?;
   if for_paths && shared.budget_hit {
-    return Err(PrepareError::Unsupported);
+    return Err(match fallback::clean(&doc, text) {
+      Ok(text) => PrepareError::OverBudget(text),
+      Err(()) => PrepareError::Loops,
+    });
   }
   let mut prepared = shared.prepared;
   prepared.svg = svg;
@@ -388,7 +398,7 @@ mod tests {
     assert!(written <= ELEMENT_BUDGET, "{written} elements written");
     // convertSVGTextToPath leaves it to SkSVG, which converts all of it.
     let paths = prepare_for_paths(svg(&body).as_bytes(), &FontUnits::fallback(), |_| None);
-    assert_eq!(paths.err(), Some(PrepareError::Unsupported));
+    assert!(matches!(paths.err(), Some(PrepareError::OverBudget(_))));
   }
 
   #[test]

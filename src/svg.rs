@@ -6,15 +6,16 @@ use crate::{
   error::SkError,
   global_fonts::get_font,
   sk::{sk_svg_root_size, sk_svg_text_to_path, sk_svg_text_to_path_prepared},
-  svg_doc,
+  svg_doc::{self, PrepareError},
   svg_size::FontUnits,
 };
 
 /// The SVG with its text as paths. The document is read as an SVG image
 /// reads it (`svg_doc::prepare_for_paths`), so its text takes the whole font-family
 /// list, as an SVG image's text does. A document `svg_doc` cannot read, or
-/// one past its work budgets (elements, reference checks), is left to SkSVG
-/// as it is: its font-family is the list's first name.
+/// one past its work budgets (elements, reference checks), is left to SkSVG:
+/// its font-family is the list's first name. One past the budgets gets
+/// `svg_doc`'s href and no pattern cycle SkSVG loops on (svg_doc::fallback).
 #[napi(js_name = "convertSVGTextToPath")]
 pub fn convert_svg_text_to_path<'env>(
   env: &'env Env,
@@ -25,11 +26,13 @@ pub fn convert_svg_text_to_path<'env>(
     let font = get_font().map_err(SkError::from)?;
     FontUnits::from_metrics(font.default_font_metrics())
   };
-  let prepared = svg_doc::prepare_for_paths(bytes, &units, sk_svg_root_size).ok();
+  let prepared = svg_doc::prepare_for_paths(bytes, &units, sk_svg_root_size);
   let font = get_font().map_err(SkError::from)?;
   match &prepared {
-    Some((prepared, root)) => sk_svg_text_to_path_prepared(prepared, root, &font),
-    None => sk_svg_text_to_path(bytes, &font),
+    Ok((prepared, root)) => sk_svg_text_to_path_prepared(prepared, root, &font),
+    Err(PrepareError::OverBudget(Some(cleaned))) => sk_svg_text_to_path(cleaned, &font),
+    Err(PrepareError::Loops) => None,
+    Err(_) => sk_svg_text_to_path(bytes, &font),
   }
   .ok_or_else(|| {
     Error::new(

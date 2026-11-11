@@ -87,6 +87,78 @@ test('convertSVGTextToPath keeps references past the SVG image cycle check budge
   t.true(convertSVGTextToPath(svg).toString().includes('<clipPath'))
 })
 
+// Past a budget the document goes to SkSVG with the edits of
+// svg_doc::fallback, and converts as it does under the budget. `fanOut(k)`
+// puts it past the element budget at k = 6: 8^k empty <g> instances through
+// SVG2 <use href>.
+const XLINK = 'xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink"'
+function fanOut(k: number) {
+  let defs = '<g id="l0"/>'
+  for (let i = 1; i <= k; i++) {
+    defs += `<g id="l${i}">${`<use href="#l${i - 1}"/>`.repeat(8)}</g>`
+  }
+  return `<defs>${defs}</defs><use href="#l${k}"/>`
+}
+
+// In a child process, killed after 20 s.
+function convertInChild(svg: string) {
+  const script = `
+    const { convertSVGTextToPath } = require(process.env.PROBE_INDEX)
+    process.stdout.write(convertSVGTextToPath(require('fs').readFileSync(0, 'utf8')))
+  `
+  return spawnSync(process.execPath, ['-e', script], {
+    input: svg,
+    encoding: 'utf8',
+    timeout: 20_000,
+    env: { ...process.env, PROBE_INDEX: join(__dirname, '..', 'index.js') },
+  })
+}
+
+// SkSVG's <pattern> href walk has no loop check: a chain from outside into a
+// cycle hung there. The reference that closes the cycle is dropped, so the
+// chain walks the cycle once: c takes its size from a and its content from b.
+test('convertSVGTextToPath past the budget: a pattern chain into an href cycle ends', (t) => {
+  const cycle =
+    '<pattern id="c" xlink:href="#a"/><pattern id="a" width="4" height="4" patternUnits="userSpaceOnUse" xlink:href="#b"/>' +
+    '<pattern id="b" xlink:href="#a"><rect width="2" height="2" fill="red"/></pattern>'
+  // Also as SVG2 href, which SkSVG now reads.
+  for (const defs of [cycle, cycle.replaceAll('xlink:href', 'href')]) {
+    const body = `<defs>${defs}</defs><rect width="5" height="5" fill="url(#c)"/>`
+    const child = convertInChild(`<svg ${XLINK} width="10" height="10">${body}${fanOut(6)}</svg>`)
+    t.is(child.signal, null, 'timed out')
+    t.is(child.status, 0, child.stderr)
+    t.is(child.stdout, convertSVGTextToPath(`<svg ${XLINK} width="10" height="10">${body}</svg>`).toString())
+  }
+})
+
+// SkSVG reads only xlink:href: SVG2 href (it wins over xlink:href) and an
+// XLink href under another prefix are renamed.
+test('convertSVGTextToPath past the budget: SVG2 href draws', (t) => {
+  const body =
+    '<rect id="r" width="3" height="3" fill="red"/><rect id="s" width="3" height="3" fill="blue"/>' +
+    '<use href="#r" x="5"/><use href="#r" xlink:href="#s" y="5"/>' +
+    '<use xmlns:l="http://www.w3.org/1999/xlink" l:href="#s" x="5" y="5"/>' +
+    '<linearGradient id="g"><stop offset="0" stop-color="green"/></linearGradient>' +
+    '<linearGradient id="h" href="#g"/><rect x="10" width="3" height="3" fill="url(#h)"/>'
+  const under = convertSVGTextToPath(`<svg ${XLINK} width="20" height="10">${body}</svg>`).toString()
+  t.is(under.match(/<rect/g)?.length, 6)
+  const past = convertSVGTextToPath(`<svg ${XLINK} width="20" height="10">${body}${fanOut(6)}</svg>`)
+  t.is(past.toString(), under)
+})
+
+// The renames are made only while SkSVG's added work stays small: an 8^10
+// fan-out through SVG2 href stays unread, as before, and the pattern cycle
+// is still broken.
+test('convertSVGTextToPath past the budget: an SVG2 href fan-out too big for SkSVG stays unread', (t) => {
+  const body =
+    '<defs><pattern id="c" xlink:href="#a"/><pattern id="a" width="4" height="4" patternUnits="userSpaceOnUse" xlink:href="#a">' +
+    '<rect width="2" height="2" fill="red"/></pattern></defs><rect width="5" height="5" fill="url(#c)"/>'
+  const child = convertInChild(`<svg ${XLINK} width="10" height="10">${fanOut(10)}${body}</svg>`)
+  t.is(child.signal, null, 'timed out')
+  t.is(child.status, 0, child.stderr)
+  t.is(child.stdout, convertSVGTextToPath(`<svg ${XLINK} width="10" height="10">${body}</svg>`).toString())
+})
+
 // convertSVGTextToPath keeps the root's size, coordinates and transform:
 // a root sized by its style="" declarations, a root sized in physical units
 // with no viewBox (1in is 96px, for the root as for its content, as the SVG
