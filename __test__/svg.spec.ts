@@ -204,9 +204,10 @@ test('convertSVGTextToPath past the budget: an SVG2 href fan-out too big for SkS
   t.is(child.stdout, convertSVGTextToPath(`<svg ${XLINK} width="10" height="10">${body}</svg>`).toString())
 })
 
-// The work guard reads fill, stroke and clip-path values as SkSVG does: one
-// it does not parse keeps url(#p) or url(#big), which draw an 8^10 fan-out
-// through SVG2 href, so the renames are not made and the fan-out stays unread.
+// The work guard counts every url(#id) in any value, as SkSVG may follow
+// it: one SkSVG does not parse keeps url(#p) or url(#big), which draw an
+// 8^10 fan-out through SVG2 href, so the renames are not made and the
+// fan-out stays unread.
 test('convertSVGTextToPath past the budget: a value SkSVG does not parse keeps the reference before it', (t) => {
   const defs =
     fanOutDefs(10, 'm') +
@@ -228,8 +229,7 @@ test('convertSVGTextToPath past the budget: a value SkSVG does not parse keeps t
 
 // SkSVG follows a gradient's href while it has no <stop> child, whatever
 // else it holds, one native call per link: a 50000-link chain of gradients
-// holding a <g/> is too deep for the renames and stays unread. The fan-out
-// comes first, so svg_doc stops at its budget before it walks the chain.
+// holding a <g/> is too deep for the renames and stays unread.
 test('convertSVGTextToPath past the budget: a long gradient href chain stays unread', (t) => {
   let defs = '<linearGradient id="g0"><stop offset="0" stop-color="green"/></linearGradient>'
   for (let i = 1; i < 50000; i++) {
@@ -241,6 +241,54 @@ test('convertSVGTextToPath past the budget: a long gradient href chain stays unr
   )
   t.is(child.signal, null, 'crashed or timed out')
   t.is(child.status, 0, child.stderr)
+})
+
+// A group with a mask, filter or clip path walks the bounding box of all
+// below it, <defs> too, following <use> there: under such a group a
+// 50000-link <use href> chain (SIGSEGV when renamed) and an 8^11 <use href>
+// fan-out (minutes) stay unread.
+test('convertSVGTextToPath past the budget: SVG2 href under a bounding box walk stays unread', (t) => {
+  let chain = '<g id="u0"/>'
+  for (let i = 1; i < 50000; i++) {
+    chain += `<use id="u${i}" href="#u${i - 1}"/>`
+  }
+  for (const defs of [`<defs>${chain}</defs>`, fanOutDefs(11, 'm')]) {
+    const child = convertInChild(
+      `<svg ${XLINK} width="10" height="10"><defs><mask id="k"><rect width="10" height="10" fill="white"/></mask></defs>` +
+        `<g mask="url(#k)">${defs}<rect width="2" height="2"/></g>${fanOut(6)}</svg>`,
+    )
+    t.is(child.signal, null, 'crashed or timed out')
+    t.is(child.status, 0, child.stderr)
+    t.true(child.stdout.includes('<svg'))
+  }
+})
+
+// SkSVG reads a nested style="style:fill:url(#c)": the pattern c it paints
+// runs into the cycle a -> a, which is broken.
+test('convertSVGTextToPath past the budget: a pattern a nested style paints is walked', (t) => {
+  const body =
+    '<defs><pattern id="c" href="#a"/><pattern id="a" href="#a" width="2" height="2"><rect width="1" height="1"/></pattern></defs>' +
+    '<rect width="5" height="5" style="style:fill:url(#c)"/>'
+  const child = convertInChild(`<svg ${XLINK} width="10" height="10">${body}${fanOut(6)}</svg>`)
+  t.is(child.signal, null, 'timed out')
+  t.is(child.status, 0, child.stderr)
+  t.true(child.stdout.includes('<rect width="5" height="5"/>'))
+})
+
+// SkSVGPattern::resolveHref stops once x, y, width, height,
+// patternTransform and the content are found: c's walk ends at a, so the
+// cycle a <-> b is kept and b, also painted, keeps a's size (cut, b's paint
+// fails and the rect is blue).
+test('convertSVGTextToPath past the budget: a cycle every walk leaves is kept', (t) => {
+  const body =
+    '<defs><pattern id="c" x="0" y="0" width="4" height="4" patternTransform="translate(0)" xlink:href="#a"><rect width="4" height="4" fill="green"/></pattern>' +
+    '<pattern id="a" width="4" height="4" xlink:href="#b"/><pattern id="b" xlink:href="#a"><rect width="4" height="4" fill="red"/></pattern></defs>' +
+    '<rect width="4" height="4" fill="url(#c)"/><rect x="5" width="4" height="4" fill="url(#b) blue"/>'
+  const child = convertInChild(`<svg ${XLINK} width="10" height="10">${body}${fanOut(6)}</svg>`)
+  t.is(child.signal, null, 'timed out')
+  t.is(child.status, 0, child.stderr)
+  t.false(child.stdout.includes('blue'))
+  t.is(child.stdout.match(/<rect/g)?.length, 2)
 })
 
 // svg_doc reads a pattern or gradient href chain once per element (it read

@@ -2,83 +2,114 @@
 //! SkSVG as written (main's path). `clean` first edits its bytes so SkSVG
 //! does not loop and sees the references svg_doc saw:
 //!
-//! - A `<pattern>` href chain that runs into a cycle loops for ever in
-//!   SkSVGPattern::resolveHref (no loop check; a cycle through the painted
-//!   pattern ends there, as that one is borrowed). The reference that
-//!   closes the cycle at the chain's entry is blanked, so a chain from
-//!   outside walks the cycle once, as Blink's visited set does. Only a
-//!   chain from a pattern some fill or stroke names is walked.
+//! - SkSVGPattern::resolveHref has no loop check. A walk from a painted
+//!   pattern stops once x, y, width, height, patternTransform and the
+//!   content are all found, at the end of the chain, or back at the painted
+//!   pattern (it is borrowed); a walk into a cycle that finds none of these
+//!   goes round for ever. `walk_cuts` runs these walks as SkSVG does and
+//!   blanks one href on each cycle a walk would go round for ever, where
+//!   that walk comes back (Blink's visited set), unless a walk that ends
+//!   uses that href before its result is complete.
 //! - SkSVG reads only an attribute spelled `xlink:href` (expat runs without
 //!   namespaces). The href svg_doc reads on use, pattern, gradients and
 //!   textPath (`href`, else an XLink `href` under any prefix) is renamed
 //!   `xlink:href`, and any other `xlink:href` there is blanked. Main ignored
 //!   those references, so SkSVG may now draw much more (a `<use href>`
-//!   fan-out): the renames are made only when SkSVG's work and stack depth
-//!   stay bounded (`Cost`), else none is. Fill, stroke, clip-path, mask and
-//!   filter values are read as SkSVGAttributeParser reads them; a fill or
-//!   stroke this cannot read makes the work unknown.
+//!   fan-out). The renames are made only when `Graph` bounds the work and
+//!   stack depth they add (all or none). `Graph` over-approximates what
+//!   SkSVG may follow, so a value SkSVG parses in a way this module does
+//!   not model cannot hide a reference from it.
 //! - `<!ATTLIST>` declarations are blanked: expat applies their defaults,
-//!   roxmltree (so svg_doc) does not.
+//!   roxmltree (so svg_doc) does not. One that may hide content (display,
+//!   visibility, style) is blanked only when `Graph` bounds the whole
+//!   document; else the document is left as it is.
 //!
 //! Every other byte is kept. What else svg_doc reads that SkSVG does not
 //! (`<style>`, `<symbol>`, `<switch>`, font-family lists, Blink's rules for
 //! `<use>` and `url()` cycles, first-wins ids) stays as on main.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::ops::Range;
 
 use super::dom::{self, Doc, NodeData, NodeId};
 
-/// The work the renames may add to SkSVG's, in element visits (a shape or a
-/// text fragment costs 32 more, plus its path data or text length): about
-/// 0.25 s (measured on main: 8^8 empty `<use>` visits take 0.54 s, 8^6
-/// rects 0.2 s).
+/// The work the renames may add to SkSVG's, in element visits (a shape, a
+/// text or an image costs 32 more, plus its attribute values and text):
+/// about 0.25 s (measured on main: 8^8 empty `<use>` visits take 0.54 s,
+/// 8^6 rects 0.2 s).
 const WORK_LIMIT: u64 = 1 << 24;
 
-/// The stack depth the renames may reach, past the document's own, in
-/// `<use>` levels: SkSVG crashed (SIGSEGV) at 16000 `<use>` levels on main's
-/// 8 MB stack, 8000 clip-path levels and 2000 nested patterns. 1024 leaves
-/// room on a 4 MB worker stack.
-const DEPTH_LIMIT: u32 = 1024;
+/// The stack depth a call chain through a renamed reference may reach, in
+/// `<use>` levels (a child or an href 1, a url() 8): SkSVG crashed
+/// (SIGSEGV) at 16000 `<use>` levels on main's 8 MB stack, 8000 clip-path
+/// levels and 2000 nested patterns. 1024 leaves room on a 4 MB worker
+/// stack.
+const DEPTH_LIMIT: u64 = 1024;
 
-/// Work and depth saturate here.
-const CAP: u64 = 1 << 40;
+/// Counts and work saturate here.
+const CAP: u64 = 1 << 50;
 
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
-enum Tag {
-  Svg,
-  G,
-  Use,
-  Shape,
-  /// text and tspan.
-  Text,
-  TextPath,
-  ClipPath,
-  Mask,
-  Pattern,
-  Gradient,
-  Filter,
-  Stop,
-  /// defs, fe*, image: drawn as nothing.
-  Leaf,
+/// Bytes the reference scan may compare; past them the references are not
+/// known (no renames; every pattern counts as painted).
+const SCAN_LIMIT: u64 = 1 << 26;
+
+/// References the scan may keep.
+const EDGE_LIMIT: usize = 1 << 24;
+
+/// Steps the pattern walks may take; past them each cycle a painted
+/// pattern's chain runs into is cut where the first walk into it comes
+/// back (no hang; a walk that ends there may lose what it took past the
+/// cut).
+const WALK_LIMIT: u64 = 1 << 21;
+
+/// Calls to the object bounding box of the element being drawn that one
+/// call of a mask, clip path, filter, filter primitive or gradient may make
+/// (SkSVGRenderContext::transformForCurrentOBB, resolveOBBRect: a mask
+/// makes 2, a lighting primitive up to 4).
+const OBB_CALLS: u64 = 4;
+
+fn add(x: u64, y: u64) -> u64 {
+  x.saturating_add(y).min(CAP)
 }
 
-/// SkSVG's tag table (SkSVGDOM.cpp gTagFactories, plus `svg`), by raw QName.
+fn mul(x: u64, y: u64) -> u64 {
+  x.saturating_mul(y).min(CAP)
+}
+
+/// SkSVG's view of an element, by raw QName (SkSVGDOM.cpp gTagFactories,
+/// plus `svg`).
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum Tag {
+  Pattern,
+  Use,
+  Gradient,
+  TextPath,
+  Other,
+}
+
 fn tag(raw: &str) -> Option<Tag> {
   Some(match raw {
-    "svg" => Tag::Svg,
-    "a" | "g" => Tag::G,
-    "use" => Tag::Use,
-    "circle" | "ellipse" | "line" | "path" | "polygon" | "polyline" | "rect" => Tag::Shape,
-    "text" | "tspan" => Tag::Text,
-    "textPath" => Tag::TextPath,
-    "clipPath" => Tag::ClipPath,
-    "mask" => Tag::Mask,
     "pattern" => Tag::Pattern,
+    "use" => Tag::Use,
     "linearGradient" | "radialGradient" => Tag::Gradient,
-    "filter" => Tag::Filter,
-    "stop" => Tag::Stop,
-    "defs"
+    "textPath" => Tag::TextPath,
+    "svg"
+    | "a"
+    | "g"
+    | "circle"
+    | "ellipse"
+    | "line"
+    | "path"
+    | "polygon"
+    | "polyline"
+    | "rect"
+    | "text"
+    | "tspan"
+    | "clipPath"
+    | "mask"
+    | "filter"
+    | "stop"
+    | "defs"
     | "image"
     | "feBlend"
     | "feColorMatrix"
@@ -101,74 +132,9 @@ fn tag(raw: &str) -> Option<Tag> {
     | "fePointLight"
     | "feSpecularLighting"
     | "feSpotLight"
-    | "feTurbulence" => Tag::Leaf,
+    | "feTurbulence" => Tag::Other,
     _ => return None,
   })
-}
-
-/// A fill or stroke as SkSVG keeps it.
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
-enum Paint {
-  /// Not set (or `inherit`): the parent's.
-  Inherit,
-  /// A colour or `none`.
-  Plain,
-  /// `url(#id)`, with its element.
-  Url(Option<u32>),
-}
-
-/// A paint or reference as written, before ids are known.
-#[derive(Clone, Debug, PartialEq, Eq)]
-enum RawRef {
-  Unset,
-  Plain,
-  /// `url()`: its local id, None for another IRI.
-  Url(Option<String>),
-}
-
-/// What SkSVG makes of a fill or stroke value.
-#[derive(Debug, PartialEq, Eq)]
-enum PaintValue {
-  Set(RawRef),
-  /// Not parsed: the last value stays.
-  Kept,
-  /// A `url()` with a fallback colour this cannot read: set or kept.
-  Either(Option<String>),
-}
-
-/// An element SkSVG builds.
-struct El {
-  node: NodeId,
-  tag: Tag,
-  /// The elements SkSVG builds below this one, in order.
-  children: Vec<u32>,
-  /// Text fragments (text, tspan, textPath).
-  fragments: u64,
-  /// What drawing the element itself costs past its visit: 32 and the
-  /// path data of a shape, 32 and the text of each fragment.
-  own: u64,
-  fill: Paint,
-  stroke: Paint,
-  clip: Option<u32>,
-  mask: Option<u32>,
-  filter: Option<u32>,
-  /// The element `xlink:href` names, as written (0) and after the renames
-  /// (1).
-  href: [Option<u32>; 2],
-  /// use, pattern, gradients, textPath: the attribute spelled
-  /// `xlink:href`, and the one svg_doc reads (dom::Doc::href), as indices
-  /// into the node's attributes.
-  xlink: Option<usize>,
-  chosen: Option<usize>,
-}
-
-struct Model<'t> {
-  text: &'t str,
-  els: Vec<El>,
-  /// The elements a fill or stroke names, in any declaration.
-  painted: Vec<u32>,
-  /// A fill or stroke this cannot tell is set: its cost is not known.
-  unknown: bool,
 }
 
 /// The QName at `range` in the text, when it spells `local` (unprefixed or
@@ -179,46 +145,65 @@ fn raw_qname<'t>(text: &'t str, range: Range<usize>, local: &str) -> Option<&'t 
     .then_some(raw)
 }
 
-/// SkSVG's TrimmedString.
-fn trim(s: &str) -> &str {
-  s.trim_matches(|c: char| c <= ' ')
-}
-
-/// An IRI SkSVGAttributeParser takes as local: `#` and what follows up to a
-/// `)`, after optional whitespace.
-fn local_iri(value: &str) -> Option<&str> {
-  let rest = value
-    .trim_start_matches(|c: char| c.is_ascii_whitespace())
-    .strip_prefix('#')?;
-  let id = &rest[..rest.find(')').unwrap_or(rest.len())];
-  (!id.is_empty()).then_some(id)
-}
-
-/// SkParseColor.cpp gColorNames, matched case sensitively.
-const COLOR_NAMES: &str = "aliceblue antiquewhite aqua aquamarine azure beige bisque black \
-  blanchedalmond blue blueviolet brown burlywood cadetblue chartreuse chocolate coral \
-  cornflowerblue cornsilk crimson cyan darkblue darkcyan darkgoldenrod darkgray darkgreen \
-  darkkhaki darkmagenta darkolivegreen darkorange darkorchid darkred darksalmon darkseagreen \
-  darkslateblue darkslategray darkturquoise darkviolet deeppink deepskyblue dimgray dodgerblue \
-  firebrick floralwhite forestgreen fuchsia gainsboro ghostwhite gold goldenrod gray green \
-  greenyellow honeydew hotpink indianred indigo ivory khaki lavender lavenderblush lawngreen \
-  lemonchiffon lightblue lightcoral lightcyan lightgoldenrodyellow lightgreen lightgrey \
-  lightpink lightsalmon lightseagreen lightskyblue lightslategray lightsteelblue lightyellow \
-  lime limegreen linen magenta maroon mediumaquamarine mediumblue mediumorchid mediumpurple \
-  mediumseagreen mediumslateblue mediumspringgreen mediumturquoise mediumvioletred \
-  midnightblue mintcream mistyrose moccasin navajowhite navy oldlace olive olivedrab orange \
-  orangered orchid palegoldenrod palegreen paleturquoise palevioletred papayawhip peachpuff \
-  peru pink plum powderblue purple red rosybrown royalblue saddlebrown salmon sandybrown \
-  seagreen seashell sienna silver skyblue slateblue slategray snow springgreen steelblue tan \
-  teal thistle tomato turquoise violet wheat white whitesmoke yellow yellowgreen";
-
 /// SkSVGAttributeParser's whitespace.
 fn is_ws(c: u8) -> bool {
   (1..=32).contains(&c)
 }
 
+/// SkSVG's TrimmedString with an unsigned char: bytes up to ' '.
+fn trim(s: &str) -> &str {
+  s.trim_matches(|c: char| c <= ' ')
+}
+
+/// TrimmedString with a signed char (arm64 macOS, x86): bytes from 0x80 go
+/// too. Only used to tell whether SkSVG may see an empty name.
+fn trim_signed(s: &[u8]) -> &[u8] {
+  let keep = |c: &u8| *c > b' ' && *c < 0x80;
+  let start = s.iter().position(keep).unwrap_or(s.len());
+  let end = s.iter().rposition(keep).map_or(start, |e| e + 1);
+  &s[start..end]
+}
+
+/// The local id SkSVG's parse<SkSVGIRI> reads: `#` after whitespace, then
+/// all up to a `)`.
+fn sk_iri(value: &str) -> Option<&str> {
+  let b = value.as_bytes();
+  let start = b.iter().position(|&c| !is_ws(c))?;
+  let rest = value.get(start..)?.strip_prefix('#')?;
+  let id = &rest[..rest.find(')').unwrap_or(rest.len())];
+  (!id.is_empty()).then_some(id)
+}
+
+/// SkSVG's StyleIterator over `style=""`, with a nested `style:` declaration
+/// read again (set_string_attribute -> SetStyleAttributes), as `f(name,
+/// value)`. Stops where SkSVG may stop (a name that may be empty).
+fn style_decls(value: &str, f: &mut impl FnMut(&str, &str)) {
+  let mut pending = vec![value];
+  while let Some(s) = pending.pop() {
+    let mut pos = 0;
+    while pos <= s.len() {
+      let rest = &s[pos..];
+      let sep = rest.find(';').unwrap_or(rest.len());
+      let Some(colon) = rest.find(':').filter(|&c| c < sep) else {
+        break;
+      };
+      let name = trim(&rest[..colon]);
+      if trim_signed(name.as_bytes()).is_empty() {
+        break;
+      }
+      let v = trim(&rest[colon + 1..sep]);
+      if name == "style" {
+        pending.push(v);
+      } else {
+        f(name, v);
+      }
+      pos += sep + 1;
+    }
+  }
+}
+
 /// A value read as SkSVGAttributeParser reads it. `Err` is a form this does
-/// not read (CSS escapes, `var()`, numbers strtod reads past a decimal).
+/// not read (a number strtod reads as hex, inf or nan).
 struct Parser<'v> {
   s: &'v str,
   at: usize,
@@ -227,6 +212,10 @@ struct Parser<'v> {
 type Known = Result<bool, ()>;
 
 impl Parser<'_> {
+  fn new(s: &str) -> Parser<'_> {
+    Parser { s, at: 0 }
+  }
+
   fn byte(&self, i: usize) -> Option<u8> {
     self.s.as_bytes().get(i).copied()
   }
@@ -238,8 +227,10 @@ impl Parser<'_> {
     i
   }
 
-  fn ws(&mut self) {
+  fn ws(&mut self) -> bool {
+    let start = self.at;
     self.at = self.skip_ws(self.at);
+    self.at != start
   }
 
   /// parseSepToken.
@@ -255,7 +246,7 @@ impl Parser<'_> {
   }
 
   fn token(&mut self, t: &str) -> bool {
-    let found = self.s[self.at..].starts_with(t);
+    let found = self.s.as_bytes()[self.at..].starts_with(t.as_bytes());
     if found {
       self.at += t.len();
     }
@@ -273,22 +264,6 @@ impl Parser<'_> {
       .count()
   }
 
-  /// SkParse::FindS32: where the int32 after whitespace ends.
-  fn find_s32(&self) -> Option<usize> {
-    let mut i = self.skip_ws(self.at);
-    let neg = self.byte(i) == Some(b'-');
-    i += neg as usize;
-    let n = self.digits(i);
-    let max = if neg { 1i64 << 31 } else { (1i64 << 31) - 1 };
-    let fits = self.s[i..i + n]
-      .bytes()
-      .try_fold(0i64, |v, c| {
-        Some(v * 10 + (c - b'0') as i64).filter(|&v| v <= max)
-      })
-      .is_some();
-    (n > 0 && fits).then_some(i + n)
-  }
-
   /// SkParse::FindScalar (strtod): where the number after whitespace ends.
   fn find_scalar(&self) -> Result<Option<usize>, ()> {
     let mut i = self.skip_ws(self.at);
@@ -300,20 +275,12 @@ impl Parser<'_> {
       return Err(());
     }
     let int = self.digits(i);
-    let frac = if self.byte(i + int) == Some(b'.') {
-      self.digits(i + int + 1)
-    } else {
-      0
-    };
+    let dot = self.byte(i + int) == Some(b'.');
+    let frac = if dot { self.digits(i + int + 1) } else { 0 };
     if int + frac == 0 {
       return Ok(None);
     }
-    i += int
-      + if self.byte(i + int) == Some(b'.') {
-        1 + frac
-      } else {
-        0
-      };
+    i += int + if dot { 1 + frac } else { 0 };
     if matches!(self.byte(i), Some(b'e' | b'E')) {
       let sign = matches!(self.byte(i + 1), Some(b'+' | b'-')) as usize;
       let e = self.digits(i + 1 + sign);
@@ -322,6 +289,17 @@ impl Parser<'_> {
       }
     }
     Ok(Some(i))
+  }
+
+  /// parseScalarToken.
+  fn scalar(&mut self) -> Known {
+    Ok(match self.find_scalar()? {
+      Some(end) => {
+        self.at = end;
+        true
+      }
+      None => false,
+    })
   }
 
   /// parseParenthesized: `prefix ( f )`, whitespace around each; the
@@ -346,203 +324,138 @@ impl Parser<'_> {
     Ok(found)
   }
 
-  /// parseColorComponentToken.
-  fn component(&mut self) -> Known {
-    if let Some(end) = self.find_s32()
-      && self.byte(end) != Some(b'.')
-    {
-      self.at = end + (self.byte(end) == Some(b'%')) as usize;
+  /// `sep scalar`, the separator kept when the scalar fails (as SkSVG's
+  /// `parseSepToken() && parseScalarToken()`).
+  fn sep_scalar(&mut self) -> Known {
+    Ok(self.sep() && self.scalar()?)
+  }
+
+  /// One transform function (parseMatrixToken ... parseSkewYToken).
+  fn transform_token(&mut self) -> Known {
+    if self.parenthesized("matrix", |p| {
+      for i in 0..6 {
+        if !(p.scalar()? && (i > 4 || p.sep())) {
+          return Ok(false);
+        }
+      }
+      Ok(true)
+    })? {
       return Ok(true);
     }
-    match self.find_scalar()? {
-      Some(end) if self.byte(end) == Some(b'%') => {
-        self.at = end + 1;
-        Ok(true)
-      }
-      _ => Ok(false),
-    }
-  }
-
-  /// The inside of rgb() (3) or rgba() (4).
-  fn components(&mut self, n: usize) -> Known {
-    for k in 0..n {
-      if k > 0 && !self.sep() {
+    if self.parenthesized("translate", |p| {
+      p.ws();
+      if !p.scalar()? {
         return Ok(false);
       }
-      let read = if k == 3 {
-        match self.find_scalar()? {
-          Some(end) => {
-            self.at = end;
-            true
-          }
-          None => false,
-        }
-      } else {
-        self.component()?
-      };
-      if !read {
+      p.sep_scalar()?;
+      Ok(true)
+    })? {
+      return Ok(true);
+    }
+    if self.parenthesized("scale", |p| {
+      if !p.scalar()? {
         return Ok(false);
       }
+      p.sep_scalar()?;
+      Ok(true)
+    })? {
+      return Ok(true);
     }
-    Ok(true)
-  }
-
-  /// parseSVGColor: a hex or named colour, rgba(), rgb(), currentColor or
-  /// var().
-  fn color(&mut self) -> Known {
-    let rest = &self.s.as_bytes()[self.at..];
-    if rest.first() == Some(&b'#') {
-      let n = rest[1..]
-        .iter()
-        .take_while(|c| c.is_ascii_hexdigit())
-        .count();
-      if n == 3 || n == 6 {
-        self.at += 1 + n;
+    if self.parenthesized("rotate", |p| {
+      if !p.scalar()? {
+        return Ok(false);
+      }
+      if p.sep_scalar()? && !p.sep_scalar()? {
+        return Ok(false);
+      }
+      Ok(true)
+    })? {
+      return Ok(true);
+    }
+    for skew in ["skewX", "skewY"] {
+      if self.parenthesized(skew, |p| p.scalar())? {
         return Ok(true);
       }
     }
-    // A name is an ident token; no colour name has an escape, `-` or digit.
-    let ident = rest
-      .iter()
-      .take_while(|&&c| c.is_ascii_alphanumeric() || matches!(c, b'_' | b'-' | b'\\') || c >= 0x80)
-      .count();
-    if rest[..ident].contains(&b'\\') {
-      return Err(());
-    }
-    if COLOR_NAMES
-      .split_ascii_whitespace()
-      .any(|n| n.as_bytes() == &rest[..ident])
-    {
-      self.at += ident;
-      return Ok(true);
-    }
-    let read = self.parenthesized("rgba", |p| p.components(4))?
-      || self.parenthesized("rgb", |p| p.components(3))?
-      || self.token("currentColor")
-      || self.parenthesized("var", |_| Err(()))?;
-    Ok(read)
-  }
-
-  /// parseFuncIRI: `url(#id)`'s id, None for another IRI.
-  fn func_iri(&mut self) -> Option<Option<String>> {
-    let mut iri = None;
-    let found = self.parenthesized("url", |p| {
-      p.ws();
-      let local = p.token("#");
-      let start = p.at;
-      p.at += p.s[start..].find(')').unwrap_or(p.s.len() - start);
-      let read = p.at != start;
-      if read {
-        iri = Some(local.then(|| p.s[start..p.at].to_owned()));
-      }
-      Ok(read)
-    });
-    if found == Ok(true) { iri } else { None }
+    Ok(false)
   }
 }
 
-/// A fill or stroke value, as SkSVG's parse<SkSVGPaint> reads it.
-fn paint(value: &str) -> PaintValue {
-  if value == "inherit" {
-    return PaintValue::Set(RawRef::Unset);
-  }
-  let mut p = Parser { s: value, at: 0 };
-  p.ws();
-  let v = match p.color() {
-    Ok(true) => RawRef::Plain,
-    Ok(false) if p.token("none") => RawRef::Plain,
-    Ok(false) => {
-      let Some(iri) = p.func_iri() else {
-        return PaintValue::Kept;
-      };
-      p.ws();
-      if p.color().is_err() {
-        return PaintValue::Either(iri);
-      }
-      RawRef::Url(iri)
-    }
-    // A colour or nothing: keeping the last value costs as much or more.
-    Err(()) => return PaintValue::Kept,
+/// Whether SkSVG's parse<SkSVGLength> surely takes `value`: a number, then
+/// a unit, a separator or the end. A form this does not read is not sure.
+fn sure_length(value: &str) -> bool {
+  let p = Parser::new(value);
+  let Ok(Some(end)) = p.find_scalar() else {
+    return false;
   };
-  p.ws();
-  if p.eos() {
-    PaintValue::Set(v)
-  } else {
-    PaintValue::Kept
-  }
+  let rest = &value.as_bytes()[end..];
+  rest.is_empty()
+    || is_ws(rest[0])
+    || matches!(rest[0], b',' | b';')
+    || ["%", "em", "ex", "px", "cm", "mm", "in", "pt", "pc"]
+      .iter()
+      .any(|u| rest.starts_with(u.as_bytes()))
 }
 
-/// clip-path, mask, filter, as parse<SkSVGFuncIRI> reads them; None when it
-/// does not (the last value stays).
-fn reference(value: &str) -> Option<RawRef> {
-  if value == "inherit" || value == "none" {
-    return Some(RawRef::Unset);
-  }
-  let mut p = Parser { s: value, at: 0 };
-  let iri = p.func_iri()?;
-  p.eos().then_some(RawRef::Url(iri))
-}
-
-#[derive(Default)]
-struct Refs {
-  id: Option<String>,
-  fill: Option<RawRef>,
-  stroke: Option<RawRef>,
-  clip: Option<RawRef>,
-  mask: Option<RawRef>,
-  filter: Option<RawRef>,
-  href: [Option<String>; 2],
-  /// Every `url(#id)` of a fill or stroke SkSVG may take, also one a later
-  /// one replaces.
-  paints: Vec<String>,
-  /// A fill or stroke this cannot tell is set.
-  unknown: bool,
-}
-
-impl Refs {
-  /// One attribute or style="" declaration, as SkSVG sets it: a value it
-  /// does not parse keeps the last one.
-  fn set(&mut self, name: &str, value: &str) {
-    let (slot, v) = match name {
-      "fill" | "stroke" => {
-        let slot = if name == "fill" {
-          &mut self.fill
-        } else {
-          &mut self.stroke
-        };
-        match paint(value) {
-          PaintValue::Set(v) => {
-            if let RawRef::Url(Some(id)) = &v {
-              self.paints.push(id.clone());
-            }
-            (slot, Some(v))
-          }
-          PaintValue::Kept => return,
-          PaintValue::Either(iri) => {
-            self.paints.extend(iri);
-            self.unknown = true;
-            return;
-          }
-        }
-      }
-      "clip-path" => (&mut self.clip, reference(value)),
-      "mask" => (&mut self.mask, reference(value)),
-      "filter" => (&mut self.filter, reference(value)),
-      _ => return,
-    };
-    if let Some(v) = v {
-      *slot = Some(v);
+/// Whether SkSVG's parse<SkSVGTransformType> surely takes `value`.
+fn sure_transform(value: &str) -> bool {
+  let mut p = Parser::new(value);
+  let mut parsed = false;
+  loop {
+    match p.transform_token() {
+      Ok(true) => parsed = true,
+      Ok(false) => break,
+      Err(()) => return false,
+    }
+    // parseCommaWspToken: whitespace, else one comma.
+    if !p.ws() {
+      p.token(",");
     }
   }
+  p.ws();
+  parsed && p.eos()
 }
 
-impl<'t> Model<'t> {
-  /// SkSVG's view of the tree: only elements it builds (an unknown tag
-  /// drops its subtree), its last-wins ids, and the references it follows.
-  fn read(doc: &Doc, text: &'t str) -> Model<'t> {
-    let mut els: Vec<El> = Vec::new();
-    let mut refs: Vec<Refs> = Vec::new();
-    let mut ids: HashMap<String, u32> = HashMap::new();
+/// The attributes resolveHref inherits, as bits of a mask.
+const PATTERN_ATTRS: [&str; 5] = ["x", "y", "width", "height", "patternTransform"];
+const ALL_SET: u8 = 0b11111;
+
+/// The bit of `name` when SkSVG surely sets it from `value`.
+fn sure_set(name: &str, value: &str) -> u8 {
+  match PATTERN_ATTRS.iter().position(|a| *a == name) {
+    Some(4) if sure_transform(value) => 1 << 4,
+    Some(k) if k < 4 && sure_length(value) => 1 << k,
+    _ => 0,
+  }
+}
+
+/// An element SkSVG builds.
+struct SkEl {
+  node: NodeId,
+  tag: Tag,
+  /// SkSVGContainer::hasChildren: an element it builds or text below.
+  kids: bool,
+  /// A pattern's attributes SkSVG surely sets (PATTERN_ATTRS bits).
+  sets: u8,
+  /// use, pattern, gradients, textPath: the attribute spelled
+  /// `xlink:href`, and the one svg_doc reads (dom::Doc::href), as indices
+  /// into the node's attributes.
+  xlink: Option<usize>,
+  chosen: Option<usize>,
+}
+
+/// SkSVG's tree: only elements it builds (an unknown tag drops its
+/// subtree), in document order, and its last-wins ids.
+struct Sk<'d> {
+  text: &'d str,
+  els: Vec<SkEl>,
+  ids: HashMap<&'d str, u32>,
+}
+
+impl<'d> Sk<'d> {
+  fn read(doc: &'d Doc, text: &'d str) -> Sk<'d> {
+    let mut els: Vec<SkEl> = Vec::new();
+    let mut ids: HashMap<&'d str, u32> = HashMap::new();
     let mut stack = vec![(doc.root, None::<u32>)];
     while let Some((node, parent)) = stack.pop() {
       let NodeData::Element { name, attrs, .. } = &doc.nodes[node].data else {
@@ -562,30 +475,19 @@ impl<'t> Model<'t> {
         continue;
       }
       let index = els.len() as u32;
-      let mut r = Refs::default();
-      let mut own = 0u64;
       let mut xlink = None;
+      let mut sets = 0u8;
       for (k, a) in attrs.iter().enumerate() {
         let Some(raw) = raw_qname(text, a.range.start..a.qname_end, &a.name) else {
           continue;
         };
         match raw {
-          "id" => r.id = Some(a.value.clone()),
-          "style" => {
-            for decl in a.value.split(';') {
-              let Some((n, v)) = decl.split_once(':') else {
-                break;
-              };
-              let n = trim(n);
-              if n.is_empty() {
-                break;
-              }
-              r.set(n, trim(v));
-            }
+          "id" => {
+            ids.insert(a.value.as_str(), index);
           }
-          "d" | "points" if tag == Tag::Shape => own = a.value.len() as u64,
           "xlink:href" => xlink = Some(k),
-          _ => r.set(raw, &a.value),
+          "style" => style_decls(&a.value, &mut |n, v| sets |= sure_set(n, v)),
+          _ => sets |= sure_set(raw, &a.value),
         }
       }
       let hrefs = matches!(tag, Tag::Use | Tag::Pattern | Tag::Gradient | Tag::TextPath);
@@ -601,164 +503,363 @@ impl<'t> Model<'t> {
       } else {
         None
       };
-      let xlink = xlink.filter(|_| hrefs);
-      r.href = [xlink, chosen].map(|k| {
-        k.and_then(|k| local_iri(&attrs[k].value))
-          .map(str::to_owned)
-      });
-      let mut fragments = 0;
-      if matches!(tag, Tag::Text | Tag::TextPath) {
-        for &c in &doc.nodes[node].children {
-          if let NodeData::Text(t) = &doc.nodes[c].data {
-            fragments += 1;
-            own = own.saturating_add(32 + t.len() as u64);
-          }
-        }
-      } else if tag == Tag::Shape {
-        own += 32;
+      let kids = doc.nodes[node]
+        .children
+        .iter()
+        .any(|&c| matches!(&doc.nodes[c].data, NodeData::Text(t) if !t.is_empty()));
+      if let Some(p) = parent {
+        els[p as usize].kids = true;
       }
-      if let Some(id) = r.id.take() {
-        ids.insert(id, index);
-      }
-      els.push(El {
+      els.push(SkEl {
         node,
         tag,
-        children: Vec::new(),
-        fragments,
-        own,
-        fill: Paint::Inherit,
-        stroke: Paint::Inherit,
-        clip: None,
-        mask: None,
-        filter: None,
-        href: [None; 2],
-        xlink,
+        kids,
+        sets: if tag == Tag::Pattern { sets } else { 0 },
+        xlink: xlink.filter(|_| hrefs),
         chosen,
       });
-      refs.push(r);
-      if let Some(p) = parent {
-        els[p as usize].children.push(index);
-      }
       for &c in doc.nodes[node].children.iter().rev() {
         stack.push((c, Some(index)));
       }
     }
-    let find = |id: &str| ids.get(id).copied();
-    let target = |r: &Option<RawRef>| match r {
-      Some(RawRef::Url(id)) => id.as_deref().and_then(find),
-      _ => None,
-    };
-    let paint = |r: &Option<RawRef>| match r {
-      None | Some(RawRef::Unset) => Paint::Inherit,
-      Some(RawRef::Plain) => Paint::Plain,
-      Some(RawRef::Url(id)) => Paint::Url(id.as_deref().and_then(find)),
-    };
-    let mut painted = Vec::new();
-    let unknown = refs.iter().any(|r| r.unknown);
-    for (e, r) in els.iter_mut().zip(&refs) {
-      e.fill = paint(&r.fill);
-      e.stroke = paint(&r.stroke);
-      e.clip = target(&r.clip);
-      e.mask = target(&r.mask);
-      e.filter = target(&r.filter);
-      e.href = [0, 1].map(|v| r.href[v].as_deref().and_then(find));
-      painted.extend(r.paints.iter().filter_map(|id| find(id)));
-    }
-    Model {
-      text,
-      els,
-      painted,
-      unknown,
-    }
+    Sk { text, els, ids }
   }
 
-  fn tag(&self, i: u32) -> Tag {
-    self.els[i as usize].tag
-  }
-
-  /// A pattern with children, a gradient with `<stop>` children: the end of
-  /// an href chain's search for content (SkSVGPattern::resolveHref,
-  /// SkSVGGradient::collectColorStops).
-  fn full(&self, i: usize) -> bool {
+  /// The attribute SkSVG reads as the href in `variant` (0: as written, 1:
+  /// renamed).
+  fn read_href(&self, i: usize, variant: usize) -> Option<usize> {
     let e = &self.els[i];
-    match e.tag {
-      Tag::Gradient => e.children.iter().any(|&c| self.tag(c) == Tag::Stop),
-      _ => !e.children.is_empty(),
-    }
+    if variant == 0 { e.xlink } else { e.chosen }
   }
 
-  /// The pattern or gradient each one's href chain goes on to, in
-  /// `variant`: a gradient with stops of its own does not follow it
-  /// (SkSVGGradient::collectColorStops).
-  fn chain(&self, variant: usize, broken: &[bool]) -> Vec<Option<u32>> {
-    self
-      .els
+  /// The patterns, and each one's href target pattern in `variant`
+  /// (SkSVGPattern::hrefTarget).
+  fn pattern_graph(&self, doc: &Doc, variant: usize) -> (Vec<u32>, Vec<Option<u32>>) {
+    let pats: Vec<u32> = (0..self.els.len() as u32)
+      .filter(|&i| self.els[i as usize].tag == Tag::Pattern)
+      .collect();
+    let at: HashMap<u32, u32> = pats
       .iter()
       .enumerate()
-      .map(|(i, e)| {
-        let t = e.href[variant]?;
-        match e.tag {
-          Tag::Pattern if !broken[i] && self.tag(t) == Tag::Pattern => Some(t),
-          Tag::Gradient if !self.full(i) && self.tag(t) == Tag::Gradient => Some(t),
-          _ => None,
-        }
+      .map(|(k, &i)| (i, k as u32))
+      .collect();
+    let next = pats
+      .iter()
+      .map(|&i| {
+        let k = self.read_href(i as usize, variant)?;
+        let value = &doc.attrs(self.els[i as usize].node)[k].value;
+        let t = *self.ids.get(sk_iri(value)?)?;
+        at.get(&t).copied()
       })
-      .collect()
+      .collect();
+    (pats, next)
   }
+}
+
+/// A resolveHref walk's state: the attributes found, and whether content
+/// was.
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
+struct WalkState {
+  sets: u8,
+  content: bool,
+}
+
+impl WalkState {
+  const START: WalkState = WalkState {
+    sets: 0,
+    content: false,
+  };
+
+  /// One step at a pattern: whether the walk stops there, the state after,
+  /// and whether the result changed.
+  fn step(self, sets: u8, kids: bool) -> (bool, WalkState, bool) {
+    let did_inherit = self.sets != ALL_SET;
+    let next = WalkState {
+      sets: self.sets | sets,
+      content: self.content || kids,
+    };
+    (next.content && !did_inherit, next, next != self)
+  }
+}
+
+/// How a walk into a cycle at an entry goes on: whether it stops, and the
+/// offset round the cycle (from the entry) of the last pattern that changed
+/// its result.
+#[derive(Clone, Copy, Debug)]
+struct Lap {
+  ends: bool,
+  last: usize,
+}
+
+/// Where a walk from outside the cycles goes.
+#[derive(Clone, Copy, Debug)]
+enum Tail {
+  /// Stops, or reaches the end of the chain, before any cycle.
+  Ends,
+  /// Runs into a cycle at this pattern, in this state.
+  Enters(u32, WalkState),
+}
+
+struct Walks<'a> {
+  next: &'a [Option<u32>],
+  sets: &'a [u8],
+  kids: &'a [bool],
+  /// The cycle of each pattern (u32::MAX: none) and its place there.
+  cycle: Vec<u32>,
+  pos: Vec<u32>,
+  rings: Vec<Vec<u32>>,
+  steps: u64,
+  tails: HashMap<(u32, WalkState), Tail>,
+}
+
+impl<'a> Walks<'a> {
+  fn new(next: &'a [Option<u32>], sets: &'a [u8], kids: &'a [bool]) -> Walks<'a> {
+    let n = next.len();
+    let mut cycle = vec![u32::MAX; n];
+    let mut pos = vec![0u32; n];
+    let mut rings: Vec<Vec<u32>> = Vec::new();
+    // 0 new, 1 on this walk, 2 done.
+    let mut state = vec![0u8; n];
+    let mut path = Vec::new();
+    for s in 0..n {
+      path.clear();
+      let mut x = Some(s as u32);
+      while let Some(c) = x {
+        if state[c as usize] != 0 {
+          break;
+        }
+        state[c as usize] = 1;
+        path.push(c);
+        x = next[c as usize];
+      }
+      if let Some(c) = x
+        && state[c as usize] == 1
+      {
+        let at = path.iter().position(|&p| p == c).unwrap_or(0);
+        let ring = path[at..].to_vec();
+        for (k, &p) in ring.iter().enumerate() {
+          cycle[p as usize] = rings.len() as u32;
+          pos[p as usize] = k as u32;
+        }
+        rings.push(ring);
+      }
+      for &p in &path {
+        state[p as usize] = 2;
+      }
+    }
+    Walks {
+      next,
+      sets,
+      kids,
+      cycle,
+      pos,
+      rings,
+      steps: 0,
+      tails: HashMap::new(),
+    }
+  }
+
+  fn spend(&mut self, n: u64) -> Result<(), ()> {
+    self.steps += n;
+    if self.steps > WALK_LIMIT {
+      Err(())
+    } else {
+      Ok(())
+    }
+  }
+
+  /// A walk from `p`, outside the cycles, in `state`.
+  fn tail(&mut self, p: u32, state: WalkState) -> Result<Tail, ()> {
+    let mut path = Vec::new();
+    let (mut x, mut s) = (p, state);
+    let out = loop {
+      if self.cycle[x as usize] != u32::MAX {
+        break Tail::Enters(x, s);
+      }
+      if let Some(&t) = self.tails.get(&(x, s)) {
+        break t;
+      }
+      self.spend(1)?;
+      path.push((x, s));
+      let (stops, after, _) = s.step(self.sets[x as usize], self.kids[x as usize]);
+      if stops {
+        break Tail::Ends;
+      }
+      s = after;
+      match self.next[x as usize] {
+        Some(y) => x = y,
+        None => break Tail::Ends,
+      }
+    };
+    for key in path {
+      self.tails.insert(key, out);
+    }
+    Ok(out)
+  }
+
+  /// A walk round cycle `c` from its member at `from`, in `state`: once
+  /// round and back to `from` (`borrowed`: the walk began there, so it
+  /// ends before it).
+  fn lap(&mut self, c: u32, from: u32, state: WalkState, borrowed: bool) -> Result<Lap, ()> {
+    let len = self.rings[c as usize].len();
+    self.spend(len as u64 + 1)?;
+    let mut s = state;
+    let mut last = 0;
+    let steps = if borrowed { len } else { len + 1 };
+    for k in 0..steps {
+      let p = self.rings[c as usize][(from as usize + k) % len] as usize;
+      let (stops, after, changed) = s.step(self.sets[p], self.kids[p]);
+      if changed {
+        last = k;
+      }
+      if stops {
+        return Ok(Lap { ends: true, last });
+      }
+      s = after;
+    }
+    Ok(Lap {
+      ends: borrowed,
+      last,
+    })
+  }
+}
+
+/// The patterns whose href is blanked so that no walk from a `painted`
+/// pattern goes round a cycle for ever. None when the walks take more than
+/// WALK_LIMIT steps.
+fn walk_cuts(
+  next: &[Option<u32>],
+  sets: &[u8],
+  kids: &[bool],
+  painted: &[bool],
+) -> Option<Vec<usize>> {
+  let mut w = Walks::new(next, sets, kids);
+  if w.rings.is_empty() {
+    return Some(Vec::new());
+  }
+  let n = next.len();
+  // Per cycle: the edges (from the member at offset k to the next) a walk
+  // that ends uses before its result is complete, as a difference array;
+  // and the walks that go round for ever: their entry and last change.
+  let mut forbidden: Vec<Vec<i64>> = w.rings.iter().map(|r| vec![0; r.len() + 1]).collect();
+  let mut loops: Vec<Vec<(u32, usize)>> = vec![Vec::new(); w.rings.len()];
+  let mut forbid = |c: usize, from: usize, edges: usize, len: usize| {
+    let f = &mut forbidden[c];
+    if edges >= len {
+      f[0] += 1;
+      f[len] -= 1;
+    } else if from + edges <= len {
+      f[from] += 1;
+      f[from + edges] -= 1;
+    } else {
+      f[from] += 1;
+      f[len] -= 1;
+      f[0] += 1;
+      f[from + edges - len] -= 1;
+    }
+  };
+  let mut seen: HashSet<(u32, WalkState)> = HashSet::new();
+  for r in (0..n).filter(|&r| painted[r]) {
+    let c = w.cycle[r];
+    let (entry, state, borrowed) = if c != u32::MAX {
+      (r as u32, WalkState::START, true)
+    } else {
+      match w.tail(r as u32, WalkState::START).ok()? {
+        Tail::Ends => continue,
+        Tail::Enters(e, s) => {
+          if !seen.insert((e, s)) {
+            continue;
+          }
+          (e, s, false)
+        }
+      }
+    };
+    let c = w.cycle[entry as usize] as usize;
+    let from = w.pos[entry as usize] as usize;
+    let lap = w.lap(c as u32, from as u32, state, borrowed).ok()?;
+    let len = w.rings[c].len();
+    if lap.ends {
+      forbid(c, from, lap.last, len);
+    } else {
+      loops[c].push((entry, lap.last));
+    }
+  }
+  let mut cuts = Vec::new();
+  for (c, entries) in loops.iter_mut().enumerate() {
+    if entries.is_empty() {
+      continue;
+    }
+    let len = w.rings[c].len();
+    let mut blocked = vec![false; len];
+    let mut run = 0i64;
+    for (k, b) in blocked.iter_mut().enumerate() {
+      run += forbidden[c][k];
+      *b = run > 0;
+    }
+    // In document order; one entry each, with its latest change.
+    entries.sort_unstable();
+    entries.dedup_by(|a, b| {
+      if a.0 == b.0 {
+        b.1 = b.1.max(a.1);
+        true
+      } else {
+        false
+      }
+    });
+    w.spend((entries.len() * entries.len().min(64)) as u64)
+      .ok()?;
+    let pos = |p: u32| w.pos[p as usize] as usize;
+    // The cut at edge `j` keeps a walk's result (Blink's) when the walk has
+    // seen all it changes on before the edge.
+    let kept = |j: usize| {
+      entries
+        .iter()
+        .filter(|(e, last)| (j + len - pos(*e)) % len >= *last)
+        .count()
+    };
+    let closing = |e: u32| (pos(e) + len - 1) % len;
+    let mut best: Option<(usize, usize)> = None;
+    for &(e, _) in entries.iter().take(64) {
+      let j = closing(e);
+      if blocked[j] {
+        continue;
+      }
+      let score = kept(j);
+      if best.is_none_or(|(_, s)| score > s) {
+        best = Some((j, score));
+      }
+    }
+    let first = closing(entries[0].0);
+    let j = match best {
+      Some((j, _)) => j,
+      // Latest edge before the first entry comes back that no ending walk
+      // needs; else the first entry's (no hang wins).
+      None => (0..len)
+        .map(|d| (first + len - d) % len)
+        .find(|&j| !blocked[j])
+        .unwrap_or(first),
+    };
+    cuts.push(w.rings[c][j] as usize);
+  }
+  Some(cuts)
 }
 
 /// The patterns whose href closes a cycle a walk from a `painted` pattern
 /// outside it runs into: at each such cycle, the one before its first
-/// entry (in document order). That walk then goes round the cycle once; a
-/// cycle no such walk runs into is left as it is (SkSVG stops at the
-/// painted pattern, and walks only from a painted one).
-fn cycle_breaks(next: &[Option<u32>], painted: &[u32]) -> Vec<usize> {
-  let n = next.len();
-  // 0 new, 1 on this walk, 2 done.
-  let mut state = vec![0u8; n];
-  // The cycle an element is on, and the element before it there.
-  let mut cycle = vec![u32::MAX; n];
-  let mut before = vec![0u32; n];
-  let mut cycles = 0u32;
-  let mut path = Vec::new();
-  for s in 0..n {
-    path.clear();
-    let mut x = Some(s as u32);
-    while let Some(c) = x {
-      if state[c as usize] != 0 {
-        break;
-      }
-      state[c as usize] = 1;
-      path.push(c);
-      x = next[c as usize];
-    }
-    if let Some(c) = x
-      && state[c as usize] == 1
-    {
-      let pos = path.iter().position(|&p| p == c).unwrap_or(0);
-      let ring = &path[pos..];
-      for (k, &p) in ring.iter().enumerate() {
-        cycle[p as usize] = cycles;
-        before[p as usize] = ring[(k + ring.len() - 1) % ring.len()];
-      }
-      cycles += 1;
-    }
-    for &p in &path {
-      state[p as usize] = 2;
-    }
-  }
-  // Each pattern outside a cycle is walked from once.
-  let mut entry = vec![u32::MAX; cycles as usize];
-  let mut walked = vec![false; n];
-  for &s in painted {
-    let mut p = s as usize;
-    while cycle[p] == u32::MAX && !walked[p] {
+/// entry (in document order). Used when the walks are too long to run.
+fn cycle_breaks(next: &[Option<u32>], painted: &[bool]) -> Vec<usize> {
+  let w = Walks::new(next, &[], &[]);
+  let mut entry = vec![u32::MAX; w.rings.len()];
+  let mut walked = vec![false; next.len()];
+  for s in (0..next.len()).filter(|&s| painted[s]) {
+    let mut p = s;
+    while w.cycle[p] == u32::MAX && !walked[p] {
       walked[p] = true;
       let Some(q) = next[p] else {
         break;
       };
-      if cycle[q as usize] != u32::MAX {
-        let e = &mut entry[cycle[q as usize] as usize];
+      if w.cycle[q as usize] != u32::MAX {
+        let e = &mut entry[w.cycle[q as usize] as usize];
         *e = (*e).min(q);
       }
       p = q as usize;
@@ -766,335 +867,528 @@ fn cycle_breaks(next: &[Option<u32>], painted: &[u32]) -> Vec<usize> {
   }
   entry
     .into_iter()
-    .filter(|&e| e != u32::MAX)
-    .map(|e| before[e as usize] as usize)
+    .enumerate()
+    .filter(|&(_, e)| e != u32::MAX)
+    .map(|(c, e)| {
+      let ring = &w.rings[c];
+      ring[(w.pos[e as usize] as usize + ring.len() - 1) % ring.len()] as usize
+    })
     .collect()
 }
 
-/// For each element on `next` (a function graph), how many elements a walk
-/// from it visits before it ends or comes back to one it visited, and the
-/// first of those `full` holds (SkSVGPattern::resolveHref's content node).
-fn walks(next: &[Option<u32>], full: impl Fn(usize) -> bool) -> Vec<(u64, Option<u32>)> {
-  let n = next.len();
-  let mut out = vec![(0u64, None); n];
-  let mut state = vec![0u8; n];
-  let mut path = Vec::new();
-  for s in 0..n {
-    path.clear();
-    let mut x = Some(s as u32);
-    while let Some(c) = x {
-      if state[c as usize] != 0 {
-        break;
+/// How a reference is written: an element child, a value that is an IRI
+/// (`#id` first), or anything else with `#id` in it (`url(#id)`, a paint
+/// some descendant may inherit).
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum Ek {
+  Tree,
+  Bare,
+  Url,
+}
+
+impl Ek {
+  /// Stack depth, in `<use>` levels (a url() may be a pattern's content).
+  fn weight(self) -> u64 {
+    match self {
+      Ek::Tree | Ek::Bare => 1,
+      Ek::Url => 8,
+    }
+  }
+}
+
+/// Every reference any attribute of any element may make, whatever SkSVG
+/// makes of the value: each `#` starts an id that runs to a `)`, a `;` or
+/// the end, trailing whitespace (and bytes from 0x80, which a signed char
+/// trims) dropped or not. Elements are numbered in document order.
+struct Scan {
+  dense: Vec<u32>,
+  nodes: Vec<NodeId>,
+  /// Per element: (attribute, element named, how).
+  refs: Vec<Vec<(u32, u32, Ek)>>,
+  /// The scan ran out of SCAN_LIMIT or EDGE_LIMIT: references not known.
+  unknown: bool,
+}
+
+impl Scan {
+  fn new(doc: &Doc) -> Scan {
+    let mut dense = vec![u32::MAX; doc.nodes.len()];
+    let mut nodes = Vec::new();
+    for (id, n) in doc.nodes.iter().enumerate() {
+      if matches!(n.data, NodeData::Element { .. }) {
+        dense[id] = nodes.len() as u32;
+        nodes.push(id);
       }
-      state[c as usize] = 1;
-      path.push(c as usize);
-      x = next[c as usize];
     }
-    let mut tail = path.len();
-    if let Some(c) = x
-      && state[c as usize] == 1
-    {
-      tail = path.iter().position(|&p| p == c as usize).unwrap_or(0);
-      let ring = &path[tail..];
-      let mut content = None;
-      // Twice round, so the first element sees the content after the last.
-      for _ in 0..2 {
-        for &p in ring.iter().rev() {
-          if full(p) {
-            content = Some(p as u32);
-          }
-          out[p] = (ring.len() as u64, content);
-        }
+    let mut ids: HashMap<&[u8], Vec<u32>> = HashMap::new();
+    for (k, &id) in nodes.iter().enumerate() {
+      for a in doc.attrs(id).iter().filter(|a| a.name == "id") {
+        ids.entry(a.value.as_bytes()).or_default().push(k as u32);
       }
     }
-    for &p in path[..tail].iter().rev() {
-      let (len, content) = next[p].map_or((0, None), |q| out[q as usize]);
-      out[p] = (len + 1, if full(p) { Some(p as u32) } else { content });
-    }
-    for &p in &path {
-      state[p] = 2;
-    }
-  }
-  out
-}
-
-/// SkSVG's work drawing a document, and its stack depth.
-#[derive(Clone, Copy, Default, Debug)]
-struct Val {
-  /// The work, as `a + f * F + s * S`, where F and S are what painting
-  /// once with the fill and the stroke the element inherits costs.
-  a: u64,
-  f: u64,
-  s: u64,
-  /// The stack depth, in `<use>` levels.
-  d: u32,
-}
-
-fn add(x: u64, y: u64) -> u64 {
-  x.saturating_add(y).min(CAP)
-}
-
-impl Val {
-  fn plus(&mut self, x: Val) {
-    self.a = add(self.a, x.a);
-    self.f = add(self.f, x.f);
-    self.s = add(self.s, x.s);
-  }
-}
-
-/// What is computed per element: the work of drawing it (render), of its
-/// outline (SkSVGNode::asPath, for clip paths and textPath), of painting
-/// with it (asPaint), and of a clip path, mask or filter it is.
-#[derive(Clone, Copy)]
-enum Kind {
-  Render = 0,
-  Path = 1,
-  Paint = 2,
-  Clip = 3,
-  Mask = 4,
-  Filter = 5,
-}
-
-/// SkSVG's work and depth for one variant of the references, counted the
-/// way SkSVG follows them: element visits, `<use>` targets, fill and stroke
-/// paint servers per shape or text fragment (inherited along the render
-/// path), pattern content and href chains, clip paths, masks, filters and
-/// textPath outlines. A reference cycle (SkSVG cuts it, at a place this
-/// does not follow) makes it unknown.
-struct Cost<'m> {
-  m: &'m Model<'m>,
-  variant: usize,
-  /// Pattern and gradient chains: length and content.
-  walks: Vec<(u64, Option<u32>)>,
-}
-
-type Get<'g> = &'g mut dyn FnMut(Kind, u32) -> Val;
-
-/// `x`, `w` levels below `v`.
-fn below(v: &mut Val, x: Val, w: u32) -> Val {
-  v.d = v.d.max(x.d.saturating_add(w));
-  x
-}
-
-impl Cost<'_> {
-  fn new<'m>(m: &'m Model<'m>, variant: usize, broken: &[bool]) -> Cost<'m> {
-    let walks = walks(&m.chain(variant, broken), |i| m.full(i));
-    Cost { m, variant, walks }
-  }
-
-  /// The element's own clip-path, mask and filter, applied when it is
-  /// drawn, outlined or painted with (SkSVGNode::onPrepareToRender).
-  fn prepare(&self, i: usize, v: &mut Val, get: Get) {
-    let e = &self.m.els[i];
-    if let Some(c) = e.clip.filter(|&c| self.m.tag(c) == Tag::ClipPath) {
-      let x = below(v, get(Kind::Clip, c), 2);
-      v.a = add(v.a, x.a);
-    }
-    if let Some(k) = e.mask.filter(|&k| self.m.tag(k) == Tag::Mask) {
-      let x = below(v, get(Kind::Mask, k), 2);
-      v.plus(x);
-    }
-    if let Some(f) = e.filter.filter(|&f| self.m.tag(f) == Tag::Filter) {
-      let x = below(v, get(Kind::Filter, f), 1);
-      v.a = add(v.a, x.a);
-    }
-  }
-
-  /// Paints once with `p`; None when it is inherited.
-  fn paint(&self, p: Paint, v: &mut Val, get: Get) -> Option<u64> {
-    match p {
-      Paint::Inherit => None,
-      Paint::Plain | Paint::Url(None) => Some(0),
-      Paint::Url(Some(t)) => Some(below(v, get(Kind::Paint, t), 1).a),
-    }
-  }
-
-  /// Applies the element's own fill and stroke to the paints below it.
-  fn fold(&self, i: usize, v: &mut Val, get: Get) {
-    let e = &self.m.els[i];
-    if let Some(c) = self.paint(e.fill, v, get) {
-      v.a = add(v.a, v.f.saturating_mul(c));
-      v.f = 0;
-    }
-    if let Some(c) = self.paint(e.stroke, v, get) {
-      v.a = add(v.a, v.s.saturating_mul(c));
-      v.s = 0;
-    }
-  }
-
-  fn eval(&self, kind: Kind, i: usize, get: Get) -> Val {
-    let e = &self.m.els[i];
-    let href = e.href[self.variant];
-    let mut v = Val {
-      a: 1,
-      ..Val::default()
-    };
-    match kind {
-      Kind::Render => {
-        match e.tag {
-          Tag::Shape | Tag::Text | Tag::TextPath => {
-            v.a = add(v.a, e.own);
-            v.f = e.fragments.max((e.tag == Tag::Shape) as u64);
-            v.s = v.f;
+    let longest = ids.keys().map(|k| k.len()).max().unwrap_or(0);
+    let mut refs = vec![Vec::new(); nodes.len()];
+    let mut spent = 0u64;
+    let mut edges = 0usize;
+    let mut unknown = false;
+    'scan: for (k, &id) in nodes.iter().enumerate() {
+      for (ai, a) in doc.attrs(id).iter().enumerate() {
+        let v = a.value.as_bytes();
+        let first = v.iter().position(|&c| !is_ws(c));
+        for p in (0..v.len()).filter(|&p| v[p] == b'#') {
+          let rest = &v[p + 1..];
+          let close = rest.iter().position(|&c| c == b')').unwrap_or(rest.len());
+          let semi = rest[..close]
+            .iter()
+            .position(|&c| c == b';')
+            .unwrap_or(close);
+          spent += close as u64 + 1;
+          if spent > SCAN_LIMIT {
+            unknown = true;
+            break 'scan;
           }
-          Tag::Use => {
-            if let Some(t) = href {
-              let x = below(&mut v, get(Kind::Render, t), 1);
-              v.plus(x);
-            }
-          }
-          _ => {}
-        }
-        if matches!(e.tag, Tag::Svg | Tag::G | Tag::Text | Tag::TextPath) {
-          for &c in &e.children {
-            let x = below(&mut v, get(Kind::Render, c), 1);
-            v.plus(x);
-          }
-        }
-        if e.tag == Tag::TextPath
-          && let Some(t) = href
-        {
-          let x = below(&mut v, get(Kind::Path, t), 1);
-          v.a = add(v.a, x.a);
-        }
-        self.prepare(i, &mut v, get);
-        self.fold(i, &mut v, get);
-      }
-      Kind::Path => {
-        match e.tag {
-          Tag::Shape | Tag::Text | Tag::TextPath => v.a = add(v.a, e.own),
-          Tag::Use => {
-            if let Some(t) = href {
-              let x = below(&mut v, get(Kind::Path, t), 1);
-              v.a = add(v.a, x.a);
-            }
-          }
-          _ => {}
-        }
-        if matches!(e.tag, Tag::Svg | Tag::G | Tag::Text | Tag::TextPath) {
-          for &c in &e.children {
-            let x = below(&mut v, get(Kind::Path, c), 1);
-            v.a = add(v.a, x.a);
-          }
-        }
-        if e.tag == Tag::TextPath
-          && let Some(t) = href
-        {
-          let x = below(&mut v, get(Kind::Path, t), 1);
-          v.a = add(v.a, x.a);
-        }
-        self.prepare(i, &mut v, get);
-      }
-      Kind::Paint => {
-        self.prepare(i, &mut v, get);
-        let (len, content) = self.walks[i];
-        match e.tag {
-          Tag::Pattern => {
-            v.a = add(v.a, len);
-            if let Some(c) = content {
-              // Drawn in a fresh context with the pattern's own fill and
-              // stroke (SkSVGRenderContext::commonPaint).
-              let mut content_val = Val::default();
-              for &k in &self.m.els[c as usize].children {
-                let x = below(&mut content_val, get(Kind::Render, k), 8);
-                content_val.plus(x);
+          let ek = if Some(p) == first && a.name != "style" {
+            Ek::Bare
+          } else {
+            Ek::Url
+          };
+          let mut cands: Vec<&[u8]> = Vec::with_capacity(6);
+          for c in [&rest[..close], &rest[..semi]] {
+            let ascii = c.len() - c.iter().rev().take_while(|&&b| b <= b' ').count();
+            let signed = c.len()
+              - c
+                .iter()
+                .rev()
+                .take_while(|&&b| b <= b' ' || b >= 0x80)
+                .count();
+            for cand in [c, &c[..ascii], &c[..signed]] {
+              if !cand.is_empty() && cand.len() <= longest && !cands.contains(&cand) {
+                cands.push(cand);
               }
-              self.fold(i, &mut content_val, get);
-              v.a = add(v.a, content_val.a);
-              v.d = v.d.max(content_val.d);
             }
           }
-          Tag::Gradient => {
-            // collectColorStops recurses along the chain.
-            v.a = add(v.a, len);
-            v.d = v.d.max(len.min(CAP) as u32);
-            if let Some(c) = content {
-              v.a = add(v.a, self.m.els[c as usize].children.len() as u64);
+          for cand in cands {
+            spent += cand.len() as u64;
+            for &t in ids.get(cand).map_or(&[][..], Vec::as_slice) {
+              refs[k].push((ai as u32, t, ek));
+              edges += 1;
             }
           }
+          if edges > EDGE_LIMIT {
+            unknown = true;
+            break 'scan;
+          }
+        }
+      }
+    }
+    Scan {
+      dense,
+      nodes,
+      refs,
+      unknown,
+    }
+  }
+}
+
+/// What an element may do in SkSVG, by local name (an element SkSVG does
+/// not build is never drawn, whatever this says).
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum Class {
+  /// svg, g, a: drawing it draws its children (each its own OBB scope).
+  Container,
+  /// defs, pattern, gradients: drawing it draws nothing below it
+  /// (SkSVGHiddenContainer).
+  Hidden,
+  /// Drawing it draws its href target.
+  Use,
+  /// text, tspan, textPath: shaped, also for a bounding box.
+  Text,
+  /// mask, clipPath, filter, fe*, gradients: a call may ask for the
+  /// bounding box of the element being drawn.
+  Obb,
+  Other,
+}
+
+fn class(name: &str) -> Class {
+  match name {
+    "svg" | "g" | "a" => Class::Container,
+    "use" => Class::Use,
+    "text" | "tspan" | "textPath" => Class::Text,
+    "defs" | "pattern" => Class::Hidden,
+    "mask" | "clipPath" | "filter" | "linearGradient" | "radialGradient" => Class::Obb,
+    n if n.starts_with("fe") => Class::Obb,
+    _ => Class::Other,
+  }
+}
+
+/// An over-approximation of SkSVG's calls on a document: every element,
+/// with an edge to each child and to each element a reference in `Scan`
+/// names, followed in every way SkSVG follows any.
+///
+/// A call on an element is a draw (R, the element is the scope whose
+/// bounding box OBB calls ask for), another call with the caller's scope
+/// (N: an outline, a paint, a clip path, a mask, a filter, text shaping),
+/// or a bounding box (B). A draw of a container draws its children and a
+/// draw of `<use>` its target; every other call is N; a bounding box asks
+/// for the children's and the references' (a text element's is a shaping,
+/// N). A url() reference is followed once per call and once more for each
+/// fill and stroke of each element and text below (inherited paints).
+/// Each call of an Obb element walks the scope's bounding box
+/// OBB_CALLS times: a draw of S with t such calls in its scope walks S's
+/// bounding box t times. A bounding box walk that shapes text which may
+/// make such calls (or inherit a url() paint) asks for the box again,
+/// nested at most as deep as there are elements that make them.
+/// SkSVG's real calls are a subset (it cuts reference cycles by borrowing
+/// the target; this refuses any cycle).
+struct Graph {
+  root: u32,
+  class: Vec<Class>,
+  /// The work of one call: 1, and for a shape, text or image 32 more plus
+  /// its attribute values; plus its text.
+  own: Vec<u64>,
+  /// Text children: each one more fill and stroke.
+  texts: Vec<u64>,
+  /// pattern, gradients, clipPath: what a url() reaches below them inherits
+  /// no paint (a pattern's content is drawn with a fresh presentation
+  /// context, SkSVGRenderContext::commonPaint; the rest paint nothing).
+  fresh: Vec<bool>,
+  out: Vec<Vec<(u32, Ek, bool)>>,
+  /// Topological order from the root.
+  order: Vec<u32>,
+}
+
+/// A call through an edge from a draw.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Call {
+  Draw,
+  Other,
+  None,
+}
+
+/// What the bound found: the work of calls through a renamed reference,
+/// their stack depth, and the whole document's.
+#[derive(Debug, Default)]
+struct Bound {
+  added_work: u64,
+  added_depth: u64,
+  work: u64,
+  depth: u64,
+}
+
+impl Graph {
+  /// The graph of the document with the `blanked` attributes gone; the
+  /// references of the `renamed` ones are marked new. None when it has a
+  /// cycle.
+  fn new(
+    doc: &Doc,
+    scan: &Scan,
+    blanked: &HashSet<usize>,
+    renamed: &HashSet<usize>,
+  ) -> Option<Graph> {
+    let n = scan.nodes.len();
+    let mut class_of = Vec::with_capacity(n);
+    let mut own = Vec::with_capacity(n);
+    let mut texts = Vec::with_capacity(n);
+    let mut fresh = Vec::with_capacity(n);
+    let mut out = Vec::with_capacity(n);
+    for (k, &id) in scan.nodes.iter().enumerate() {
+      let NodeData::Element { name, attrs, .. } = &doc.nodes[id].data else {
+        unreachable!()
+      };
+      let c = class(name);
+      let drawn = matches!(
+        name.as_str(),
+        "rect" | "circle" | "ellipse" | "line" | "path" | "polygon" | "polyline" | "image"
+      ) || c == Class::Text;
+      let mut w = 1 + if drawn { 32 } else { 0 };
+      let mut t = 0;
+      let mut edges = Vec::new();
+      for &ch in &doc.nodes[id].children {
+        match &doc.nodes[ch].data {
+          NodeData::Text(s) => {
+            t += 1;
+            w = add(w, s.len() as u64);
+          }
+          NodeData::Element { .. } => edges.push((scan.dense[ch], Ek::Tree, false)),
+        }
+      }
+      // A shape's path data, an image's data: URL (decoded per draw).
+      if drawn {
+        for a in attrs {
+          w = add(w, a.value.len() as u64);
+        }
+      }
+      for &(ai, target, ek) in &scan.refs[k] {
+        // By where the attribute is in the text: an element from an
+        // entity shares it with each other use of the entity.
+        let key = attrs[ai as usize].range.start;
+        if !blanked.contains(&key) {
+          edges.push((target, ek, renamed.contains(&key)));
+        }
+      }
+      class_of.push(c);
+      fresh.push(matches!(
+        name.as_str(),
+        "pattern" | "linearGradient" | "radialGradient" | "clipPath"
+      ));
+      own.push(w);
+      texts.push(t);
+      out.push(edges);
+    }
+    let root = scan.dense[doc.root];
+    // Depth first without recursion: a back edge is a cycle.
+    let mut color = vec![0u8; n];
+    let mut post = Vec::with_capacity(n);
+    let mut stack = vec![(root, 0usize)];
+    color[root as usize] = 1;
+    while let Some(&(x, i)) = stack.last() {
+      if let Some(&(y, _, _)) = out[x as usize].get(i) {
+        if let Some(top) = stack.last_mut() {
+          top.1 += 1;
+        }
+        match color[y as usize] {
+          0 => {
+            color[y as usize] = 1;
+            stack.push((y, 0));
+          }
+          1 => return None,
           _ => {}
         }
-      }
-      Kind::Clip => {
-        self.prepare(i, &mut v, get);
-        for &c in &e.children {
-          let x = below(&mut v, get(Kind::Path, c), 1);
-          v.a = add(v.a, x.a);
-        }
-      }
-      Kind::Mask => {
-        for &c in &e.children {
-          let x = below(&mut v, get(Kind::Render, c), 1);
-          v.plus(x);
-        }
-        self.prepare(i, &mut v, get);
-        self.fold(i, &mut v, get);
-      }
-      Kind::Filter => {
-        self.prepare(i, &mut v, get);
-        for &c in &e.children {
-          v.a = add(v.a, 1);
-          self.prepare(c as usize, &mut v, get);
-        }
+      } else {
+        color[x as usize] = 2;
+        post.push(x);
+        stack.pop();
       }
     }
-    if !matches!(kind, Kind::Render | Kind::Mask) {
-      v.f = 0;
-      v.s = 0;
-    }
-    v
+    post.reverse();
+    Some(Graph {
+      root,
+      class: class_of,
+      own,
+      texts,
+      fresh,
+      out,
+      order: post,
+    })
   }
 
-  /// The root's work and depth, None when a reference cycle is in the way.
-  /// Depth first without recursion, each (kind, element) once.
-  fn total(&self) -> Option<Val> {
-    let n = self.m.els.len();
-    if n == 0 {
-      return Some(Val::default());
+  /// What a draw (R) of `x` makes through an edge.
+  fn from_draw(&self, x: usize, ek: Ek) -> Call {
+    match (ek, self.class[x]) {
+      (Ek::Tree, Class::Container) | (Ek::Bare, Class::Use) => Call::Draw,
+      // mask, clipPath, filter and gradients are hidden containers too.
+      (Ek::Tree, Class::Hidden | Class::Obb) => Call::None,
+      _ => Call::Other,
     }
-    let key = |kind: Kind, i: u32| kind as usize * n + i as usize;
-    let kinds = [
-      Kind::Render,
-      Kind::Path,
-      Kind::Paint,
-      Kind::Clip,
-      Kind::Mask,
-      Kind::Filter,
-    ];
-    // 0 new, 1 on the current path, 2 done.
-    let mut state = vec![0u8; 6 * n];
-    let mut done: HashMap<usize, Val> = HashMap::new();
-    let mut stack = vec![(0usize, false)];
-    let mut deps = Vec::new();
-    while let Some((k, ready)) = stack.pop() {
-      let (kind, i) = (kinds[k / n], k % n);
-      if ready {
-        let v = self.eval(kind, i, &mut |kind, j| done[&key(kind, j)]);
-        done.insert(k, v);
-        state[k] = 2;
-        continue;
+  }
+
+  /// The calls SkSVG may make.
+  fn bound(&self) -> Bound {
+    let n = self.out.len();
+    let obb = |x: usize| {
+      if self.class[x] == Class::Obb {
+        OBB_CALLS
+      } else {
+        0
       }
-      match state[k] {
-        2 => continue,
-        1 => return None,
-        _ => {}
+    };
+    // Whether a url() paint may reach x (its own included).
+    let mut url_in = vec![false; n];
+    for &x in &self.order {
+      let x = x as usize;
+      let flag = url_in[x] || self.out[x].iter().any(|e| e.1 == Ek::Url);
+      url_in[x] = flag;
+      for &(y, _, _) in &self.out[x] {
+        url_in[y as usize] |= flag;
       }
-      state[k] = 1;
-      stack.push((k, true));
-      deps.clear();
-      self.eval(kind, i, &mut |kind, j| {
-        deps.push(key(kind, j));
-        Val::default()
-      });
-      for &d in &deps {
-        match state[d] {
-          1 => return None,
-          0 => stack.push((d, false)),
-          _ => {}
+    }
+    // Bottom up: per call on x, the elements and texts below (u1; u1_new
+    // past a new edge), the OBB calls with the caller's scope (t_n; t_new
+    // past a new edge), the OBB calls a bounding box walk makes where it
+    // shapes text (tb), the OBB calls in the scope of a draw (tr; tr_new),
+    // the depth below (h).
+    let mut u1 = vec![0u64; n];
+    let mut u1_new = vec![0u64; n];
+    let mut t_n = vec![0u64; n];
+    let mut t_new = vec![0u64; n];
+    let mut tb = vec![0u64; n];
+    let mut tr = vec![0u64; n];
+    let mut tr_new = vec![0u64; n];
+    let mut h = vec![0u64; n];
+    for &x in self.order.iter().rev() {
+      let x = x as usize;
+      let mut u = add(1, self.texts[x]);
+      let mut un = 0;
+      for &(y, ek, new) in &self.out[x] {
+        if ek == Ek::Url && self.fresh[y as usize] {
+          continue;
+        }
+        u = add(u, u1[y as usize]);
+        un = add(
+          un,
+          if new {
+            u1[y as usize]
+          } else {
+            u1_new[y as usize]
+          },
+        );
+      }
+      u1[x] = u;
+      u1_new[x] = un;
+      let paints = add(1, mul(2, u));
+      let (mut tn, mut tq) = (0, 0);
+      let (mut b, mut hh) = (0, 0);
+      let (mut r, mut rq) = (0, 0);
+      for &(y, ek, new) in &self.out[x] {
+        let y = y as usize;
+        let m = if ek == Ek::Url { paints } else { 1 };
+        // An element an href names is not asked to paint, clip, mask or
+        // filter (use draws it, a gradient or pattern reads it, textPath
+        // outlines it): no OBB call of its own.
+        let calls = add(t_n[y], if ek == Ek::Bare { 0 } else { obb(y) });
+        tn = add(tn, mul(m, calls));
+        let q = if new { calls } else { t_new[y] };
+        tq = add(tq, mul(m, q));
+        b = add(b, tb[y]);
+        hh = hh.max(add(ek.weight(), h[y]));
+        if self.from_draw(x, ek) == Call::Other {
+          r = add(r, mul(m, calls));
+          rq = add(rq, mul(m, q));
         }
       }
+      t_n[x] = tn;
+      t_new[x] = tq;
+      h[x] = hh;
+      tr[x] = r;
+      tr_new[x] = rq;
+      // A text element in a bounding box walk is shaped: its OBB calls,
+      // and those of each fill and stroke a url() paint from above may
+      // give, ask for the walk's own box again.
+      tb[x] = if self.class[x] == Class::Text {
+        add(
+          tn,
+          if url_in[x] {
+            mul(mul(2, u), OBB_CALLS)
+          } else {
+            0
+          },
+        )
+      } else {
+        b
+      };
     }
-    done.get(&0).copied()
+    // Top down: calls per mode (pr_*), those through a new edge (q_*),
+    // depth from the root (d).
+    let mut pr_r = vec![0u64; n];
+    let mut pr_n = vec![0u64; n];
+    let mut pr_b = vec![0u64; n];
+    let mut q_r = vec![0u64; n];
+    let mut q_n = vec![0u64; n];
+    let mut q_b = vec![0u64; n];
+    let mut d = vec![0u64; n];
+    pr_r[self.root as usize] = 1;
+    let mut bound = Bound::default();
+    let (mut walks, mut trigger_depth, mut new_walk_depth) = (false, 0u64, 0u64);
+    // A walk that asks for its own box again recurses: each level's OBB
+    // call borrows its element (findNodeById), so a walk nests at most as
+    // deep as there are elements that make OBB calls (k), and each walk
+    // makes at most tb such calls: tb^0 + ... + tb^(k-1) walks for each
+    // walk asked for.
+    let k = self.class.iter().filter(|c| **c == Class::Obb).count() as u64;
+    let nested = |t: u64| {
+      let (mut sum, mut level) = (0u64, 1u64);
+      for _ in 0..k.max(1) {
+        sum = add(sum, level);
+        level = mul(level, t);
+        if level == 0 || sum >= CAP {
+          break;
+        }
+      }
+      sum
+    };
+    let mut nested_depth = 0u64;
+    for &x in &self.order {
+      let x = x as usize;
+      if pr_r[x] > 0 && tr[x] > 0 {
+        walks = true;
+        let f = nested(tb[x]);
+        if tb[x] > 0 {
+          nested_depth = nested_depth.max(mul(k, add(h[x], 8)));
+        }
+        pr_b[x] = add(pr_b[x], mul(mul(pr_r[x], tr[x]), f));
+        let qw = add(mul(q_r[x], tr[x]), mul(pr_r[x], tr_new[x]));
+        if qw > 0 {
+          q_b[x] = add(q_b[x], mul(qw, f));
+          new_walk_depth = new_walk_depth.max(h[x]);
+        }
+      }
+      if self.class[x] == Class::Text {
+        pr_n[x] = add(pr_n[x], pr_b[x]);
+        q_n[x] = add(q_n[x], q_b[x]);
+        pr_b[x] = 0;
+        q_b[x] = 0;
+      }
+      q_r[x] = q_r[x].min(pr_r[x]);
+      q_n[x] = q_n[x].min(pr_n[x]);
+      q_b[x] = q_b[x].min(pr_b[x]);
+      let calls = add(add(pr_r[x], pr_n[x]), pr_b[x]);
+      let new_calls = add(add(q_r[x], q_n[x]), q_b[x]);
+      bound.work = add(bound.work, mul(calls, self.own[x]));
+      bound.added_work = add(bound.added_work, mul(new_calls, self.own[x]));
+      let paints = add(1, mul(2, u1[x]));
+      for &(y, ek, new) in &self.out[x] {
+        let y = y as usize;
+        let (m, m_new) = if ek == Ek::Url {
+          (paints, mul(2, u1_new[x]))
+        } else {
+          (1, 0)
+        };
+        d[y] = d[y].max(add(d[x], ek.weight()));
+        if calls > 0 && ek != Ek::Bare && self.class[y] == Class::Obb {
+          trigger_depth = trigger_depth.max(add(d[x], ek.weight()));
+        }
+        if new && calls > 0 {
+          bound.added_depth = bound.added_depth.max(add(add(d[x], ek.weight()), h[y]));
+        }
+        let through = |p: u64, q: u64| -> u64 {
+          if new {
+            mul(p, m)
+          } else {
+            add(mul(q, m), mul(p, m_new))
+          }
+        };
+        let (rr, rq) = (mul(pr_r[x], m), through(pr_r[x], q_r[x]));
+        match self.from_draw(x, ek) {
+          Call::Draw => {
+            pr_r[y] = add(pr_r[y], rr);
+            q_r[y] = add(q_r[y], rq);
+          }
+          Call::Other => {
+            pr_n[y] = add(pr_n[y], rr);
+            q_n[y] = add(q_n[y], rq);
+          }
+          Call::None => {}
+        }
+        pr_n[y] = add(pr_n[y], mul(pr_n[x], m));
+        q_n[y] = add(q_n[y], through(pr_n[x], q_n[x]));
+        pr_b[y] = add(pr_b[y], pr_b[x]);
+        q_b[y] = add(q_b[y], if new { pr_b[x] } else { q_b[x] });
+      }
+    }
+    let obb_depth = if walks {
+      add(add(trigger_depth, 8), nested_depth)
+    } else {
+      0
+    };
+    bound.depth = add(h[self.root as usize], obb_depth);
+    if bound.added_depth > 0 {
+      bound.added_depth = add(bound.added_depth, obb_depth);
+    }
+    if new_walk_depth > 0 {
+      // A walk a new call asks for: that call's chain, then the walk.
+      let chain = bound.added_depth.max(1);
+      bound.added_depth = bound.added_depth.max(add(add(chain, 8), new_walk_depth));
+    }
+    bound
   }
 }
 
@@ -1105,7 +1399,7 @@ struct Edit {
   rename: bool,
 }
 
-impl Model<'_> {
+impl Sk<'_> {
   /// Blanks attribute `k` of element `i`, as written.
   fn blank(&self, i: usize, k: usize, doc: &Doc) -> Option<Edit> {
     let a = &doc.attrs(self.els[i].node)[k];
@@ -1128,14 +1422,36 @@ impl Model<'_> {
     }))
   }
 
-  /// The edits of the href attributes: `variant` 0 keeps them as written,
-  /// 1 makes svg_doc's href the `xlink:href`; `broken` patterns lose it.
-  fn href_edits(&self, variant: usize, broken: &[bool], doc: &Doc) -> Option<Vec<Edit>> {
+  /// The attributes `variant` blanks (`cut` patterns' href; in variant 1
+  /// also an `xlink:href` svg_doc does not read) and renames, by where
+  /// they start in the text.
+  fn changes(&self, doc: &Doc, variant: usize, cut: &[bool]) -> (HashSet<usize>, HashSet<usize>) {
+    let (mut blanked, mut renamed) = (HashSet::new(), HashSet::new());
+    let at = |e: &SkEl, k: usize| doc.attrs(e.node)[k].range.start;
+    for (i, e) in self.els.iter().enumerate() {
+      if let Some(k) = self.read_href(i, variant) {
+        if cut[i] {
+          blanked.insert(at(e, k));
+        } else if variant == 1 && e.xlink != Some(k) {
+          renamed.insert(at(e, k));
+        }
+      }
+      if variant == 1
+        && let Some(k) = e.xlink
+        && e.chosen != Some(k)
+      {
+        blanked.insert(at(e, k));
+      }
+    }
+    (blanked, renamed)
+  }
+
+  /// The edits of the href attributes in `variant`.
+  fn href_edits(&self, variant: usize, cut: &[bool], doc: &Doc) -> Option<Vec<Edit>> {
     let mut edits = Vec::new();
     for (i, e) in self.els.iter().enumerate() {
-      let read = if variant == 0 { e.xlink } else { e.chosen };
-      if let Some(k) = read {
-        if broken[i] {
+      if let Some(k) = self.read_href(i, variant) {
+        if cut[i] {
           edits.push(self.blank(i, k, doc)?);
         } else if variant == 1
           && let Some(edit) = self.rename(i, k, doc)?
@@ -1151,6 +1467,38 @@ impl Model<'_> {
       }
     }
     Some(edits)
+  }
+
+  /// The patterns (by element) whose href `variant` blanks: see
+  /// `walk_cuts`. A pattern counts as painted when any reference in `scan`
+  /// may name it (all of them when the scan is not complete).
+  fn cuts(&self, doc: &Doc, scan: &Scan, variant: usize) -> Vec<bool> {
+    let (pats, next) = self.pattern_graph(doc, variant);
+    let mut painted = vec![scan.unknown; pats.len()];
+    if !scan.unknown {
+      let at: HashMap<NodeId, usize> = pats
+        .iter()
+        .enumerate()
+        .map(|(k, &i)| (self.els[i as usize].node, k))
+        .collect();
+      // A paint is a url(): never a value's first `#`.
+      for refs in &scan.refs {
+        for &(_, t, _) in refs.iter().filter(|r| r.2 == Ek::Url) {
+          if let Some(&k) = at.get(&scan.nodes[t as usize]) {
+            painted[k] = true;
+          }
+        }
+      }
+    }
+    let sets: Vec<u8> = pats.iter().map(|&i| self.els[i as usize].sets).collect();
+    let kids: Vec<bool> = pats.iter().map(|&i| self.els[i as usize].kids).collect();
+    let picked =
+      walk_cuts(&next, &sets, &kids, &painted).unwrap_or_else(|| cycle_breaks(&next, &painted));
+    let mut cut = vec![false; self.els.len()];
+    for p in picked {
+      cut[pats[p] as usize] = true;
+    }
+    cut
   }
 }
 
@@ -1228,44 +1576,55 @@ fn attlists(text: &str, end: usize) -> Vec<Edit> {
   edits
 }
 
+/// Whether an `<!ATTLIST>` declaration may hide content (a default
+/// display, visibility or style): blanking it may make SkSVG draw more.
+fn may_hide(decl: &str) -> bool {
+  ["display", "visibility", "style"]
+    .iter()
+    .any(|w| decl.contains(w))
+}
+
 /// The document for SkSVG: `Ok(None)` when it needs no edit, `Err` when a
 /// pattern cycle SkSVG would loop on cannot be broken.
 pub(crate) fn clean(doc: &Doc, text: &str) -> Result<Option<Vec<u8>>, ()> {
-  let m = Model::read(doc, text);
-  let n = m.els.len();
-  let no_breaks = vec![false; n];
-  let broken = |variant: usize| {
-    let mut next = m.chain(variant, &no_breaks);
-    for (x, e) in next.iter_mut().zip(&m.els) {
-      if e.tag != Tag::Pattern {
-        *x = None;
-      }
+  let sk = Sk::read(doc, text);
+  let scan = Scan::new(doc);
+  let attl = attlists(text, doc.nodes[doc.root].start);
+  let hides = attl.iter().any(|e| may_hide(&text[e.range.clone()]));
+  // Whether SkSVG's added work and depth stay within the limits: what the
+  // renames add (`renames`), and the whole document when an ATTLIST that
+  // may hide content goes.
+  let bounded = |variant: usize, cut: &[bool], renames: bool| {
+    if scan.unknown {
+      return false;
     }
-    let mut b = vec![false; n];
-    for i in cycle_breaks(&next, &m.painted) {
-      b[i] = true;
-    }
-    b
+    let (blanked, renamed) = sk.changes(doc, variant, cut);
+    Graph::new(doc, &scan, &blanked, &renamed)
+      .map(|g| g.bound())
+      .is_some_and(|b| {
+        (!renames || b.added_work <= WORK_LIMIT && b.added_depth <= DEPTH_LIMIT)
+          && (!hides || b.work <= WORK_LIMIT && b.depth <= DEPTH_LIMIT)
+      })
   };
-  let renames = !m.unknown && m.els.iter().any(|e| e.chosen != e.xlink);
   let mut edits = None;
-  if renames {
-    let new_breaks = broken(1);
-    let new = Cost::new(&m, 1, &new_breaks).total();
-    let main = Cost::new(&m, 0, &broken(0)).total();
-    let (work, depth) = main.map_or((0, 0), |v| (v.a, v.d));
-    let bounded = new.is_some_and(|v| {
-      v.a < CAP && v.a <= work.saturating_add(WORK_LIMIT) && v.d <= depth.max(DEPTH_LIMIT)
-    });
-    if bounded {
-      edits = m.href_edits(1, &new_breaks, doc);
+  if !scan.unknown && sk.els.iter().any(|e| e.chosen != e.xlink) {
+    let cut = sk.cuts(doc, &scan, 1);
+    if bounded(1, &cut, true) {
+      edits = sk.href_edits(1, &cut, doc);
     }
   }
   let mut edits = match edits {
     Some(edits) => edits,
-    None => m.href_edits(0, &broken(0), doc).ok_or(())?,
+    None => {
+      let cut = sk.cuts(doc, &scan, 0);
+      if hides && !bounded(0, &cut, false) {
+        // Left as it is: SkSVG applies the defaults, as on main.
+        return Ok(None);
+      }
+      sk.href_edits(0, &cut, doc).ok_or(())?
+    }
   };
-  edits.extend(attlists(text, doc.nodes[doc.root].start));
+  edits.extend(attl);
   if edits.is_empty() {
     return Ok(None);
   }
@@ -1320,15 +1679,21 @@ mod tests {
     }
   }
 
-  /// A `<g>` fan-out of `fan`^`levels` through `<use href>`, drawn once.
-  fn fan_out(fan: usize, levels: usize) -> String {
-    let mut s = String::from(r#"<defs><g id="l0"/>"#);
+  /// The `<g>` elements of a fan-out of `fan`^`levels` through `<use
+  /// href>`, `<p>0` to `<p><levels>`.
+  fn fan_defs(fan: usize, levels: usize, p: &str) -> String {
+    let mut s = format!(r#"<defs><g id="{p}0"/>"#);
     for i in 1..=levels {
-      s += &format!(r#"<g id="l{i}">"#);
-      s += &format!(r##"<use href="#l{}"/>"##, i - 1).repeat(fan);
+      s += &format!(r#"<g id="{p}{i}">"#);
+      s += &format!(r##"<use href="#{p}{}"/>"##, i - 1).repeat(fan);
       s += "</g>";
     }
-    s + &format!(r##"</defs><use href="#l{levels}"/>"##)
+    s + "</defs>"
+  }
+
+  /// A fan-out, drawn once.
+  fn fan_out(fan: usize, levels: usize) -> String {
+    fan_defs(fan, levels, "l") + &format!(r##"<use href="#l{levels}"/>"##)
   }
 
   /// `body` with `attr` of the element ending in `owner` blanked.
@@ -1358,20 +1723,94 @@ mod tests {
       cleaned(body),
       blanked(body, r#"id="b""#, r##"xlink:href="#a""##)
     );
+    // Named in a nested style="style:..." declaration (SkSVG reads it).
+    let body = r##"<pattern id="c" xlink:href="#a"/><pattern id="a" xlink:href="#a"/><rect style="style:fill:url(#c)"/>"##;
+    assert_eq!(
+      cleaned(body),
+      blanked(body, r#"id="a""#, r##"xlink:href="#a""##)
+    );
   }
 
   #[test]
-  fn a_cycle_no_painted_walk_runs_into_is_kept() {
+  fn a_cycle_no_walk_goes_round_for_ever_is_kept() {
     // SkSVG stops at the painted pattern, which is in the cycle.
     let body = r##"<pattern id="a" xlink:href="#b"/><pattern id="b" xlink:href="#a"/><rect width="5" height="5" fill="url(#a)"/>"##;
     assert_eq!(cleaned(body), body);
-    // SkSVG walks only from a painted pattern: c, which runs into the
-    // cycle, is not one. b, painted, keeps a's size.
+    // c, which runs into the cycle, is not painted. b, painted, keeps a's
+    // size.
     let body = r##"<pattern id="c" xlink:href="#a"/><pattern id="a" width="4" height="4" xlink:href="#b"/><pattern id="b" xlink:href="#a"><rect/></pattern><rect fill="url(#b)"/>"##;
     assert_eq!(cleaned(body), body);
     // Gradients and <use> stop at the borrowed element.
     let body = r##"<linearGradient id="c" xlink:href="#a"/><linearGradient id="a" xlink:href="#a"/><use id="u" xlink:href="#u"/>"##;
     assert_eq!(cleaned(body), body);
+    // resolveHref stops once all five attributes and the content are
+    // found: c has them, so its walk ends at a (Codex round 2, #3); b, also
+    // painted, keeps a's size.
+    let body = r##"<pattern id="c" x="0" y="0" width="4" height="4" patternTransform="translate(0)" xlink:href="#a"><rect/></pattern><pattern id="a" width="4" height="4" xlink:href="#b"/><pattern id="b" xlink:href="#a"><rect/></pattern><rect fill="url(#c)"/><rect fill="url(#b) blue"/>"##;
+    assert_eq!(cleaned(body), body);
+    // The same set in style="", nested or not, and through whitespace
+    // content (a text child is a child to SkSVG).
+    let body = r##"<pattern id="c" style="x:0;style:y:0;width:4px;height:4 ;patternTransform:rotate(1, 2 3)" xlink:href="#a"> </pattern><pattern id="a" xlink:href="#a"/><rect fill="url(#c)"/>"##;
+    assert_eq!(cleaned(body), body);
+    // patternTransform SkSVG does not parse (", " between functions):
+    // the walk goes on into a -> a.
+    let body = r##"<pattern id="c" x="0" y="0" width="4" height="4" patternTransform="scale(2) , rotate(1)" xlink:href="#a"><rect/></pattern><pattern id="a" xlink:href="#a"/><rect fill="url(#c)"/>"##;
+    assert_eq!(
+      cleaned(body),
+      blanked(body, r#"id="a""#, r##"xlink:href="#a""##)
+    );
+  }
+
+  #[test]
+  fn a_cut_leaves_the_href_a_walk_that_ends_needs() {
+    // A -> X -> B -> Y -> A. l walks in at A and goes round for ever (no
+    // attributes); t, with all five attributes, walks in at B and ends at
+    // A's content, through Y's href. A cut at Y (where l's walk comes back)
+    // would change t's tile: X's href is cut, which l's walk sees the same
+    // way (X, B, Y add nothing).
+    let body = r##"<pattern id="l" xlink:href="#A"/><pattern id="t" x="0" y="0" width="4" height="4" patternTransform="scale(1)" xlink:href="#B"/><pattern id="A" xlink:href="#X"><rect/></pattern><pattern id="X" xlink:href="#B"/><pattern id="B" xlink:href="#Y"/><pattern id="Y" xlink:href="#A"/><rect fill="url(#l)" stroke="url(#t)"/>"##;
+    assert_eq!(
+      cleaned(body),
+      blanked(body, r#"id="X""#, r##"xlink:href="#B""##)
+    );
+  }
+
+  #[test]
+  fn pattern_attributes_are_set_only_where_sksvg_surely_sets_them() {
+    for v in [
+      "0", " 4", "4px", "4 junk", "4,", "1e1", ".5em", "+4%", "4in;",
+    ] {
+      assert!(sure_length(v), "{v}");
+    }
+    for v in ["", "x", "4junk", "0x4", "inf", "nan", "-", "é4"] {
+      assert!(!sure_length(v), "{v}");
+    }
+    for v in [
+      "translate(0)",
+      " rotate( 1 , 2 3 ) ",
+      "matrix(1 0 0 1 0 0) scale(2)",
+      "scale(1,)",
+      "translate(1, )",
+      "skewX(1)skewY(2)",
+    ] {
+      assert!(sure_transform(v), "{v}");
+    }
+    for v in [
+      "",
+      "rotate(1, 2)",
+      "scale(2) , rotate(1)",
+      "translate(0x1)",
+      "foo(1)",
+      "scale(1) x",
+    ] {
+      assert!(!sure_transform(v), "{v}");
+    }
+    let mut seen = Vec::new();
+    style_decls(" a : 1 ;style: b:2; c :3; ;d:4", &mut |n, v| {
+      seen.push(format!("{n}={v}"))
+    });
+    seen.sort();
+    assert_eq!(seen, ["a=1", "b=2", "c=3"]);
   }
 
   #[test]
@@ -1433,18 +1872,14 @@ mod tests {
     assert_eq!(cleaned(&body), body);
     // A pattern painting many shapes through an inherited fill counts once
     // per shape: 2^12 rects times 8^5 instances.
-    let mut body = String::from(r#"<defs><g id="l0"/>"#);
-    for i in 1..=5 {
-      body += &format!(r#"<g id="l{i}">"#);
-      body += &format!(r##"<use href="#l{}"/>"##, i - 1).repeat(8);
-      body += "</g>";
-    }
-    body += r##"<pattern id="p" width="1" height="1"><use href="#l5"/></pattern></defs><g fill="url(#p)">"##;
+    let mut body = fan_defs(8, 5, "l");
+    body += r##"<defs><pattern id="p" width="1" height="1"><use href="#l5"/></pattern></defs><g fill="url(#p)">"##;
     body += &r#"<rect width="1" height="1"/>"#.repeat(1 << 12);
     body += "</g>";
     assert_eq!(cleaned(&body), body);
-    // A 2000-link gradient chain: SkSVG follows a gradient's href while it
-    // has no <stop> child, whatever else it holds.
+    // A 2000-link gradient chain. SkSVG follows a gradient's href only
+    // while it has no <stop>; the bound follows every href, so a chain
+    // with stops is not renamed either (over-refused).
     let mut body = String::from(r#"<defs><linearGradient id="g0"><stop/></linearGradient>"#);
     for i in 1..2000 {
       body += &format!(
@@ -1454,104 +1889,76 @@ mod tests {
     }
     body += r##"</defs><rect fill="url(#g1999)"/>"##;
     assert_eq!(cleaned(&body), body);
-    // A <stop> in each ends each chain: renamed.
     let body = body.replace("<g/>", "<stop/>");
-    assert!(!cleaned(&body).contains(" href="));
-    // A reference cycle the renames make: not renamed.
+    assert_eq!(cleaned(&body), body);
+    // A reference cycle: not renamed.
     let body = r##"<g id="g"><rect width="2" height="2"/><use href="#g"/></g>"##;
     assert_eq!(cleaned(body), body);
   }
 
   #[test]
-  fn paints_are_read_as_sksvg_reads_them() {
-    use PaintValue::{Either, Kept, Set};
-    let url = |id: &str| Set(RawRef::Url(Some(id.to_owned())));
-    for v in [
-      "red",
-      " #abc ",
-      "#a0b1c2",
-      "none",
-      "currentColor",
-      "rgb(1, 2,3)",
-      "rgb( 10% ,20.5% 300 )",
-      "rgba(1,2,3,.5)",
-    ] {
-      assert_eq!(paint(v), Set(RawRef::Plain), "{v}");
-    }
-    for v in [
-      "#invalid",
-      "#abcd",
-      "rgb(nope)",
-      "rgb(1.5,2,3)",
-      "Red",
-      "red blue",
-      "url(#p) junk",
-      "url(#p",
-      "url(#)",
-      "",
-      " inherit",
-      // Escapes and var(): a colour or nothing.
-      "r\\65 d",
-      "var(--c)",
-      "rgb(0x1,0,0)",
-    ] {
-      assert_eq!(paint(v), Kept, "{v}");
-    }
-    assert_eq!(paint("inherit"), Set(RawRef::Unset));
-    assert_eq!(paint("url(#p)"), url("p"));
-    assert_eq!(paint(" url ( #p) red "), url("p"));
-    assert_eq!(paint("url(#p) rgba(1,2,3,1e-1)"), url("p"));
-    assert_eq!(paint("url(#p )"), url("p "));
-    assert_eq!(paint("url(p.svg#q)"), Set(RawRef::Url(None)));
-    assert_eq!(paint("url(#p) var(--c)"), Either(Some("p".to_owned())));
-    assert_eq!(
-      reference("url(#c)"),
-      Some(RawRef::Url(Some("c".to_owned())))
-    );
-    assert_eq!(
-      reference(" url(#c)"),
-      Some(RawRef::Url(Some("c".to_owned())))
-    );
-    assert_eq!(reference("none"), Some(RawRef::Unset));
-    assert_eq!(reference("url(#c) "), None);
-    assert_eq!(reference("url(#c) x"), None);
-    assert_eq!(reference(" none"), None);
-  }
-
-  #[test]
-  fn a_value_sksvg_does_not_parse_keeps_the_last_in_the_work() {
-    // p paints an 8^10 fan-out; SkSVG keeps url(#p) past each of these.
-    let defs = format!(
-      r##"<defs>{}<pattern id="p" width="1" height="1"><use href="#m10"/></pattern><pattern id="q" width="1" height="1"><rect width="1" height="1"/></pattern><clipPath id="big"><use href="#m10"/></clipPath><clipPath id="small"><rect/></clipPath></defs>"##,
-      fan_out(8, 10)
-        .replace("l", "m")
-        .trim_start_matches("<defs>")
-        .split("</defs>")
-        .next()
-        .unwrap()
-    );
+  fn every_reference_sksvg_may_follow_counts() {
+    // p and big draw an 8^10 fan-out. Each url(#p) counts, whatever SkSVG
+    // makes of the value: one it does not parse, one a later declaration
+    // replaces, a nested style="style:...".
+    let defs = fan_defs(8, 10, "m")
+      + r##"<defs><pattern id="p" width="1" height="1"><use href="#m10"/></pattern><clipPath id="big"><use href="#m10"/></clipPath><clipPath id="small"><rect/></clipPath></defs>"##;
     let tail = r##"<rect id="r"/><use href="#r"/>"##;
     for rect in [
       r#"fill="url(#p)" style="fill:#invalid""#,
-      r#"fill="url(#p)" style="fill:rgb(nope)""#,
       r#"fill="url(#p)" style="fill:url(#q) junk""#,
-      r##"style="stroke:url(#p)" stroke="#abcd""##,
       r#"clip-path="url(#big)" style="clip-path:url(#small) x""#,
-      // url(#q) or url(#p): not known.
-      r#"fill="url(#p)" style="fill:url(#q) var(--c)""#,
+      r#"fill="url(#p)" style="fill:red""#,
+      r#"style="style:fill:url(#p)""#,
+      r#"style="style:style:clip-path:url(#big)""#,
+      r#"data-x="url(#p)""#,
     ] {
       let body = format!("{defs}<rect width=\"5\" height=\"5\" {rect}/>{tail}");
       assert_eq!(cleaned(&body), body, "{rect}");
     }
-    // A value SkSVG takes replaces url(#p): renamed.
-    for rect in [
-      r#"fill="url(#p)" style="fill:red""#,
-      r#"fill="url(#p)" style="fill:url(#q) red""#,
-      r#"clip-path="url(#big)" style="clip-path:url(#small)""#,
+    // Nothing names them: renamed.
+    let body = format!("{defs}<rect width=\"5\" height=\"5\"/>{tail}");
+    assert!(!cleaned(&body).contains(" href="));
+  }
+
+  #[test]
+  fn bounding_box_walks_count() {
+    // A group with a mask, filter or clip path walks the bounding box of
+    // all below it, <defs> too, and follows <use> there (Codex round 2,
+    // #1). An 8^10 fan-out in its <defs>: not renamed.
+    let filters = r##"<defs><mask id="k"/><filter id="f"/><clipPath id="c"/></defs>"##;
+    for attr in [
+      r#"mask="url(#k)""#,
+      r#"filter="url(#f)""#,
+      r#"clip-path="url(#c)""#,
     ] {
-      let body = format!("{defs}<rect width=\"5\" height=\"5\" {rect}/>{tail}");
-      assert!(!cleaned(&body).contains(" href="), "{rect}");
+      let body = format!("{filters}<g {attr}>{}<rect/></g>", fan_defs(8, 10, "m"));
+      assert_eq!(cleaned(&body), body, "{attr}");
     }
+    // A 50000-link <use href> chain in its <defs>: too deep.
+    let mut chain = String::from(r#"<defs><g id="u0"/>"#);
+    for i in 1..50000 {
+      chain += &format!(r##"<use id="u{i}" href="#u{}"/>"##, i - 1);
+    }
+    chain += "</defs>";
+    let body = format!(r#"{filters}<g mask="url(#k)">{chain}<rect/></g>"#);
+    assert_eq!(cleaned(&body), body);
+    // Text in such a walk is shaped, and a gradient fill there asks for
+    // the box being walked again, nested up to once per mask, filter, clip
+    // path and gradient: too much.
+    let body = format!(
+      r##"{filters}<linearGradient id="lg"/><g mask="url(#k)"><text fill="url(#lg)">x</text><rect id="r"/><use href="#r"/></g>"##
+    );
+    assert_eq!(cleaned(&body), body);
+    // A gradient on text outside such a group: its box is the text's, and
+    // the gradient is borrowed while it asks. Renamed.
+    let body = format!(
+      r##"{filters}<linearGradient id="lg"/><text fill="url(#lg)">x</text><rect id="r"/><use href="#r"/>"##
+    );
+    assert!(!cleaned(&body).contains(" href="));
+    // Without one, a small <use href> is renamed.
+    let body = format!(r##"{filters}<g mask="url(#k)"><rect id="r"/><use href="#r"/></g>"##);
+    assert!(!cleaned(&body).contains(" href="));
   }
 
   #[test]
@@ -1576,6 +1983,20 @@ mod tests {
     let out = String::from_utf8(clean(&doc, &text).unwrap().unwrap()).unwrap();
     let decl = r##"<!ATTLIST use xlink:href CDATA "#r">"##;
     assert_eq!(out, text.replace(decl, &" ".repeat(decl.len())));
+  }
+
+  #[test]
+  fn an_attlist_that_may_hide_content_goes_only_when_bounded() {
+    let decl = r#"<!ATTLIST g display CDATA "none">"#;
+    let text = |body: &str| format!(r#"<!DOCTYPE svg [{decl}]><svg {X}>{body}</svg>"#);
+    let small = text(r#"<g><rect/></g>"#);
+    let doc = Doc::parse(&small).unwrap();
+    let out = String::from_utf8(clean(&doc, &small).unwrap().unwrap()).unwrap();
+    assert_eq!(out, small.replace(decl, &" ".repeat(decl.len())));
+    // An 8^10 fan-out it hides: left as it is.
+    let big = text(&fan_out(8, 10).replace(" href=", " xlink:href="));
+    let doc = Doc::parse(&big).unwrap();
+    assert_eq!(clean(&doc, &big), Ok(None));
   }
 
   #[test]
@@ -1608,10 +2029,21 @@ mod tests {
   }
 
   #[test]
-  fn walks_end_where_they_come_back() {
-    // 0 -> 1 -> 2 -> 1, 3 alone; 2 holds content.
+  fn walks_go_round_a_cycle_once() {
+    // 0 -> 1 -> 2 -> 1, 3 alone; nothing set: 0's walk loops at 1.
     let next = [Some(1), Some(2), Some(1), None];
-    let w = walks(&next, |i| i == 2);
-    assert_eq!(w, vec![(3, Some(2)), (2, Some(2)), (2, Some(2)), (1, None)]);
+    let cuts = walk_cuts(&next, &[0; 4], &[false; 4], &[true, false, false, false]);
+    assert_eq!(cuts, Some(vec![2]));
+    // 2 painted too: it starts in the cycle and stops back at itself.
+    let cuts = walk_cuts(&next, &[0; 4], &[false; 4], &[false, false, true, true]);
+    assert_eq!(cuts, Some(vec![]));
+    // All set and content at 1: 0's walk ends there.
+    let cuts = walk_cuts(
+      &next,
+      &[ALL_SET, 0, 0, 0],
+      &[false, true, false, false],
+      &[true; 4],
+    );
+    assert_eq!(cuts, Some(vec![]));
   }
 }
