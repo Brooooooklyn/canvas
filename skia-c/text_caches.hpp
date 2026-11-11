@@ -55,9 +55,6 @@ struct TextCaches {
     float last_word_advance = 0;
     // The glyphs where Blink puts them (text_raster.cpp CollectBlinkLine).
     BlinkLine blink;
-    // The Blink shaper: the glyphs where TextMetrics measures their ink, when
-    // that is not where `blink` draws them; else empty.
-    BlinkLine ink_blink;
     // The words, byte ranges of the shaped text (MeasureBlinkInk).
     std::vector<std::pair<size_t, size_t>> words;
     // MeasureBlinkInk's result by the left edge's float bits; the edge

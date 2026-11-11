@@ -67,6 +67,12 @@ struct BlinkRun {
   // The Blink shaper: the run's PlainTextItem, in visual order (one item
   // is one word, or one bidi run).
   uint32_t item = 0;
+  // The Blink shaper, for TextMetrics: each glyph's x in its item, as
+  // ShapeResult::ComputeInkBounds walks it (from the ceiling of the widths
+  // of the item's runs before it), and its HarfBuzz offset. Empty on the
+  // skparagraph path.
+  std::vector<float> ink_x;
+  std::vector<SkPoint> offsets;
 };
 
 struct BlinkLine {
@@ -75,6 +81,10 @@ struct BlinkLine {
   // `paragraph->runs()` (indexed like it).
   float shift = 0;
   std::vector<float> run_shifts;
+  // The Blink shaper: each item's ShapeResult width, in visual order (the
+  // item of BlinkRun::item); after spacing it can be negative. Empty on the
+  // skparagraph path.
+  std::vector<float> item_widths;
 };
 
 // The first line of `paragraph` with Blink's glyph x: skshaper hands
@@ -107,6 +117,11 @@ struct BlinkRectF {
 // paragraph's text; when empty, each run's BlinkRun::item) and then the
 // words with gfx::RectF::Union, each in its own coordinates, and the float
 // rounding of those steps shows in the result.
+// A line of the Blink shaper (BlinkLine::item_widths) is measured as
+// TextMetrics::MeasureRuns does: each item's ShapeResult::ComputeInkBounds
+// from BlinkRun::ink_x and offsets, outset to the left when the item's width
+// is negative (PlainTextNode::Shape), at the float sum of the widths of the
+// items before it; with no ink anywhere, the visually last item's box.
 BlinkRectF MeasureBlinkInk(const BlinkLine& line,
                            const TextRasterPolicy& policy,
                            SkSpan<const std::pair<size_t, size_t>> words,

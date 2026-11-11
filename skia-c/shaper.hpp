@@ -45,9 +45,9 @@ bool LayOutLineBlink(skiac_font_collection* c_collection,
 enum class ShaperReject : uint32_t {
   // Kept so the slot numbers stay; no request is turned down for it now.
   kNotImplemented = 0,
-  // letterSpacing is not 0 (ShapeResultSpacing: stage S4).
+  // Kept so the slot numbers stay: letterSpacing and wordSpacing are laid
+  // out since stage S4 (ShapeResultSpacing).
   kLetterSpacing,
-  // wordSpacing is not 0 (stage S4).
   kWordSpacing,
   // fontVariantCaps is not normal (caps per font: stage S5).
   kCaps,
@@ -266,14 +266,23 @@ struct ShapedItem {
   ShapeResult result;
 };
 
-// The glyphs of the items where PlainTextPainter puts them, the line width
-// and the advance of the item an inkless line's box starts at
-// (shaper_place.cpp).
+// ShapeResultSpacing over the prepared text, as PlainTextNode::Shape applies
+// it to each item (ShapeResult::ApplySpacing): the letter and word spacing
+// as TextRunLayoutUnit, added to the last glyph of each cluster, not
+// clamped; then each run's width is its new 16.16 sum (not clamped at 0) and
+// each item's the float sum of its runs in visual order. Nothing changes when
+// both are 0 as TextRunLayoutUnit. shaper_spacing.cpp.
+void ApplySpacing(const PreparedText& prepared,
+                  float letter_spacing,
+                  float word_spacing,
+                  std::vector<ShapedItem>* items);
+
+// The glyphs of the items where PlainTextPainter puts them (with what
+// TextMetrics measures their ink from: BlinkRun::ink_x and offsets, and
+// BlinkLine::item_widths), the line width and the advance of the visually
+// last item (shaper_place.cpp).
 struct PlacedLine {
   BlinkLine blink;
-  // Where TextMetrics measures the glyphs' ink when that is not where they
-  // are drawn (an RTL base's reversed LTR words); else empty.
-  BlinkLine ink;
   float line_width = 0;
   float last_item_width = 0;
 };

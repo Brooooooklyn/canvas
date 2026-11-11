@@ -935,12 +935,6 @@ bool LayOutLineBlink(skiac_font_collection* c_collection,
                      const skiac_text_request& request,
                      TextCaches::Line* line) {
   // The requests the shaper cannot lay out yet.
-  if (request.letter_spacing != 0) {
-    return Reject(ShaperReject::kLetterSpacing);
-  }
-  if (request.word_spacing != 0) {
-    return Reject(ShaperReject::kWordSpacing);
-  }
   if (request.variant_caps != 0) {
     return Reject(ShaperReject::kCaps);
   }
@@ -1085,6 +1079,8 @@ bool LayOutLineBlink(skiac_font_collection* c_collection,
     }
     shaped.push_back(std::move(result));
   }
+  // PlainTextNode::Shape: the spacing over the whole text, item by item.
+  ApplySpacing(prepared, request.letter_spacing, request.word_spacing, &shaped);
 
   PlacedLine placed =
       PlaceItems(shaped, prepared, items.contains_rtl, items.rtl_base);
@@ -1096,7 +1092,6 @@ bool LayOutLineBlink(skiac_font_collection* c_collection,
   scratch.letter_spacing_offset = 0;
   scratch.last_word_advance = placed.last_item_width;
   scratch.blink = std::move(placed.blink);
-  scratch.ink_blink = std::move(placed.ink);
   if (g_text_caches_changes.load(std::memory_order_relaxed) != caches_changes) {
     g_cache_changes.fetch_add(1, std::memory_order_relaxed);
   }

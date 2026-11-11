@@ -20,6 +20,7 @@ fn main() {
   println!("cargo:rerun-if-changed=skia-c/shaper_segment.cpp");
   println!("cargo:rerun-if-changed=skia-c/shaper_font.cpp");
   println!("cargo:rerun-if-changed=skia-c/shaper_place.cpp");
+  println!("cargo:rerun-if-changed=skia-c/shaper_spacing.cpp");
   println!("cargo:rerun-if-changed=skia-c/shaper_chars.cpp");
   println!("cargo:rerun-if-changed=skia-c/shaper_fallback_mac.cpp");
   println!("cargo:rerun-if-changed=third_party/emoji-segmenter/emoji_presentation_scanner.c");
@@ -313,6 +314,7 @@ fn main() {
     .file("skia-c/shaper_segment.cpp")
     .file("skia-c/shaper_font.cpp")
     .file("skia-c/shaper_place.cpp")
+    .file("skia-c/shaper_spacing.cpp")
     .file("skia-c/shaper_chars.cpp")
     .file("skia-c/shaper_fallback_mac.cpp")
     .include("./skia-c")
