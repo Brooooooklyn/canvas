@@ -123,6 +123,27 @@ function convertInChild(svg: string, worker = false) {
   })
 }
 
+// An SVG image of `svg` decoded and drawn in a child process, killed after
+// 20 s: prints ok.
+function imageInChild(svg: string) {
+  const script = `
+    const { loadImage, createCanvas } = require(process.env.PROBE_INDEX)
+    loadImage(require('fs').readFileSync(0)).then(
+      (image) => {
+        createCanvas(10, 10).getContext('2d').drawImage(image, 0, 0)
+        process.stdout.write('ok')
+      },
+      (e) => process.stdout.write('error ' + e.message),
+    )
+  `
+  return spawnSync(process.execPath, ['-e', script], {
+    input: svg,
+    encoding: 'utf8',
+    timeout: 20_000,
+    env: { ...process.env, PROBE_INDEX: join(__dirname, '..', 'index.js') },
+  })
+}
+
 // SkSVG's <pattern> href walk has no loop check: a chain from outside into a
 // cycle hung there. The reference that closes the cycle is dropped, so the
 // chain walks the cycle once: c takes its size from a and its content from b.
@@ -220,6 +241,33 @@ test('convertSVGTextToPath past the budget: a long gradient href chain stays unr
   )
   t.is(child.signal, null, 'crashed or timed out')
   t.is(child.status, 0, child.stderr)
+})
+
+// svg_doc reads a pattern or gradient href chain once per element (it read
+// each chain from each element in it: 15 s for 10^4 links). 20000 links,
+// as convertSVGTextToPath and as an SVG image.
+test('a long pattern or gradient href chain is read in linear time', (t) => {
+  const pattern = (i: number) =>
+    i
+      ? `<pattern id="p${i}" xlink:href="#p${i - 1}"/>`
+      : '<pattern id="p0" width="4" height="4" patternUnits="userSpaceOnUse"><rect width="2" height="2" fill="green"/></pattern>'
+  const gradient = (i: number) =>
+    i
+      ? `<linearGradient id="g${i}" xlink:href="#g${i - 1}"/>`
+      : '<linearGradient id="g0"><stop offset="0" stop-color="green"/></linearGradient>'
+  for (const [link, last] of [
+    [pattern, 'p19999'],
+    [gradient, 'g19999'],
+  ] as const) {
+    const defs = Array.from({ length: 20000 }, (_, i) => link(i)).join('')
+    const svg = `<svg ${XLINK} width="10" height="10"><defs>${defs}</defs><rect width="10" height="10" fill="url(#${last})"/></svg>`
+    const child = convertInChild(svg)
+    t.is(child.signal, null, `timed out: ${last}`)
+    t.is(child.status, 0, child.stderr)
+    const image = imageInChild(svg)
+    t.is(image.signal, null, `image timed out: ${last}`)
+    t.is(image.stdout, 'ok', image.stderr)
+  }
 })
 
 // convertSVGTextToPath keeps the root's size, coordinates and transform:

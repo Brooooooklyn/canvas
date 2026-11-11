@@ -30,6 +30,39 @@ const CLIP_DIRECT_REF: &[&str] = &[
 ];
 const PAINT_SERVERS: &[&str] = &["linearGradient", "radialGradient", "pattern"];
 
+/// What a pattern takes from its href chain.
+const PATTERN_ATTRS: &[&str] = &[
+  "x",
+  "y",
+  "width",
+  "height",
+  "patternUnits",
+  "patternContentUnits",
+  "patternTransform",
+  "viewBox",
+  "preserveAspectRatio",
+];
+/// What a gradient takes from its href chain: geometry from gradients of
+/// its own kind, the rest from any.
+const LINEAR_ATTRS: &[&str] = &["x1", "y1", "x2", "y2"];
+const RADIAL_ATTRS: &[&str] = &["cx", "cy", "r", "fx", "fy", "fr"];
+const COMMON_GRADIENT_ATTRS: &[&str] = &["gradientUnits", "gradientTransform", "spreadMethod"];
+const GRADIENT_ATTRS: &[&str] = &[
+  "x1",
+  "y1",
+  "x2",
+  "y2",
+  "cx",
+  "cy",
+  "r",
+  "fx",
+  "fy",
+  "fr",
+  "gradientUnits",
+  "gradientTransform",
+  "spreadMethod",
+];
+
 /// The most primitives a `<filter>` keeps. SkSVG builds them into one
 /// chain of image filters, which overflows the stack long before Chrome
 /// stops drawing.
@@ -435,6 +468,8 @@ struct Builder<'d, 's, 'u> {
   uid: u32,
   alpha_mask_filter: bool,
   style_cache: HashMap<NodeId, Rc<Style>>,
+  /// `href_firsts` of each pattern and gradient asked for so far.
+  chain_firsts: HashMap<NodeId, Rc<[Option<NodeId>]>>,
   /// Resources whose content is being written: the last one owns the
   /// references written now.
   resource_stack: Vec<NodeId>,
@@ -604,6 +639,7 @@ pub(crate) fn emit_document(doc: &Doc, root: Root, shared: &mut Shared) -> Optio
     uid: 0,
     alpha_mask_filter: false,
     style_cache: HashMap::new(),
+    chain_firsts: HashMap::new(),
     resource_stack: Vec::new(),
   };
   let paths = matches!(root, Root::Paths(_));
@@ -1831,19 +1867,127 @@ impl<'d> Builder<'d, '_, '_> {
 
   // --- Resources ----------------------------------------------------------
 
-  fn href_chain(&self, n: NodeId, types: &[&str]) -> Vec<NodeId> {
-    let mut chain = vec![n];
-    let mut current = n;
-    // Blink stops at an element already in the chain
-    // (SVGGradientElement::CollectGradientAttributes).
-    while let Some(t) = self.doc.href(current).and_then(|h| self.target(h)) {
-      if chain.contains(&t) || !self.doc.svg_name(t).is_some_and(|x| types.contains(&x)) {
+  /// The element an href chain goes on to: one of `types`, or None.
+  fn chain_next(&self, n: NodeId, types: &[&str]) -> Option<NodeId> {
+    self
+      .doc
+      .href(n)
+      .and_then(|h| self.target(h))
+      .filter(|t| self.doc.svg_name(*t).is_some_and(|x| types.contains(&x)))
+  }
+
+  /// Which of `CHAIN_ATTRS` element `g` gives (by kind) and whether it
+  /// holds the chain's content (pattern: element children; gradient: a
+  /// `<stop>`), in the order of `href_firsts`.
+  fn chain_marks(&self, g: NodeId) -> Vec<bool> {
+    let doc = self.doc;
+    let name = doc.svg_name(g).unwrap_or("");
+    let pattern = name == "pattern";
+    let mut marks: Vec<bool> = if pattern {
+      PATTERN_ATTRS
+        .iter()
+        .map(|a| doc.attr(g, a).is_some())
+        .collect()
+    } else {
+      GRADIENT_ATTRS
+        .iter()
+        .map(|a| {
+          // Geometry comes only from gradients of the same kind.
+          let kind_ok = if LINEAR_ATTRS.contains(a) {
+            name == "linearGradient"
+          } else if RADIAL_ATTRS.contains(a) {
+            name == "radialGradient"
+          } else {
+            true
+          };
+          kind_ok && doc.attr(g, a).is_some()
+        })
+        .collect()
+    };
+    marks.push(if pattern {
+      doc.element_children(g).next().is_some()
+    } else {
+      doc
+        .element_children(g)
+        .any(|c| doc.svg_name(c) == Some("stop"))
+    });
+    marks
+  }
+
+  /// For a pattern (PATTERN_ATTRS) or gradient (GRADIENT_ATTRS) `n`, the
+  /// first element of its href chain that gives each attribute, and last
+  /// the first that holds the content. Blink stops the chain at an element
+  /// already in it (SVGGradientElement::CollectGradientAttributes). Kept
+  /// per element: chain(n) is n and then chain(next) off a cycle, and the
+  /// cycle from n on it, so each element is walked once (a chain of
+  /// 10^4 patterns took 15 s walked from each one).
+  fn href_firsts(&mut self, n: NodeId, types: &[&str]) -> Rc<[Option<NodeId>]> {
+    if let Some(f) = self.chain_firsts.get(&n) {
+      return f.clone();
+    }
+    let mut path: Vec<NodeId> = Vec::new();
+    let mut on_path: HashMap<NodeId, usize> = HashMap::new();
+    let mut x = Some(n);
+    let mut ring_at = None;
+    while let Some(c) = x {
+      if self.chain_firsts.contains_key(&c) {
         break;
       }
-      chain.push(t);
-      current = t;
+      if let Some(&i) = on_path.get(&c) {
+        ring_at = Some(i);
+        x = None;
+        break;
+      }
+      on_path.insert(c, path.len());
+      path.push(c);
+      x = self.chain_next(c, types);
     }
-    chain
+    let marks: Vec<Vec<bool>> = path.iter().map(|&p| self.chain_marks(p)).collect();
+    let width = marks.first().map_or(0, Vec::len);
+    let mut tail = path.len();
+    if let Some(i) = ring_at {
+      tail = i;
+      let ring = i..path.len();
+      // Twice round backwards, so each sees what comes after it.
+      let mut cur: Vec<Option<NodeId>> = vec![None; width];
+      let mut out: Vec<Vec<Option<NodeId>>> = vec![Vec::new(); path.len()];
+      for pass in 0..2 {
+        for j in ring.clone().rev() {
+          for (k, c) in cur.iter_mut().enumerate() {
+            if marks[j][k] {
+              *c = Some(path[j]);
+            }
+          }
+          if pass == 1 {
+            out[j] = cur.clone();
+          }
+        }
+      }
+      for j in ring {
+        self
+          .chain_firsts
+          .insert(path[j], Rc::from(std::mem::take(&mut out[j])));
+      }
+    }
+    let mut after: Option<Rc<[Option<NodeId>]>> = match (ring_at, x) {
+      (Some(i), _) => Some(self.chain_firsts[&path[i]].clone()),
+      (None, Some(m)) => Some(self.chain_firsts[&m].clone()),
+      (None, None) => None,
+    };
+    for j in (0..tail).rev() {
+      let f: Rc<[Option<NodeId>]> = (0..width)
+        .map(|k| {
+          if marks[j][k] {
+            Some(path[j])
+          } else {
+            after.as_ref().and_then(|a| a.get(k).copied().flatten())
+          }
+        })
+        .collect();
+      self.chain_firsts.insert(path[j], f.clone());
+      after = Some(f);
+    }
+    self.chain_firsts[&n].clone()
   }
 
   fn enter_resource(&mut self, n: NodeId, name: &str, parent: &Parent) -> Option<Frame> {
@@ -1868,34 +2012,21 @@ impl<'d> Builder<'d, '_, '_> {
 
   fn emit_gradient(&mut self, n: NodeId, name: &str) {
     let doc = self.doc;
-    let chain = self.href_chain(n, &["linearGradient", "radialGradient"]);
+    let firsts = self.href_firsts(n, &["linearGradient", "radialGradient"]);
     let own: &[&'static str] = if name == "linearGradient" {
-      &["x1", "y1", "x2", "y2"]
+      LINEAR_ATTRS
     } else {
-      &["cx", "cy", "r", "fx", "fy", "fr"]
+      RADIAL_ATTRS
     };
     let mut pieces = vec![attr("id", self.out_id(n))];
-    for a in own
-      .iter()
-      .chain(["gradientUnits", "gradientTransform", "spreadMethod"].iter())
-    {
-      let value = chain.iter().find_map(|g| {
-        // Geometry comes only from gradients of the same kind.
-        if own.contains(a) && doc.svg_name(*g) != Some(name) {
-          return None;
-        }
-        doc.attr(*g, a)
-      });
-      if let Some(v) = value {
+    for a in own.iter().chain(COMMON_GRADIENT_ATTRS.iter()) {
+      let k = GRADIENT_ATTRS.iter().position(|x| x == a).unwrap();
+      if let Some(v) = firsts[k].and_then(|g| doc.attr(g, a)) {
         pieces.push(attr(*a, v.to_owned()));
       }
     }
     self.open(name, &pieces);
-    let stops_from = chain.iter().copied().find(|g| {
-      doc
-        .element_children(*g)
-        .any(|c| doc.svg_name(c) == Some("stop"))
-    });
+    let stops_from = firsts[GRADIENT_ATTRS.len()];
     if let Some(g) = stops_from {
       let gradient_style = self.style_at(g);
       let stops: Vec<NodeId> = doc
@@ -1927,29 +2058,15 @@ impl<'d> Builder<'d, '_, '_> {
 
   fn enter_pattern(&mut self, n: NodeId, parent: &Parent) -> Option<Frame> {
     let doc = self.doc;
-    let chain = self.href_chain(n, &["pattern"]);
+    let firsts = self.href_firsts(n, &["pattern"]);
     let mut pieces = vec![attr("id", self.out_id(n))];
-    for a in [
-      "x",
-      "y",
-      "width",
-      "height",
-      "patternUnits",
-      "patternContentUnits",
-      "patternTransform",
-      "viewBox",
-      "preserveAspectRatio",
-    ] {
-      if let Some(v) = chain.iter().find_map(|g| doc.attr(*g, a)) {
-        pieces.push(attr(a, v.to_owned()));
+    for (k, a) in PATTERN_ATTRS.iter().enumerate() {
+      if let Some(v) = firsts[k].and_then(|g| doc.attr(g, a)) {
+        pieces.push(attr(*a, v.to_owned()));
       }
     }
     self.open("pattern", &pieces);
-    let Some(content) = chain
-      .iter()
-      .copied()
-      .find(|g| doc.element_children(*g).next().is_some())
-    else {
+    let Some(content) = firsts[PATTERN_ATTRS.len()] else {
       self.out.push_str("</pattern>");
       return None;
     };
