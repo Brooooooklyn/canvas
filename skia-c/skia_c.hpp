@@ -75,6 +75,7 @@
 #include <set>
 #include <string>
 #include <tuple>
+#include <unordered_map>
 #include <unordered_set>
 #include <vector>
 
@@ -749,6 +750,14 @@ struct skiac_font_collection {
   std::map<SkTypefaceID, uint8_t> space_in_lookups;
   // The same with the Blink shaper's space glyph (text_words.cpp).
   std::map<SkTypefaceID, uint8_t> hb_space_in_lookups;
+  // text_metrics.cpp IsSystemTypeface: the answer per typeface. A typeface
+  // ID is never reused, and the answer only changes with the system and
+  // installed faces (system_typeface_ids, system_ui_ids, font_mgr), so it is
+  // cleared wherever they change (markCachesDirty, rebuildAssets) and with
+  // the match caches. Asking font_mgr is a CoreText match on macOS, most of
+  // a new line's time with the system renderer when uncached.
+  static constexpr size_t kMaxSystemTypefaces = 1024;
+  std::unordered_map<SkTypefaceID, bool> system_typefaces;
   // text_caps.cpp: the OpenType caps features of a face for a script.
   std::map<std::pair<SkTypefaceID, uint32_t>, uint8_t> caps_features;
   // FontCollection keeps a clone of every face for every list of font
@@ -942,6 +951,7 @@ struct skiac_font_collection {
   void markCachesDirty() {
     caches_dirty = true;
     ++families_generation;
+    system_typefaces.clear();
   }
 
   void flushCachesIfDirty() {
@@ -950,6 +960,7 @@ struct skiac_font_collection {
       collection->clearCaches();
       space_in_lookups.clear();
       hb_space_in_lookups.clear();
+      system_typefaces.clear();
       caps_features.clear();
       font_arguments.clear();
       text_caches.reset();
@@ -976,6 +987,7 @@ struct skiac_font_collection {
       collection->clearCaches();
       space_in_lookups.clear();
       hb_space_in_lookups.clear();
+      system_typefaces.clear();
       caps_features.clear();
       text_caches.reset();
       font_arguments.clear();
@@ -1005,6 +1017,7 @@ struct skiac_font_collection {
     collection->clearCaches();
     space_in_lookups.clear();
     hb_space_in_lookups.clear();
+    system_typefaces.clear();
     caps_features.clear();
     font_arguments.clear();
     text_caches.reset();
