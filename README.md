@@ -125,15 +125,25 @@ WebP, AVIF and GIF output ignore these options. `toDataURL`, `toDataURLAsync`, `
 
 ## Text rendering
 
-By default text looks the same on every OS. Every font is drawn with FreeType, with Skia's default text gamma, no LCD (subpixel) text and one font family table (the one Linux uses). The same font files give the same pixels and the same `measureText` results on macOS, Linux and Windows.
+By default text is drawn the same way on every OS. Every font is drawn with FreeType, with Skia's default text gamma, no LCD (subpixel) text and one font family table (the one Linux uses).
 
-To get the same output everywhere, register your own font files under names no OS installs, and draw only with those names:
+Text gives the same pixels and the same `measureText` results on macOS, Linux and Windows when all of these are true:
+
+1. `ctx.font` names only fonts you registered. The canvas default `10px sans-serif`, the other generic families and names like `Arial` use installed fonts, unless you registered a font under that name.
+2. Your registered fonts have every character you draw. A character they lack is taken from an installed font.
+3. You set `ctx.lang`, for example to `'en'`. The default `'inherit'` follows the host language.
+4. You use the default `'portable'` renderer, not `setTextRenderer('system')`.
+5. The `FREETYPE_PROPERTIES` env var is not set.
+
+x64 and arm64 builds can still differ by 1 color level on some edge pixels.
 
 ```js
 const { GlobalFonts } = require('@napi-rs/canvas')
 
+// A name no OS installs
 GlobalFonts.registerFromPath('./fonts/Lato-Regular.ttf', 'MyLato')
 ctx.font = '20px MyLato'
+ctx.lang = 'en'
 ```
 
 A name registered over an installed family (for example `Helvetica`) works like a CSS `@font-face` in Chrome: only font lists that name it use it, for every style (bold and italic are made from the faces you registered when you registered no bold or italic face). The generic families, such as `sans-serif`, keep the installed family. To change a generic family, register the font under the keyword itself:
@@ -168,7 +178,7 @@ getTextRenderer() // 'system'
 
 It applies to the whole process. Call it once at startup, before you create canvases. `setTextRenderer('portable')` switches back. Any other value throws a `TypeError`. A canvas created before the switch keeps its old text gamma until you set its width or height. A `ctx.font` value set before the switch keeps its parsed form (sizes in `ex`, `ch` and other font-relative units, and on macOS the `BlinkMacSystemFont` to `system-ui` rewrite), so set `ctx.font` again after the switch.
 
-> **Behavior change** ([#1402](https://github.com/Brooooooklyn/canvas/issues/1402)): text on macOS and Linux is drawn the way Windows draws it, so pixels and `measureText` results differ from 1.0.12 and 1.0.13. On macOS, the installed fonts are FreeType faces again (as in 1.0.11), read from `/System/Library/Fonts`, `/Library/Fonts` and `~/Library/Fonts`; CoreText's per-character fallback is off, and `sans-serif`, `serif` and `monospace` map to Arial, Times New Roman and the Linux monospace list. On macOS, `DISABLE_SYSTEM_FONTS_LOAD` no longer hides installed fonts from name lookup, as on Linux and Windows and before 1.0.12; it only keeps them out of `GlobalFonts.families`. Call `setTextRenderer('system')` to get the 1.0.12 / 1.0.13 behavior back.
+> **Behavior change** ([#1402](https://github.com/Brooooooklyn/canvas/issues/1402)): text on macOS and Linux is drawn the way Windows draws it, so pixels and `measureText` results differ from 1.0.12 and 1.0.13. On macOS, the installed fonts are FreeType faces again (as in 1.0.11), read from `/System/Library/Fonts`, `/Library/Fonts` and `~/Library/Fonts`; CoreText's per-character fallback is off, and `sans-serif`, `serif` and `monospace` map to Arial, Times New Roman and the Linux monospace list. On macOS, `DISABLE_SYSTEM_FONTS_LOAD` no longer hides installed fonts from name lookup, as on Linux and Windows and before 1.0.12; it only keeps them out of `GlobalFonts.families`. Call `setTextRenderer('system')` to draw with each OS's own font renderer and installed fonts again, as 1.0.12 and 1.0.13 did. Both renderers now shape text the way Chrome does, so the output is not the same as in 1.0.12 and 1.0.13.
 
 > **Behavior change**: a character no font of the font list has is taken from an installed font, as Chrome's font cache takes it from the platform's fonts. This applies to the portable renderer on every OS and to the system renderer off macOS (on macOS, CoreText still picks first). The font is chosen the way Chrome on Windows chooses it: a bold or italic list first tries its first family at the normal style, then the font Windows names for the character's script (on macOS, the font Chrome's CoreText fallback names for it), then the first installed family, by name, that has the character. Before, such a character drew as a box (the first font's `.notdef`). Private use characters still draw as boxes.
 
