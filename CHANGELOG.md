@@ -1,3 +1,44 @@
+## [1.1.1](https://github.com/Brooooooklyn/canvas/compare/v1.1.0...v1.1.1) (2026-11-12)
+
+
+### Bug Fixes
+
+* **canvas:** keep the canvas usable while an async encode is pending ([#1424](https://github.com/Brooooooklyn/canvas/issues/1424)) ([fa94bdc](https://github.com/Brooooooklyn/canvas/commit/fa94bdc75920e68c6fbb3591f45d87bf82264f46)), closes [#3584](https://github.com/Brooooooklyn/canvas/issues/3584) [#1419](https://github.com/Brooooooklyn/canvas/issues/1419)
+* **deps:** update rust crate selectors to 0.42 ([#1422](https://github.com/Brooooooklyn/canvas/issues/1422)) ([699311f](https://github.com/Brooooooklyn/canvas/commit/699311f57eb3757bc2585f07dd2e9adc784f3545))
+* **deps:** update rust crate selectors to 0.43 ([#1456](https://github.com/Brooooooklyn/canvas/issues/1456)) ([88bc119](https://github.com/Brooooooklyn/canvas/commit/88bc11948da6260ecdf3250a8aa8cad357ecc5ba))
+* **fonts:** a name given to a file loadFontsFromDir loaded is its own FontFace ([#1451](https://github.com/Brooooooklyn/canvas/issues/1451)) ([5500224](https://github.com/Brooooooklyn/canvas/commit/5500224b0eff3c60d194d48441ce4d6b973ffc21))
+* **fonts:** a name registered over an installed family works like a FontFace ([#1447](https://github.com/Brooooooklyn/canvas/issues/1447)) ([907d313](https://github.com/Brooooooklyn/canvas/commit/907d313480b565d1359b4fec57a63ddb843d7d57))
+* **fonts:** free removed fonts (RSS stays flat) ([#1445](https://github.com/Brooooooklyn/canvas/issues/1445)) ([155ee1b](https://github.com/Brooooooklyn/canvas/commit/155ee1b0155490987b31eaf5953ef4f21f3b9a4a))
+* **fonts:** spellings of a family are one family, and the face added last wins ([#1450](https://github.com/Brooooooklyn/canvas/issues/1450)) ([285031e](https://github.com/Brooooooklyn/canvas/commit/285031e395d241ac7c7afc112a488f3cd50eb165))
+* **image:** draw a complete Buffer image before onload like Chrome ([#1426](https://github.com/Brooooooklyn/canvas/issues/1426)) ([921ef7c](https://github.com/Brooooooklyn/canvas/commit/921ef7cc2704ac89046aedbbf8433455ff2de4c3))
+* **svg:** SVG text falls back per character through the font list, as Chrome does ([#1453](https://github.com/Brooooooklyn/canvas/issues/1453)) ([458e584](https://github.com/Brooooooklyn/canvas/commit/458e584ff4b60bae53fd64b8903b070ac8d87ab6))
+* **svg:** synthetic bold and italic in SVG text ([#1454](https://github.com/Brooooooklyn/canvas/issues/1454)) ([f7ccba5](https://github.com/Brooooooklyn/canvas/commit/f7ccba5e043ce3b95d97dea2058fdf827c4f5cdb))
+* **text:** a lang change re-sets the font like Blink ([#1444](https://github.com/Brooooooklyn/canvas/issues/1444)) ([14e4003](https://github.com/Brooooooklyn/canvas/commit/14e4003cb170093a50947def3884e2d1ce951ed9))
+* **text:** floor every font size to 1/100 px like Chrome ([#1430](https://github.com/Brooooooklyn/canvas/issues/1430)) ([fa2d404](https://github.com/Brooooooklyn/canvas/commit/fa2d404aca0d981749e1d38c9efc03b12a8470a9))
+* **text:** let the font decide Turkish ligatures like Chrome ([#1427](https://github.com/Brooooooklyn/canvas/issues/1427)) ([6966812](https://github.com/Brooooooklyn/canvas/commit/6966812dec96666dd129c9499029cdee347d9f88))
+* **text:** resolve letterSpacing and wordSpacing units like Chrome ([#1449](https://github.com/Brooooooklyn/canvas/issues/1449)) ([677b87a](https://github.com/Brooooooklyn/canvas/commit/677b87ab71cc39e3140aef997c0776b374cb5fb7))
+* **text:** take characters the font list lacks from installed fonts ([#1452](https://github.com/Brooooooklyn/canvas/issues/1452)) ([9441087](https://github.com/Brooooooklyn/canvas/commit/9441087cba2b08d33632fe76e30c9f591862193b))
+* **text:** word spacing on a leading space follows desktop Chrome ([#1446](https://github.com/Brooooooklyn/canvas/issues/1446)) ([7367a1d](https://github.com/Brooooooklyn/canvas/commit/7367a1d7052e567b6ad0a49eb7477f324aace898))
+
+
+### Features
+
+* **text:** add Blink fallback stages and the macOS system fallback to the shaper ([#1433](https://github.com/Brooooooklyn/canvas/issues/1433)) ([0fc739a](https://github.com/Brooooooklyn/canvas/commit/0fc739afaf441437d97369a5ece72a2a06fb1f03))
+* **text:** add chws and HanKerning to the Blink-style shaper ([#1438](https://github.com/Brooooooklyn/canvas/issues/1438)) ([00d7c7a](https://github.com/Brooooooklyn/canvas/commit/00d7c7afad49b5b131a7eea5fa3eac535c800dc3))
+* **text:** add font-variant-caps to the Blink-style shaper ([#1436](https://github.com/Brooooooklyn/canvas/issues/1436)) ([ae1eb80](https://github.com/Brooooooklyn/canvas/commit/ae1eb80d7f13218165321d49bbe291283333a634))
+* **text:** add fontFeatureSettings, fontVariantLigatures/Numeric/Position, fontSizeAdjust and fontOpticalSizing ([#1428](https://github.com/Brooooooklyn/canvas/issues/1428)) ([614d41c](https://github.com/Brooooooklyn/canvas/commit/614d41c038137a632ab61391af9123cae6010128))
+* **text:** add host language and per-script fonts to the Blink-style shaper ([#1439](https://github.com/Brooooooklyn/canvas/issues/1439)) ([f514832](https://github.com/Brooooooklyn/canvas/commit/f514832d525b057c35b52e0ec233bf8b43544cb5))
+* **text:** add letter and word spacing to the Blink-style shaper ([#1435](https://github.com/Brooooooklyn/canvas/issues/1435)) ([378814a](https://github.com/Brooooooklyn/canvas/commit/378814a1b52cf7e727b466e1816cbe228cfa09e3))
+* **text:** add per-face size, opsz and ptem to the Blink-style shaper ([#1437](https://github.com/Brooooooklyn/canvas/issues/1437)) ([82156e6](https://github.com/Brooooooklyn/canvas/commit/82156e6f523d38d24ff77df73ea2d5e6fc98d2ba))
+* **text:** add the Blink shaper scaffold behind NAPI_RS_CANVAS_SHAPER ([#1431](https://github.com/Brooooooklyn/canvas/issues/1431)) ([aee4d71](https://github.com/Brooooooklyn/canvas/commit/aee4d7143555fabe166968ffe2e14f382225a6bb))
+* **text:** draw .notdef where the Blink shaper has no fallback source ([#1441](https://github.com/Brooooooklyn/canvas/issues/1441)) ([934cb92](https://github.com/Brooooooklyn/canvas/commit/934cb92c5c9cdf604acf6f1b71f7255137a777f4))
+* **text:** make the Blink shaper the default text path ([#1442](https://github.com/Brooooooklyn/canvas/issues/1442)) ([c0441b9](https://github.com/Brooooooklyn/canvas/commit/c0441b95aea09e5f57ba10e5d11fb03d1eedc5d2))
+* **text:** shape canvas text with the Blink-style shaper core ([#1432](https://github.com/Brooooooklyn/canvas/issues/1432)) ([a0b2541](https://github.com/Brooooooklyn/canvas/commit/a0b254197ba6e9d2ee02b9d6a259ba6982a06ddf))
+
+
+### Performance Improvements
+
+* **text:** cache the system-face check of the Blink shaper ([#1440](https://github.com/Brooooooklyn/canvas/issues/1440)) ([7e6d608](https://github.com/Brooooooklyn/canvas/commit/7e6d60878993cdd097ba243c2dc46ffcc6f9b3af))
 # [1.1.0](https://github.com/Brooooooklyn/canvas/compare/v1.0.13...v1.1.0) (2026-10-30)
 
 
