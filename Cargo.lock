@@ -516,7 +516,7 @@ dependencies = [
 [[package]]
 name = "libaom-sys"
 version = "0.18.0+libaom.3.15.3"
-source = "git+https://github.com/Brooooooklyn/libavif-rs?rev=d27134fb9271e3ace2f1454fb527c8bc3e96f914#d27134fb9271e3ace2f1454fb527c8bc3e96f914"
+source = "git+https://github.com/Brooooooklyn/libavif-rs?rev=eb0acbf56412f7e9fdbb26c5e576d27a15e4219d#eb0acbf56412f7e9fdbb26c5e576d27a15e4219d"
 dependencies = [
  "cmake",
 ]
@@ -533,8 +533,7 @@ dependencies = [
 [[package]]
 name = "libavif-sys"
 version = "0.18.0+libavif.1.4.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d3147ece4edd43fce03ab0b2f465a9c3f852c90adfa205aea4125315e8fb564f"
+source = "git+https://github.com/Brooooooklyn/libavif-rs?rev=eb0acbf56412f7e9fdbb26c5e576d27a15e4219d#eb0acbf56412f7e9fdbb26c5e576d27a15e4219d"
 dependencies = [
  "cmake",
  "libaom-sys",

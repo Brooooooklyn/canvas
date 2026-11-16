@@ -49,10 +49,11 @@ cc         = "1"
 cxx-build  = "=1.0.205"
 napi-build = "2"
 
-# libaom-sys 0.18 omits app sources while enabling apps and uses the old ARMv7 toolchain path.
-# Pin njaard/libavif-rs#128 plus the path fix until a fixed crates.io release is available.
+# The 0.18 native builds need fixes for omitted apps, the ARMv7 toolchain path, and static MSVC CRT.
+# Pin these fixes until fixed crates.io releases are available.
 [patch.crates-io]
-libaom-sys = { git = "https://github.com/Brooooooklyn/libavif-rs", rev = "d27134fb9271e3ace2f1454fb527c8bc3e96f914" }
+libaom-sys = { git = "https://github.com/Brooooooklyn/libavif-rs", rev = "eb0acbf56412f7e9fdbb26c5e576d27a15e4219d" }
+libavif-sys = { git = "https://github.com/Brooooooklyn/libavif-rs", rev = "eb0acbf56412f7e9fdbb26c5e576d27a15e4219d" }
 
 [profile.release]
 codegen-units = 1
