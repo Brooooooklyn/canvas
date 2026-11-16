@@ -16,6 +16,11 @@
       "matchPackageNames": ["cssparser", "cssparser-color"]
     },
     {
+      "groupName": "libavif",
+      "matchManagers": ["cargo"],
+      "matchPackageNames": ["libavif", "libavif-sys"]
+    },
+    {
       "groupName": "oxc-node",
       "matchManagers": ["npm"],
       "matchPackageNames": ["@oxc-node/*"]
