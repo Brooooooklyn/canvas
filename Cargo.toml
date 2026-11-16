@@ -16,8 +16,8 @@ cssparser        = "0.38"
 gif              = "0.14"
 imagesize        = { version = "0.15", default-features = false, features = ["png", "jpeg", "gif", "webp", "heif"] }
 infer            = "0.22"
-libavif          = { version = "0.14", default-features = false, features = ["codec-aom"] }
-libavif-sys      = { version = "0.17", default-features = false, features = ["codec-aom"] }
+libavif          = { version = "0.15", default-features = false, features = ["codec-aom"] }
+libavif-sys      = { version = "0.18", default-features = false, features = ["codec-aom"] }
 napi             = { version = "3.1", default-features = false, features = ["napi5", "web_stream", "serde-json"] }
 napi-derive      = { version = "3.1", default-features = false }
 num_cpus         = "1"
@@ -48,6 +48,11 @@ mimalloc-safe = { version = "0.1", features = ["local_dynamic_tls", "no_opt_arch
 cc         = "1"
 cxx-build  = "=1.0.205"
 napi-build = "2"
+
+# libaom-sys 0.18 omits app sources while libaom enables apps by default.
+# Pin njaard/libavif-rs#128 until a fixed crates.io release is available.
+[patch.crates-io]
+libaom-sys = { git = "https://github.com/joshstoik1/libavif-rs", rev = "e768b11ef0ae8f1aef518a1e55c606286c8fc802" }
 
 [profile.release]
 codegen-units = 1
