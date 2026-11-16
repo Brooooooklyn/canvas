@@ -516,7 +516,7 @@ dependencies = [
 [[package]]
 name = "libaom-sys"
 version = "0.18.0+libaom.3.15.3"
-source = "git+https://github.com/joshstoik1/libavif-rs?rev=e768b11ef0ae8f1aef518a1e55c606286c8fc802#e768b11ef0ae8f1aef518a1e55c606286c8fc802"
+source = "git+https://github.com/Brooooooklyn/libavif-rs?rev=d27134fb9271e3ace2f1454fb527c8bc3e96f914#d27134fb9271e3ace2f1454fb527c8bc3e96f914"
 dependencies = [
  "cmake",
 ]
