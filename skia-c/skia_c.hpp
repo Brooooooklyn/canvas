@@ -2418,7 +2418,9 @@ void skiac_image_encode_data(skiac_image* c_image,
                              float quality,
                              bool lossless,
                              bool crop_to_max_dimension,
-                             bool unpremul_readback);
+                             bool unpremul_readback,
+                             int png_zlib_level,
+                             int png_filters);
 bool skiac_image_read_pixels(skiac_image* c_image,
                              uint8_t* dst,
                              size_t row_bytes,

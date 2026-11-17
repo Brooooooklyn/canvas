@@ -874,6 +874,13 @@ export interface JpegEncodeOptions extends ImageMetadata {
   quality?: number
 }
 
+export interface PngEncodeOptions extends ImageMetadata {
+  /** zlib level, an integer from 0 (fastest) to 9 (smallest). Default 6. */
+  compressionLevel?: number
+  /** libpng's row filters, ORed: 0x08 none, 0x10 sub, 0x20 up, 0x40 average, 0x80 Paeth. Default 0xF8. */
+  filters?: number
+}
+
 /** GIF encoding configuration for single-frame encoding */
 export interface GifConfig {
   /**
@@ -1059,18 +1066,18 @@ export class Canvas {
   getContext(contextType: '2d', contextAttributes?: ContextAttributes): SKRSContext2D
   encodeSync(format: 'webp' | 'jpeg', quality?: number): Buffer
   encodeSync(format: 'jpeg', options: JpegEncodeOptions): Buffer
-  encodeSync(format: 'png', options?: ImageMetadata): Buffer
+  encodeSync(format: 'png', options?: PngEncodeOptions): Buffer
   encodeSync(format: 'avif', cfg?: AvifConfig | number): Buffer
   encodeSync(format: 'gif', quality?: number): Buffer
   encode(format: 'webp' | 'jpeg', quality?: number): Promise<Buffer>
   encode(format: 'jpeg', options: JpegEncodeOptions): Promise<Buffer>
-  encode(format: 'png', options?: ImageMetadata): Promise<Buffer>
+  encode(format: 'png', options?: PngEncodeOptions): Promise<Buffer>
   encode(format: 'avif', cfg?: AvifConfig | number): Promise<Buffer>
   encode(format: 'gif', quality?: number): Promise<Buffer>
   /** Writes no image metadata; use `encode` and stream the Buffer for that. */
   encodeStream(format: 'webp' | 'jpeg', quality?: number): ReadableStream<Buffer>
   encodeStream(format: 'png'): ReadableStream<Buffer>
-  toBuffer(mime: 'image/png', options?: ImageMetadata): Buffer
+  toBuffer(mime: 'image/png', options?: PngEncodeOptions): Buffer
   toBuffer(mime: 'image/jpeg' | 'image/webp', quality?: number): Buffer
   /**
    * JPEG with metadata, at quality 92: toBuffer does not read a quality from an

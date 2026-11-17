@@ -8,6 +8,7 @@
 import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { inflateSync } from 'node:zlib'
 
 import { crc32 } from '@node-rs/crc32'
 import test from 'ava'
@@ -421,10 +422,25 @@ test('WebP, AVIF and GIF ignore metadata', async (t) => {
   }
 })
 
+test('compressionLevel and filters set the PNG encoder', async (t) => {
+  const canvas = drawn()
+  const options = { compressionLevel: 1, filters: 0x20 }
+  for (const png of [
+    canvas.toBuffer('image/png', options),
+    canvas.encodeSync('png', options),
+    await canvas.encode('png', options),
+  ]) {
+    const zlib = Buffer.concat(pngChunks(png).filter((c) => c.type === 'IDAT').map((c) => c.data))
+    const rows = inflateSync(zlib)
+    t.is(zlib[1] >> 6, 0) // zlib's level flag for levels 0 and 1
+    for (let y = 0; y < 48; y++) t.is(rows[y * (64 * 4 + 1)], 2) // up
+  }
+})
+
 test('unchanged without metadata', async (t) => {
   const canvas = drawn()
   const objects: any[] = [
-    { compressionLevel: 9 },
+    { compressionLevel: 10, filters: 1 },
     { foo: 1 },
     [],
     { quality: 50, speed: 10 },
@@ -489,6 +505,7 @@ test('encodeStream and savePng write no metadata', async (t) => {
 
 const AVIF_MEMBERS = ['quality', 'alphaQuality', 'speed', 'threads', 'chromaSubsampling']
 const METADATA_MEMBERS = ['resolution', 'title', 'author', 'description', 'copyright', 'software', 'comment']
+const PNG_MEMBERS = ['compressionLevel', 'filters']
 
 test('property reads', async (t) => {
   const canvas = drawn()
@@ -508,7 +525,7 @@ test('property reads', async (t) => {
   for (const [name, call] of calls) {
     log.length = 0
     await call(logged({}))
-    t.deepEqual(log, [...AVIF_MEMBERS, ...METADATA_MEMBERS], name)
+    t.deepEqual(log, [...AVIF_MEMBERS, ...METADATA_MEMBERS, ...PNG_MEMBERS], name)
     log.length = 0
     await call(logged(function () {}))
     t.deepEqual(log, [], `${name} function`)
@@ -516,7 +533,7 @@ test('property reads', async (t) => {
 
   // Nothing is read from a number, also through Number.prototype.
   const reads: string[] = []
-  for (const key of [...AVIF_MEMBERS, ...METADATA_MEMBERS]) {
+  for (const key of [...AVIF_MEMBERS, ...METADATA_MEMBERS, ...PNG_MEMBERS]) {
     Object.defineProperty(Number.prototype, key, {
       configurable: true,
       get() {
@@ -529,7 +546,7 @@ test('property reads', async (t) => {
     canvas.toBuffer('image/png', 50 as any)
     canvas.encodeSync('jpeg', 50)
   } finally {
-    for (const key of [...AVIF_MEMBERS, ...METADATA_MEMBERS]) delete (Number.prototype as any)[key]
+    for (const key of [...AVIF_MEMBERS, ...METADATA_MEMBERS, ...PNG_MEMBERS]) delete (Number.prototype as any)[key]
   }
   t.deepEqual(reads, [])
 
