@@ -1,6 +1,7 @@
 // Variable font axes and synthetic bold and italic, like Blink. A registered
-// font is a web font with `auto` descriptors (FontCustomPlatformData::
-// GetFontPlatformData), an installed font follows FontCache::
+// font is a web font with the descriptors it was registered with, else
+// `auto` ones (FontCustomPlatformData::GetFontPlatformData), an installed
+// font follows FontCache::
 // CreateFontPlatformData and a fallback font PlatformFallbackFontForCharacter
 // (Linux).
 
@@ -71,9 +72,35 @@ bool SetsOpszDefault(const skiac_text_request& request) {
 #endif
 }
 
+// The descriptors `base` was registered with under the first of the
+// request's family names that has them; null for none.
+const skiac_face_descriptors* Declared(skiac_font_collection* c_collection,
+                                       SkTypeface* base,
+                                       const skiac_text_request& request) {
+  if (!c_collection->font_descriptors) {
+    return nullptr;
+  }
+  const uint32_t id = c_collection->assets->registrationOf(base->uniqueID());
+  if (!id) {
+    return nullptr;
+  }
+  const auto& descriptors =
+      c_collection->assets->getRegisteredFonts().at(id).descriptors;
+  for (size_t i = 0; i < request.family_count && !descriptors.empty(); ++i) {
+    const auto& family = request.families[i];
+    auto found =
+        descriptors.find(FoldFamilyName({family.name, family.name_len}));
+    if (found != descriptors.end()) {
+      return &found->second;
+    }
+  }
+  return nullptr;
+}
+
 }  // namespace
 
 std::vector<SkFontArguments::VariationPosition::Coordinate> FontVariations(
+    skiac_font_collection* c_collection,
     const std::vector<sk_sp<SkTypeface>>& faces,
     const skiac_text_request& request,
     float opsz_size) {
@@ -94,7 +121,9 @@ std::vector<SkFontArguments::VariationPosition::Coordinate> FontVariations(
   // Skia clamps each coordinate to the face's axis, as Blink does for a
   // range set from `auto`. CSS slants clockwise, OpenType counter-clockwise.
   if (variable) {
-    coords.push_back({kWght, request.weight});
+    // An explicit weight is the wght of the first face (ClampAxisValue).
+    const auto* declared = Declared(c_collection, faces[0].get(), request);
+    coords.push_back({kWght, declared ? declared->weight : request.weight});
     coords.push_back({kWdth, request.stretch_pct});
     coords.push_back({kSlnt, -request.slope});
   }
@@ -285,7 +314,7 @@ UsedSizes ComputeUsedSizes(skiac_font_collection* c_collection,
   // made at its effective size (the computed size floored).
   auto aspect_of = [&](const sk_sp<SkTypeface>& base) {
     sk_sp<SkTypeface> face = base;
-    const auto coords = FontVariations({base}, request, computed);
+    const auto coords = FontVariations(c_collection, {base}, request, computed);
     if (!coords.empty()) {
       SkFontArguments args;
       args.setVariationDesignPosition(
@@ -496,6 +525,12 @@ SyntheticStyle SynthesizeStyle(skiac_font_collection* c_collection,
     return {
         weight > 200 + style.weight(),
         slope == kItalicSlope && style.slant() == SkFontStyle::kUpright_Slant};
+  }
+  if (const auto* declared = Declared(c_collection, base, request)) {
+    // CSSSegmentedFontFace with explicit descriptors, whatever the axes span.
+    return {weight >= kBoldThreshold && declared->weight < kBoldThreshold &&
+                !base->isBold(),
+            slope >= kItalicSlope && !declared->italic && !base->isItalic()};
   }
   // CSSSegmentedFontFace: `auto` descriptors are weight 400 and slope 0.
   bool bold = weight >= kBoldThreshold;

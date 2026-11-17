@@ -1222,7 +1222,8 @@ std::vector<FamilyFace> FamilyFaces(
               [opsz](const auto& entry) { return entry.first == opsz; });
           if (known == instances.end()) {
             std::vector<sk_sp<SkTypeface>> found;
-            const auto own = FontVariations({base_faces[k]}, request, opsz);
+            const auto own =
+                FontVariations(c_collection, {base_faces[k]}, request, opsz);
             if (!own.empty()) {
               SkFontArguments args;
               args.setVariationDesignPosition(
@@ -1539,7 +1540,7 @@ LineFaces ResolveLineFaces(skiac_font_collection* c_collection,
   out.sizes = ComputeUsedSizes(c_collection, out.base_faces, request,
                                resolution.locale());
   const std::vector<SkFontArguments::VariationPosition::Coordinate> coords =
-      FontVariations(out.base_faces, request, out.sizes.opsz);
+      FontVariations(c_collection, out.base_faces, request, out.sizes.opsz);
   if (!coords.empty()) {
     SkFontArguments args;
     args.setVariationDesignPosition(

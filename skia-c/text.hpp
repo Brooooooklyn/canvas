@@ -151,12 +151,14 @@ size_t NextWordEndIndex(const char16_t* text,
 
 // The variation coordinates for `request` when `faces` (the request's
 // families' faces before font arguments) vary or the request has its own
-// variations, else none: wght, wdth and slnt from the weight, stretch and
-// slope, the request's variations, then, for font-optical-sizing: auto and
+// variations, else none: wght, wdth and slnt from the weight (the declared
+// one of a face registered with descriptors), stretch and slope, the
+// request's variations, then, for font-optical-sizing: auto and
 // no opsz of the request's own, opsz at `opsz_size` (UsedSizes::opsz), and
 // for none with the system renderer on Apple the axis default of the first
 // of `faces` with the axis (text_styles.cpp).
 std::vector<SkFontArguments::VariationPosition::Coordinate> FontVariations(
+    skiac_font_collection* c_collection,
     const std::vector<sk_sp<SkTypeface>>& faces,
     const skiac_text_request& request,
     float opsz_size);

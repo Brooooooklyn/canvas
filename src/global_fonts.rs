@@ -183,12 +183,26 @@ pub mod global_fonts {
   use super::FONT_DIR;
   use super::{FontKey, get_font, into_napi_error};
 
+  #[napi(object)]
+  pub struct FontFaceDescriptors {
+    pub weight: Option<f64>,
+    pub style: Option<String>,
+  }
+
   #[napi]
-  pub fn register(font_data: &[u8], name_alias: Option<String>) -> Result<Option<FontKey>> {
+  pub fn register(
+    font_data: &[u8],
+    name_alias: Option<String>,
+    descriptors: Option<FontFaceDescriptors>,
+  ) -> Result<Option<FontKey>> {
     let maybe_name_alias = name_alias.filter(|s| !s.is_empty());
+    let descriptors = descriptors.map(|d| crate::sk::ffi::skiac_face_descriptors {
+      weight: d.weight.unwrap_or(400.0) as f32,
+      italic: matches!(d.style.as_deref(), Some("italic" | "oblique")),
+    });
     let font = get_font().map_err(into_napi_error)?;
     let result = font
-      .register(font_data, maybe_name_alias)
+      .register(font_data, maybe_name_alias, descriptors.as_ref())
       .map(|typeface_id| FontKey { typeface_id });
     if result.is_some() {
       super::note_font_collection_mutation();

@@ -1132,10 +1132,17 @@ export interface FontVariationAxis {
   hidden: boolean
 }
 
+export interface FontFaceDescriptors {
+  /** Default 400. */
+  weight?: number
+  /** Default 'normal'. */
+  style?: 'normal' | 'italic' | 'oblique'
+}
+
 interface IGlobalFonts {
   readonly families: { family: string; styles: { weight: number; width: string; style: string }[] }[]
-  // return FontKey if succeeded, null if failed
-  register(font: Buffer, nameAlias?: string): FontKey | null
+  /** The FontKey, or null if it failed. `descriptors`: this name's @font-face descriptors; without them, `auto`. */
+  register(font: Buffer, nameAlias?: string, descriptors?: FontFaceDescriptors): FontKey | null
   // absolute path - returns FontKey if succeeded, null if failed
   registerFromPath(path: string, nameAlias?: string): FontKey | null
   has(name: string): boolean

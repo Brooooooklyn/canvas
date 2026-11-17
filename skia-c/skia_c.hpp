@@ -210,6 +210,12 @@ inline uint32_t computePathHash(const std::string& path) {
 // font_families.cpp: a family name case-folded as FontFaceCache keys it.
 std::string FoldFamilyName(std::string_view name);
 
+// The @font-face descriptors GlobalFonts.register declares a name with.
+struct skiac_face_descriptors {
+  float weight;
+  bool italic;
+};
+
 // Stores font data needed to recreate a typeface after rebuild
 struct RegisteredFont {
   sk_sp<SkData> data;  // For buffer-registered fonts (null for path-registered)
@@ -226,6 +232,8 @@ struct RegisteredFont {
   // back reuses it: a switch makes no face twice.
   sk_sp<SkTypeface> mode_typefaces[2];
   std::vector<std::string> aliases;  // All aliases for this font
+  // The descriptors of the names registered with them, by FoldFamilyName.
+  std::map<std::string, skiac_face_descriptors> descriptors;
   // When each alias was registered (parallel to aliases). A rebuild
   // registers every (face, alias) pair again in this order, so the
   // provider's first family (its fallback, onLegacyMakeTypeface) and the
@@ -617,6 +625,18 @@ class TypefaceFontProviderCustom : public TypefaceFontProvider {
     it->second.folded_family = FoldFamilyName({family.c_str(), family.size()});
   }
 
+  // `descriptors` for the font `id` under `name`; null: none (`auto`).
+  void setDescriptors(uint32_t id,
+                      std::string_view name,
+                      const skiac_face_descriptors* descriptors) {
+    auto& map = registered_fonts.at(id).descriptors;
+    if (descriptors) {
+      map[FoldFamilyName(name)] = *descriptors;
+    } else {
+      map.erase(FoldFamilyName(name));
+    }
+  }
+
   // The registration (FontKey) whose face is `typeface_id`, 0 when it is an
   // installed font (macOS loadSystemFonts) or no registered one. An alias
   // face is the face of the font it names, so this also finds the font an
@@ -661,6 +681,7 @@ class TypefaceFontProviderCustom : public TypefaceFontProvider {
     font_info.installed = old.installed;
     font_info.preloaded = old.preloaded;
     font_info.folded_family = old.folded_family;
+    font_info.descriptors = old.descriptors;
     font_info.no_web_twin = old.no_web_twin;
     font_info.typeface = std::move(typeface);
     font_info.mode_typefaces[0] = mode_typefaces[0];
@@ -1040,6 +1061,8 @@ struct skiac_font_collection {
   // memoizes findTypefaces() per {family list, weight, slant}, including
   // fallback misses, so any such change can invalidate an existing match.
   bool caches_dirty = false;
+  // A font was registered with descriptors (text_styles.cpp Declared).
+  bool font_descriptors = false;
   // font_families.cpp: every registered and system family name by its
   // case-folded spelling, rebuilt when families_generation moves.
   std::map<std::string, std::vector<std::string>> folded_families;
@@ -2567,7 +2590,8 @@ uint32_t skiac_font_collection_register(
     skiac_font_collection* c_font_collection,
     const uint8_t* font,
     size_t length,
-    const char* name_alias);
+    const char* name_alias,
+    const skiac_face_descriptors* descriptors);
 uint32_t skiac_font_collection_register_from_path(
     skiac_font_collection* c_font_collection,
     const char* font_path,

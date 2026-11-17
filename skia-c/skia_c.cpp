@@ -4637,7 +4637,8 @@ uint32_t skiac_font_collection_register(
     skiac_font_collection* c_font_collection,
     const uint8_t* font,
     size_t length,
-    const char* name_alias) {
+    const char* name_alias,
+    const skiac_face_descriptors* descriptors) {
   // Installed fonts register first, as loadSystemFonts does elsewhere.
   c_font_collection->prepareLookup();
   auto typeface_data = SkData::MakeWithCopy(font, length);
@@ -4659,6 +4660,11 @@ uint32_t skiac_font_collection_register(
   if (typeface_id) {
     RelistRegistered(c_font_collection, typeface_id, registered, typeface,
                      name_alias);
+    SkString family;
+    typeface->getFamilyName(&family);
+    c_font_collection->assets->setDescriptors(
+        typeface_id, name_alias ? name_alias : family.c_str(), descriptors);
+    c_font_collection->font_descriptors |= descriptors != nullptr;
     c_font_collection->markCachesDirty();
   }
   return typeface_id;
