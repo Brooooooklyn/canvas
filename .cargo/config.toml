@@ -1,3 +1,11 @@
+# cmake-rs reads these target-specific variables when configuring native dependencies.
+# The toolchain file keeps registry libavif-sys on the same static CRT as Rust.
+[env]
+CMAKE_TOOLCHAIN_FILE_x86_64-pc-windows-msvc = { value = "cmake/msvc-static.cmake", relative = true }
+CMAKE_TOOLCHAIN_FILE_x86_64_pc_windows_msvc = { value = "cmake/msvc-static.cmake", relative = true }
+CMAKE_TOOLCHAIN_FILE_aarch64-pc-windows-msvc = { value = "cmake/msvc-static.cmake", relative = true }
+CMAKE_TOOLCHAIN_FILE_aarch64_pc_windows_msvc = { value = "cmake/msvc-static.cmake", relative = true }
+
 [target.x86_64-pc-windows-msvc]
 rustflags = ["-C", "target-feature=+crt-static"]
 
