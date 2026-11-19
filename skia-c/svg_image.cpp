@@ -99,8 +99,10 @@ struct SvgFontRequest {
   // SkSVG's Primitive shaper.
   bool active = false;
   // The faces of the font list for the style, in list order (the first is
-  // the one ResolveFont draws with).
+  // the one ResolveFont draws with), and their descriptors (those of the
+  // family that matched each: FamilyDescriptors; empty for none).
   std::vector<sk_sp<SkTypeface>> faces;
+  std::vector<FaceDescriptors> declared;
   SkFontStyle style;
   // The computed font-weight (style's is SkSVG's, rounded to 100s).
   float weight = 400;
@@ -110,6 +112,16 @@ struct SvgFontRequest {
   std::vector<int> generics;
   // font-synthesis: whether a font may be a synthetic bold and italic.
   SyntheticStyle allowed = {true, true};
+
+  // The descriptors of `face`: those of its first entry in `faces`.
+  FaceDescriptors DeclaredOf(SkTypeface* face) const {
+    for (size_t i = 0; face && i < faces.size() && i < declared.size(); ++i) {
+      if (faces[i] && faces[i]->uniqueID() == face->uniqueID()) {
+        return declared[i];
+      }
+    }
+    return std::nullopt;
+  }
 };
 
 // The font-family lists of a document. SkSVGText asks for a typeface by
@@ -208,6 +220,7 @@ class SvgFontMgr final : public SkFontMgr {
     request.active = true;
     request.style = style;
     request.faces.clear();
+    request.declared.clear();
     request.names.clear();
     request.generics.clear();
     request.weight = static_cast<float>(style.weight());
@@ -215,11 +228,16 @@ class SvgFontMgr final : public SkFontMgr {
     if (names_) {
       sk_sp<SkTypeface> face =
           name ? MatchNamedFamily(c_collection_, name, style) : nullptr;
+      // The named family's descriptors; the default font has none.
+      const FaceDescriptors declared =
+          face ? DeclaredDescriptors(c_collection_, face.get(), name)
+               : std::nullopt;
       if (!face) {
         face = assets()->legacyMakeTypeface(name, style);
       }
       if (face) {
         request.faces.push_back(face);
+        request.declared.push_back(declared);
       }
       if (name) {
         request.names.push_back(name);
@@ -251,9 +269,12 @@ class SvgFontMgr final : public SkFontMgr {
     text_request.families = families.data();
     text_request.family_count = families.size();
     c_collection_->flushCachesIfDirty();
+    std::vector<bool> generic;
     const std::vector<SkString> resolved =
-        ResolveFontFamilies(c_collection_, text_request);
+        ResolveFontFamilies(c_collection_, text_request, &generic);
     request.faces = c_collection_->collection->findTypefaces(resolved, style);
+    request.declared = FamilyDescriptors(c_collection_, resolved, generic,
+                                         style, request.faces);
     return request.faces.empty() ? nullptr : request.faces.front();
   }
 
@@ -399,7 +420,9 @@ class SvgRunShaper final : public SkShaper {
       const skiac_text_request request = SvgStyleRequest(mgr_->request());
       SetSynthetic(&primary,
                    Allowed(SynthesizeStyle(c_collection_, primary.getTypeface(),
-                                           primary.getTypeface(), request),
+                                           primary.getTypeface(), request,
+                                           mgr_->request().DeclaredOf(
+                                               primary.getTypeface())),
                            mgr_->request().allowed));
     }
     std::vector<Run> runs;
@@ -573,9 +596,10 @@ class SvgRunShaper final : public SkShaper {
       // Each list face is its family's face, so its own base.
       allowed_ = slot.allowed;
       for (const sk_sp<SkTypeface>& face : list_) {
-        list_synthetic_.push_back(Allowed(
-            SynthesizeStyle(c_collection, face.get(), face.get(), request_),
-            allowed_));
+        list_synthetic_.push_back(
+            Allowed(SynthesizeStyle(c_collection, face.get(), face.get(),
+                                    request_, slot.DeclaredOf(face.get())),
+                    allowed_));
       }
       SkTypeface* first = list_.front().get();
       query_.request = &request_;
@@ -643,7 +667,7 @@ class SvgRunShaper final : public SkShaper {
         if (font.face) {
           last_resort_ = {
               font.face, Allowed(SynthesizeStyle(c_collection_, font.face.get(),
-                                                 font.base.get(), request_),
+                                                 font.base.get(), request_, {}),
                                  allowed_)};
         }
       }

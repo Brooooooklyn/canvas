@@ -149,19 +149,41 @@ size_t NextWordEndIndex(const char16_t* text,
                         size_t start,
                         bool is_8bit);
 
+// A face's @font-face descriptors (GlobalFonts.register); none: `auto`.
+using FaceDescriptors = std::optional<skiac_face_descriptors>;
+
+// The descriptors `base` (a face before font arguments) was registered with
+// under `family`, a family name or ResolveFontFamilies' spelling of one
+// (text_styles.cpp).
+FaceDescriptors DeclaredDescriptors(skiac_font_collection* c_collection,
+                                    SkTypeface* base,
+                                    std::string_view family);
+
+// For each of `base_faces` (findTypefaces of `families` at `style`), the
+// descriptors of the family that matched it, as Blink's CSSFontSelector
+// takes the FontFace of one family at a time; none for a generic family
+// (`generic`, ResolveFontFamilies). Empty when no font has descriptors
+// (text_styles.cpp).
+std::vector<FaceDescriptors> FamilyDescriptors(
+    skiac_font_collection* c_collection,
+    const std::vector<SkString>& families,
+    const std::vector<bool>& generic,
+    const SkFontStyle& style,
+    const std::vector<sk_sp<SkTypeface>>& base_faces);
+
 // The variation coordinates for `request` when `faces` (the request's
 // families' faces before font arguments) vary or the request has its own
-// variations, else none: wght, wdth and slnt from the weight (the declared
-// one of a face registered with descriptors), stretch and slope, the
+// variations, else none: wght, wdth and slnt from the weight (`declared`'s,
+// the descriptors of every face of `faces`), stretch and slope, the
 // request's variations, then, for font-optical-sizing: auto and
 // no opsz of the request's own, opsz at `opsz_size` (UsedSizes::opsz), and
 // for none with the system renderer on Apple the axis default of the first
 // of `faces` with the axis (text_styles.cpp).
 std::vector<SkFontArguments::VariationPosition::Coordinate> FontVariations(
-    skiac_font_collection* c_collection,
     const std::vector<sk_sp<SkTypeface>>& faces,
     const skiac_text_request& request,
-    float opsz_size);
+    float opsz_size,
+    const FaceDescriptors& declared);
 
 // The font sizes font-size-adjust gives (FontBuilder::UpdateAdjustedSize,
 // FontDescription::EffectiveFontSize, CSSFontFace::GetFontData and
@@ -187,11 +209,12 @@ struct UsedSizes {
 };
 
 // `base_faces` are the request's families' faces before font arguments
-// (FontCollection::findTypefaces of `families`); `locale`, when given, is the
-// locale's font settings those families were resolved with
-// (ResolveFontFamilies).
+// (FontCollection::findTypefaces of `families`), `declared` their
+// descriptors (FamilyDescriptors); `locale`, when given, is the locale's
+// font settings those families were resolved with (ResolveFontFamilies).
 UsedSizes ComputeUsedSizes(skiac_font_collection* c_collection,
                            const std::vector<sk_sp<SkTypeface>>& base_faces,
+                           const std::vector<FaceDescriptors>& declared,
                            const skiac_text_request& request,
                            const LocaleFamilies* locale = nullptr);
 
@@ -202,11 +225,13 @@ struct SyntheticStyle {
 };
 
 // The synthetic styles of `face` drawing `request`: `base` is the family's
-// face before font arguments, null for a fallback font.
+// face before font arguments, null for a fallback font; `declared` its
+// descriptors (FamilyDescriptors).
 SyntheticStyle SynthesizeStyle(skiac_font_collection* c_collection,
                                SkTypeface* face,
                                SkTypeface* base,
-                               const skiac_text_request& request);
+                               const skiac_text_request& request,
+                               const FaceDescriptors& declared);
 
 // font-variant-caps per font, for the Blink shaper (text_caps.cpp): Blink's
 // OpenTypeCapsSupport of one font for request.variant_caps and a script.
