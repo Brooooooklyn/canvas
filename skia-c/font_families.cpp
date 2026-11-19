@@ -237,7 +237,7 @@ bool HasInstalledFamily(std::string_view name) {
 // The faces FamilyResolver::Faces gives a tagged name: the family's
 // installed faces ("\x01i\x01"), its web faces ("\x01w\x01"), or every face
 // of a family with no installed face ("\x01a\x01"); kAllFontFaces the
-// FontFaces of such a family (a capabilities family: CapabilitiesFaces).
+// FontFaces of such a family (FontFaces).
 enum class FaceKind { kInstalled, kWeb, kAll, kAllFontFaces };
 
 class FamilyResolver {
@@ -1288,11 +1288,12 @@ class SegmentStyleSet : public SkFontStyleSet {
   int rank_;
 };
 
-// A web family that declares descriptors (UseCapabilities), as Blink's
-// FontFaceCache keeps it: a face's capabilities come from its descriptors
-// only, faces with equal ones are one CSSSegmentedFontFace, newest face
-// first (css_segmented_font_face.cc ForEachReverse), and a request takes
-// the best segment (FontFaceCache::CapabilitiesSet::Get,
+// The FontFaces of a web family (FontFaces), as Blink's FontFaceCache
+// keeps them: a face's capabilities come from its descriptors only (none:
+// `auto`, the normal value, font_face.cc), faces with equal ones are one
+// CSSSegmentedFontFace, newest face first (css_segmented_font_face.cc
+// ForEachReverse), and a request takes the best segment
+// (FontFaceCache::CapabilitiesSet::Get,
 // FontSelectionAlgorithm::IsBetterMatchForRequest). A tie keeps the
 // segment of the newer face (Chrome's is hash order). `rank` k: face k of
 // that segment, or none, as SegmentStyleSet for "\x01s\x01" k.
@@ -1392,11 +1393,9 @@ class FontFaceStyleSet : public SkFontStyleSet {
   std::optional<font_selection::Value> weight_;
 };
 
-// Whether the web family `name` matches its faces by capabilities: a face
-// of it declares descriptors (DescribesName). A family with none keeps the
-// files' styles (TypefaceFontStyleSet).
-bool UseCapabilities(skiac_font_collection* c_collection,
-                     std::string_view name) {
+// Whether a face of the web family `name` declares descriptors
+// (DescribesName): only then can its FontFaces differ in capabilities.
+bool DeclaresFaces(skiac_font_collection* c_collection, std::string_view name) {
   if (!c_collection->assets->describesAny()) {
     return false;
   }
@@ -1408,7 +1407,8 @@ bool UseCapabilities(skiac_font_collection* c_collection,
 // FontFaceStyleSet over `faces` (newest first) of the family `name`, each
 // with FontFace::GetFontSelectionCapabilities of its descriptors under the
 // name (DescriptorsUnder): an `auto` field is the normal value, the width
-// (no descriptor) 100%. `weight`: the request's, for "\x01q\x01".
+// (no descriptor) 100%. A family no face of which declares any is one
+// segment, with no lookup. `weight`: the request's, for "\x01q\x01".
 sk_sp<SkFontStyleSet> MakeFontFaceSet(
     skiac_font_collection* c_collection,
     std::string_view name,
@@ -1416,12 +1416,15 @@ sk_sp<SkFontStyleSet> MakeFontFaceSet(
     size_t rank,
     std::optional<font_selection::Value> weight) {
   const std::string folded = Fold(name);
+  const bool described = DeclaresFaces(c_collection, name);
   std::vector<font_selection::Capabilities> capabilities;
   capabilities.reserve(faces.size());
   for (const auto& face : faces) {
     std::vector<const std::string*> seen;
     const FaceDescriptors declared =
-        DescriptorsUnder(c_collection, face->uniqueID(), folded, seen);
+        described
+            ? DescriptorsUnder(c_collection, face->uniqueID(), folded, seen)
+            : std::nullopt;
     font_selection::Capabilities caps;
     caps.width = {font_selection::Value(100), font_selection::Value(100)};
     caps.weight = {
@@ -1439,11 +1442,11 @@ sk_sp<SkFontStyleSet> MakeFontFaceSet(
 constexpr char kSiblingTag[] = "\x01s\x01";
 constexpr char kWeightTag[] = "\x01q\x01";
 
-// Whether a ResolveFontFamilies name is a family FontFaceStyleSet serves:
-// "\x01a\x01" or "\x01w\x01" + a family of UseCapabilities, or a sibling
-// of one.
-bool IsCapabilitiesFamily(skiac_font_collection* c_collection,
-                          std::string_view tagged) {
+// Whether a ResolveFontFamilies name is a FontFaceStyleSet whose segments
+// can differ in weight: "\x01a\x01" or "\x01w\x01" + a family of
+// DeclaresFaces, or a sibling of one.
+bool IsDeclaredFamily(skiac_font_collection* c_collection,
+                      std::string_view tagged) {
   if (tagged.substr(0, 3) == kSiblingTag) {
     const size_t end = tagged.find('\x01', 3);
     tagged = end == std::string_view::npos ? std::string_view()
@@ -1451,7 +1454,7 @@ bool IsCapabilitiesFamily(skiac_font_collection* c_collection,
   }
   return tagged.size() > 3 && tagged[0] == '\x01' && tagged[2] == '\x01' &&
          (tagged[1] == 'a' || tagged[1] == 'w') &&
-         UseCapabilities(c_collection, tagged.substr(3));
+         DeclaresFaces(c_collection, tagged.substr(3));
 }
 
 // The most faces of one style in `set`.
@@ -1593,7 +1596,7 @@ std::vector<SkString> AtRequestWeight(skiac_font_collection* c_collection,
   }
   const std::string tag = kWeightTag + std::to_string(quarters) + "\x01";
   for (SkString& family : families) {
-    if (IsCapabilitiesFamily(c_collection, {family.c_str(), family.size()})) {
+    if (IsDeclaredFamily(c_collection, {family.c_str(), family.size()})) {
       family.prepend(tag.c_str(), tag.size());
     }
   }
@@ -1860,21 +1863,18 @@ bool skiac_font_collection_default_font_units(
 
 namespace {
 
-// The faces of the capabilities family `name` under its tag `kind` ('a' or
-// 'w'): FontFaces only. FontFaceCache::SegmentedFacesByFamily::AddFontFace
-// keys a face by its FontFace's family only, so the own family that a call
-// with another alias lists the face under has no FontFace there
-// (FontFace('Brand', R) makes no "RMStatic" face). Kept whole when that
-// leaves nothing.
-std::vector<sk_sp<SkTypeface>> CapabilitiesFaces(const FamilyResolver& resolver,
-                                                 std::string_view name,
-                                                 char kind) {
-  if (kind == 'w') {
-    return resolver.Faces(name, FaceKind::kWeb, nullptr);
-  }
-  std::vector<sk_sp<SkTypeface>> faces =
-      resolver.Faces(name, FaceKind::kAllFontFaces, nullptr);
-  return faces.empty() ? resolver.Faces(name, FaceKind::kAll, nullptr) : faces;
+// The FontFaces of the family `name` under its tag `kind` ('a' or 'w'),
+// newest first. FontFaceCache::SegmentedFacesByFamily::AddFontFace keys a
+// face by its FontFace's family only, so the own family that a call with
+// another alias lists the face under has no FontFace there
+// (FontFace('Brand', R) makes no "RMStatic" face). A name with none comes
+// from the font cache (CSSFontSelector::GetFontData): its faces match by
+// their files' styles, as installed ones.
+std::vector<sk_sp<SkTypeface>> FontFaces(const FamilyResolver& resolver,
+                                         std::string_view name,
+                                         char kind) {
+  return resolver.Faces(
+      name, kind == 'w' ? FaceKind::kWeb : FaceKind::kAllFontFaces, nullptr);
 }
 
 // The number before the next "\x01" after a 3-byte tag, and where it ends.
@@ -1893,7 +1893,7 @@ std::optional<std::pair<int, size_t>> TagNumber(std::string_view tagged) {
   return std::make_pair(number, end);
 }
 
-// MakeSplitFamily, a capabilities family matched at `weight` when given.
+// MakeSplitFamily, a FontFaceStyleSet matched at `weight` when given.
 sk_sp<SkFontStyleSet> MakeSplitFamilyAt(
     skiac_font_collection* c_collection,
     std::string_view tagged,
@@ -1925,14 +1925,15 @@ sk_sp<SkFontStyleSet> MakeSplitFamilyAt(
     if (base.empty() || base.front() != '\x01') {
       return nullptr;
     }
-    // A capabilities family's siblings are its segment's older faces.
-    if ((base[1] == 'a' || base[1] == 'w') &&
-        UseCapabilities(c_collection, std::string_view(base).substr(3))) {
+    // A web family's siblings are its segment's older FontFaces.
+    if (base[1] == 'a' || base[1] == 'w') {
       FamilyResolver resolver(c_collection);
       const std::string_view name = std::string_view(base).substr(3);
-      return MakeFontFaceSet(c_collection, name,
-                             CapabilitiesFaces(resolver, name, base[1]), rank,
-                             weight);
+      std::vector<sk_sp<SkTypeface>> faces = FontFaces(resolver, name, base[1]);
+      if (!faces.empty()) {
+        return MakeFontFaceSet(c_collection, name, std::move(faces), rank,
+                               weight);
+      }
     }
     sk_sp<SkFontStyleSet> set = c_collection->assets->matchFamily(base.c_str());
     if (!set) {
@@ -1942,13 +1943,14 @@ sk_sp<SkFontStyleSet> MakeSplitFamilyAt(
   }
   const std::string_view name = tagged.substr(3);
   FamilyResolver resolver(c_collection);
-  if (tagged[1] != 'i' && UseCapabilities(c_collection, name)) {
-    std::vector<sk_sp<SkTypeface>> faces =
-        CapabilitiesFaces(resolver, name, tagged[1]);
-    if (faces.empty()) {
-      return nullptr;
+  // A web family's FontFaces match by capabilities, `auto` ones too
+  // (FontFace::GetFontSelectionCapabilities: one segment, newest first); a
+  // name with none keeps its files' styles.
+  if (tagged[1] != 'i') {
+    std::vector<sk_sp<SkTypeface>> faces = FontFaces(resolver, name, tagged[1]);
+    if (!faces.empty()) {
+      return MakeFontFaceSet(c_collection, name, std::move(faces), 0, weight);
     }
-    return MakeFontFaceSet(c_collection, name, std::move(faces), 0, weight);
   }
   sk_sp<SkFontStyleSet> elsewhere;
   std::vector<sk_sp<SkTypeface>> faces =

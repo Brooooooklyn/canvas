@@ -66,15 +66,19 @@ test.serial('registering a family invalidates a lookup cached before it existed'
   t.is(measure(`400 60px "${family}", "${ANCHOR}"`), SERIF_WIDTH)
 })
 
+// Each face declares its weight: faces with no descriptors are one segment,
+// where the newest draws every weight (Chrome 159: FontFace auto Bold, then
+// auto Regular, bold is Regular made bold; {700} Bold then {400} Regular,
+// bold is Bold).
 test.serial('registering a second weight invalidates the cached first weight', (t) => {
   const family = 'Issue1329Weight'
 
-  GlobalFonts.registerFromPath(boldPath, family)
+  GlobalFonts.registerFromPath(boldPath, family, { weight: 700 })
 
   // Only the bold face exists, so weight 400 resolves to it and is memoized.
   t.is(measure(`400 60px "${family}"`), BOLD_WIDTH)
 
-  GlobalFonts.register(serifData, family)
+  GlobalFonts.register(serifData, family, { weight: 400 })
 
   t.is(measure(`400 60px "${family}"`), SERIF_WIDTH)
   // The bold face must survive the invalidation.

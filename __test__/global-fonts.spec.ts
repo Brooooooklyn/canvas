@@ -1658,8 +1658,8 @@ for (const renderer of ['portable', 'system'] as const) {
   )
 }
 
-// Steps, separated by commas: reg:FONT[:NAME] (registerFromPath; buf: the
-// same with register(buffer)), alias:FAMILY:NAME, remove:FONT (its latest
+// Steps, separated by commas: reg:FONT[:NAME[:WEIGHT]] (registerFromPath,
+// declared with that weight; buf: the same with register(buffer)), alias:FAMILY:NAME, remove:FONT (its latest
 // registration), dir (loadFontsFromDir of PROBE_DIR), state, rebuild (an
 // unrelated font removed), switch (the other renderer and back). Each state
 // gives, per name of PROBE_NAMES: "Ag" and "Agक" measureText [width,
@@ -1709,16 +1709,18 @@ const FACE_ORDER_PROBE = `
     variations: GlobalFonts.hasVariations(name, 400, 5, 0),
     axes: GlobalFonts.getVariationAxes(name, 400, 5, 0).map((axis) => axis.tag),
   })
-  const register = (how, font, name) =>
-    how === 'buf'
-      ? GlobalFonts.register(readFileSync(PROBE_FONTS + '/' + FILES[font]), name)
-      : GlobalFonts.registerFromPath(PROBE_FONTS + '/' + FILES[font], name)
+  const register = (how, font, name, weight) => {
+    const descriptors = weight ? { weight: Number(weight) } : undefined
+    return how === 'buf'
+      ? GlobalFonts.register(readFileSync(PROBE_FONTS + '/' + FILES[font]), name, descriptors)
+      : GlobalFonts.registerFromPath(PROBE_FONTS + '/' + FILES[font], name, descriptors)
+  }
   const out = { steps: [], states: [], refs: {} }
   const keys = {}
   for (const step of PROBE_STEPS.split(',')) {
-    const [kind, a, b] = step.split(':')
+    const [kind, a, b, c] = step.split(':')
     if (kind === 'reg' || kind === 'buf') {
-      keys[a] = register(kind, a, b)
+      keys[a] = register(kind, a, b, c)
       out.steps.push(keys[a] !== null)
     } else if (kind === 'alias') out.steps.push(GlobalFonts.setAlias(a, b))
     else if (kind === 'remove') out.steps.push(GlobalFonts.remove(keys[a]))
@@ -1872,6 +1874,8 @@ for (const renderer of ['portable', 'system'] as const) {
 // the face is picked by style over all its faces; of two faces of one style
 // the one added last draws ("ties"). A setAlias name is one more face of
 // that family. The SVG path and the variation queries use the same faces.
+// The probe declared SHSBold { weight: 700 }, so it is declared here too:
+// faces with no descriptors are one segment, where the newest draws.
 const FAMILY_SPELLINGS = JSON.parse(
   readFileSync(join(__dirname, 'fixtures', 'text-fonts', 'family-spellings.json'), 'utf8'),
 )
@@ -1883,14 +1887,16 @@ for (const renderer of ['portable', 'system'] as const) {
     for (const [key, row] of Object.entries<any>({ ...FAMILY_SPELLINGS.pinned, ...FAMILY_SPELLINGS.ties })) {
       const steps = row.faces.map(([name, font]: string[]) =>
         // Source Serif Pro under its own name: no alias.
-        name === 'Source Serif Pro' ? `reg:${font}` : `reg:${font === 'RobotoMono' ? 'RM' : font}:${name}`,
+        name === 'Source Serif Pro'
+          ? `reg:${font}`
+          : `reg:${font === 'RobotoMono' ? 'RM' : font}:${name}${font === 'SHSBold' ? ':700' : ''}`,
       )
       rows.push([key, steps, row.names, key in FAMILY_SPELLINGS.pinned])
     }
     // A setAlias name of the family's spelling is a face of it too.
     rows.push([
       'b-alias',
-      ['reg:Lato:Brand', 'reg:SHSBold:Other', 'alias:Other:brand'],
+      ['reg:Lato:Brand', 'reg:SHSBold:Other:700', 'alias:Other:brand'],
       FAMILY_SPELLINGS.pinned['b-style'].names,
       true,
     ])

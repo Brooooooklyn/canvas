@@ -1168,12 +1168,18 @@ interface IGlobalFonts {
    * this name; a text font list uses them where this name matches the font.
    * Without them (or with every one `auto`), `auto`: the font's own weight
    * and style ranges.
+   * Faces of one family are chosen by their descriptors, as with
+   * `@font-face`. Without descriptors every face is `auto` and the newest
+   * face wins; give `{ weight, style }` for each file of a family, or use
+   * `loadFontsFromDir` (installed fonts match by the file's own style).
    */
   register(font: Buffer, nameAlias?: string, descriptors?: FontFaceDescriptors): FontKey | null
   /**
    * Absolute path. The FontKey, or null if it failed. `descriptors`: as
    * `register`'s; a file `loadFontsFromDir` loaded is an installed font and
-   * takes none, so a call with them registers the file again.
+   * takes none, so a call with them registers the file again. Faces of one
+   * family are chosen as for `register`: without descriptors the newest
+   * face wins.
    */
   registerFromPath(path: string, nameAlias?: string, descriptors?: FontFaceDescriptors): FontKey | null
   has(name: string): boolean

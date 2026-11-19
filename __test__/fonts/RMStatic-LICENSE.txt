@@ -2,8 +2,10 @@ RMStatic-Regular.ttf and RMStatic-Bold.ttf (font-descriptors.spec.ts): static
 instances of RobotoMono-VariableFont_wght.ttf in this folder at wght 400 and
 700, made with fontTools (varLib.instancer), renamed to the family
 "RMStatic" (subfamilies Regular and Bold, usWeightClass, fsSelection and
-macStyle set to match). Licensed under the SIL Open Font License 1.1 (text
-below), as their source; the source's copyright notice is kept in each
+macStyle set to match). RMStatic-Italic.ttf and RMStatic-BoldItalic.ttf
+are those two with their outlines skewed 12deg, hinting removed and the
+italic style bits set (subfamilies Italic and Bold Italic). Licensed under
+the SIL Open Font License 1.1 (text below), as their source; the source's copyright notice is kept in each
 font's name table:
 
   Copyright 2015 The Roboto Mono Project Authors

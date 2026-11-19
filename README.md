@@ -152,6 +152,15 @@ A name registered over an installed family (for example `Helvetica`) works like 
 GlobalFonts.registerFromPath('./fonts/Lato-Regular.ttf', 'sans-serif')
 ```
 
+Faces of one family are chosen by their descriptors, as with `@font-face`. Without descriptors every face is `auto` and the newest face wins; give `{ weight, style }` for each file of a family, or use `loadFontsFromDir` (installed fonts match by the file's own style):
+
+```js
+GlobalFonts.registerFromPath('./fonts/Lato-Regular.ttf', 'MyLato', { weight: 400 })
+GlobalFonts.registerFromPath('./fonts/Lato-Bold.ttf', 'MyLato', { weight: 700 })
+```
+
+> **Behavior change**: registered faces with no descriptors are all `auto`, so in such a family the face registered last draws every style (made bold or italic when that file is not), as Chrome draws `@font-face` rules with no descriptors. Before, each face was picked by the file's own style.
+
 These still depend on the OS and the machine:
 
 - Installed fonts. Names like `Arial` or `Helvetica`, and the generic families (`sans-serif`, `serif`, `monospace`, `system-ui`, the canvas default `10px sans-serif`) resolve to whatever is installed.

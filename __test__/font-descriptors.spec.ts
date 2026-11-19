@@ -1372,6 +1372,172 @@ for (const renderer of ['portable', 'system'] as const) {
   })
 }
 
+// Faces registered with no descriptors are FontFaces with `auto`
+// capabilities, the normal values (font_face.cc), so a family of them is one
+// CSSSegmentedFontFace and its newest face draws every request
+// (css_segmented_font_face.cc ForEachReverse), made bold or italic when the
+// segment's maximum is under the request and the file is not
+// (FontCustomPlatformData: !isBold(), !isItalic()). Installed fonts are no
+// FontFaces and keep their files' styles. A child process per mode: each
+// "order request" names the one-face family that draws the same pixels.
+// Chrome 159, FontFace(..., {weight, style, stretch: 'auto'}), canvas and
+// inline SVG text: the same table (impl/step7/chrome-step7.json).
+const AUTO_FAMILY_PROBE = `
+  const { copyFileSync, readFileSync } = require('fs')
+  const { convertSVGTextToPath, createCanvas, GlobalFonts, Image, setTextRenderer } = require(process.env.PROBE_INDEX)
+  const { RENDERER, PROBE_DIR, PROBE_FONTS, PROBE_MODE } = process.env
+  setTextRenderer(RENDERER)
+  const FILES = { R: 'RMStatic-Regular.ttf', B: 'RMStatic-Bold.ttf', I: 'RMStatic-Italic.ttf', BI: 'RMStatic-BoldItalic.ttf', L: 'Lato-Regular.ttf' }
+  const REQUESTS = { n: '', b: 'bold ', i: 'italic ', bi: 'italic bold ' }
+  const path = (file) => PROBE_FONTS + '/' + FILES[file]
+  const data = (file) => readFileSync(path(file))
+  const ctx = createCanvas(420, 60).getContext('2d')
+  const pixels = (font, text = 'Hamburgefonts', adjust = 'none') => {
+    ctx.clearRect(0, 0, 420, 60)
+    ctx.font = font
+    ctx.fontSizeAdjust = adjust
+    ctx.fillText(text, 10, 42)
+    return Buffer.from(ctx.getImageData(0, 0, 420, 60).data).toString('base64')
+  }
+  const svg = (family, weight) => {
+    const img = new Image()
+    img.src = Buffer.from('<svg xmlns="http://www.w3.org/2000/svg" width="300" height="60"><text x="10" y="44" font-family="' + family + '" font-weight="' + weight + '" font-size="32">Hamburgefonts</text></svg>')
+    const c = createCanvas(300, 60).getContext('2d')
+    c.drawImage(img, 0, 0)
+    return Buffer.from(c.getImageData(0, 0, 300, 60).data).toString('base64')
+  }
+  const svgPath = (family) => convertSVGTextToPath(Buffer.from('<svg xmlns="http://www.w3.org/2000/svg" width="300" height="60"><text x="10" y="44" font-family="' + family + '" font-size="32">Ham</text></svg>')).toString().replace(/font-family="[^"]*"/g, '')
+  const width = (font) => {
+    ctx.font = font
+    return ctx.measureText('Hamburgefonts').width
+  }
+  // Draws first, references after: a reference names its file's own family
+  // too, implicitly (no FontFace, but a face of the plain family).
+  const drawn = {}
+  const draw = (id, family, files = ['R', 'B', 'I', 'BI']) => {
+    for (const [k, r] of Object.entries(REQUESTS)) {
+      drawn[id + ' ' + k] = { pixels: pixels(r + '40px ' + family), files, request: r }
+    }
+  }
+  const out = {}
+  if (PROBE_MODE === 'web') {
+    for (const order of ['R,B', 'B,R', 'R,B,I,BI', 'BI,I,B,R', 'R,B,BI,I', 'R,I', 'BI,B']) {
+      const family = 'F ' + order.replaceAll(',', '-')
+      for (const file of order.split(',')) GlobalFonts.register(data(file), family)
+      draw(order, '"' + family + '"')
+    }
+    // registerFromPath with an alias, and an alias of the family.
+    GlobalFonts.registerFromPath(path('R'), 'P R-B')
+    GlobalFonts.registerFromPath(path('B'), 'P R-B')
+    draw('path R,B', '"P R-B"')
+    GlobalFonts.setAlias('F R-B', 'Alias R-B')
+    draw('alias R,B', '"Alias R-B"')
+    GlobalFonts.register(data('B'), 'F B-L')
+    GlobalFonts.register(data('L'), 'F B-L')
+    const greek = pixels('40px "F B-L"', 'ΑΒΓΔ')
+    const latin = pixels('40px "F B-L"')
+    const adjusted = pixels('bold 40px "F B-L"', 'Hamburgefonts', '0.5')
+    const widths = [width('40px "F B-L"'), width('bold 40px "F B-L"')]
+    const svgs = ['normal', 'bold'].map((weight) => svg('F B-L', weight))
+    const svgRB = ['normal', 'bold'].map((weight) => svg('F R-B', weight))
+    const paths = [svgPath('F R-B'), svgPath('Alias R-B')]
+    out.descriptorLookups = JSON.parse(ctx.__debugTextLine('Ham')).descriptorLookups
+    for (const file of Object.keys(FILES)) GlobalFonts.register(data(file), 'Ref ' + file)
+    out.greek = greek === pixels('40px "Ref B"', 'ΑΒΓΔ')
+    out.latin = latin === pixels('40px "Ref L"')
+    out.adjusted = adjusted === pixels('bold 40px "Ref L"', 'Hamburgefonts', '0.5')
+    out.widths = [widths[0] === width('40px "Ref L"'), widths[1] === width('bold 40px "Ref L"'), widths[1] !== width('bold 40px "Ref B"')]
+    out.svg = svgs.map((s, i) => s === svg('Ref L', ['normal', 'bold'][i]))
+    out.svgRB = svgRB.map((s, i) => s === svg('Ref B', ['normal', 'bold'][i]))
+    out.paths = paths.map((p) => p === svgPath('Ref B'))
+  } else if (PROBE_MODE === 'own') {
+    // No alias: the files' own family, "RMStatic".
+    GlobalFonts.registerFromPath(path('R'))
+    GlobalFonts.registerFromPath(path('B'))
+    draw('own path R,B', 'RMStatic')
+    GlobalFonts.register(data('I'))
+    GlobalFonts.register(data('BI'))
+    draw('own R,B,I,BI', 'RMStatic')
+  } else {
+    // Installed: the files' styles.
+    for (const file of ['R', 'B', 'I', 'BI']) copyFileSync(path(file), PROBE_DIR + '/' + FILES[file])
+    out.loaded = GlobalFonts.loadFontsFromDir(PROBE_DIR)
+    draw('installed', 'RMStatic')
+  }
+  const refs = {}
+  for (const file of ['R', 'B', 'I', 'BI']) GlobalFonts.register(data(file), 'Ref ' + file)
+  for (const [id, { pixels: p, files, request }] of Object.entries(drawn)) {
+    out[id] = files.filter((file) => p === pixels(request + '40px "Ref ' + file + '"')).join('|')
+  }
+  console.log(JSON.stringify(out))`
+
+function autoFamilyProbe(t: import('ava').ExecutionContext, renderer: string, mode: string) {
+  const dir = mkdtempSync(join(tmpdir(), 'canvas-auto-family-'))
+  t.teardown(() => rmSync(dir, { recursive: true, force: true }))
+  const child = spawnSync(process.execPath, ['-e', AUTO_FAMILY_PROBE], {
+    encoding: 'utf8',
+    timeout: 60_000,
+    env: {
+      ...process.env,
+      RENDERER: renderer,
+      PROBE_DIR: dir,
+      PROBE_MODE: mode,
+      PROBE_FONTS: join(__dirname, 'fonts'),
+      PROBE_INDEX: join(__dirname, '..', 'index.js'),
+    },
+  })
+  t.is(child.status, 0, child.stderr)
+  return JSON.parse(child.stdout)
+}
+
+// Every request draws `file` (made bold or italic as that face alone is).
+const allDraw = (id: string, file: string) =>
+  Object.fromEntries(['n', 'b', 'i', 'bi'].map((request) => [`${id} ${request}`, file]))
+
+for (const renderer of ['portable', 'system'] as const) {
+  test(`faces with no descriptors: the newest face draws every request (${renderer})`, (t) => {
+    t.deepEqual(autoFamilyProbe(t, renderer, 'web'), {
+      ...allDraw('R,B', 'B'),
+      ...allDraw('B,R', 'R'),
+      ...allDraw('R,B,I,BI', 'BI'),
+      ...allDraw('BI,I,B,R', 'R'),
+      ...allDraw('R,B,BI,I', 'I'),
+      ...allDraw('R,I', 'I'),
+      ...allDraw('BI,B', 'B'),
+      ...allDraw('path R,B', 'B'),
+      ...allDraw('alias R,B', 'B'),
+      // B then Lato: the older face of the segment draws the Greek Lato
+      // lacks; measureText, font-size-adjust and SVG text take Lato.
+      greek: true,
+      latin: true,
+      adjusted: true,
+      widths: [true, true, true],
+      svg: [true, true],
+      svgRB: [true, true],
+      paths: [true, true],
+      // One segment of auto faces: no descriptor lookup.
+      descriptorLookups: 0,
+    })
+  })
+
+  test(`faces with no descriptors under their own family name: the newest draws (${renderer})`, (t) => {
+    t.deepEqual(autoFamilyProbe(t, renderer, 'own'), {
+      ...allDraw('own path R,B', 'B'),
+      ...allDraw('own R,B,I,BI', 'BI'),
+    })
+  })
+
+  test(`installed faces keep their files' styles (${renderer})`, (t) => {
+    t.deepEqual(autoFamilyProbe(t, renderer, 'installed'), {
+      loaded: 4,
+      'installed n': 'R',
+      'installed b': 'B',
+      'installed i': 'I',
+      'installed bi': 'BI',
+    })
+  })
+}
+
 // FontVariableItalicAxis (ResolveVariations, font_custom_platform_data.cc):
 // on a registered face with an ital axis, the `italic` keyword draws ital 1,
 // slnt at the axis default and no synthetic italic, before the declared
