@@ -1647,6 +1647,57 @@ for (const renderer of ['portable', 'system'] as const) {
   })
 }
 
+// A child process (its own caches): each distinct quarter weight and
+// oblique angle is a tagged family name (AtRequest), kept in the provider's
+// tagged sets and FontCollection's caches even when each picks the same
+// static face. Past a budget of distinct tags they are dropped after the
+// layout, as the font argument lists are, and the faces stay the same.
+const REQUEST_TAGS_PROBE = `
+  const { readFileSync } = require('fs')
+  const { createCanvas, GlobalFonts, setTextRenderer } = require(process.env.PROBE_INDEX)
+  const { RENDERER, PROBE_FONTS } = process.env
+  setTextRenderer(RENDERER)
+  GlobalFonts.register(readFileSync(PROBE_FONTS + '/RMStatic-Regular.ttf'), 'Guard Tags', { weight: 400 })
+  const ctx = createCanvas(10, 10).getContext('2d')
+  const fontAt = (i) => 'oblique ' + ((i % 40) + 1) + 'deg ' + (100.25 + i) + ' 32px "Guard Tags"'
+  const width = (i) => { ctx.font = fontAt(i); return ctx.measureText('Hamburgefonts').width }
+  const counters = () => { ctx.font = fontAt(0); return JSON.parse(ctx.__debugTextLine('Counters')) }
+  ;(async () => {
+    const first = []
+    for (let i = 0; i < 10; ++i) first.push(width(i))
+    let most = 0
+    for (let i = 0; i < 600; ++i) {
+      width(i)
+      if (i % 100 === 99) {
+        most = Math.max(most, counters().splitFamilies)
+        await new Promise(setImmediate)
+      }
+    }
+    const again = []
+    for (let i = 0; i < 10; ++i) again.push(width(i))
+    console.log(JSON.stringify({ most, same: JSON.stringify(first) === JSON.stringify(again) }))
+  })()`
+
+for (const renderer of ['portable', 'system'] as const) {
+  test(`distinct request weights and angles keep a bounded number of tagged sets (${renderer})`, (t) => {
+    const child = spawnSync(process.execPath, ['-e', REQUEST_TAGS_PROBE], {
+      encoding: 'utf8',
+      timeout: 120_000,
+      env: {
+        ...process.env,
+        RENDERER: renderer,
+        PROBE_FONTS: join(__dirname, 'fonts'),
+        PROBE_INDEX: join(__dirname, '..', 'index.js'),
+      },
+    })
+    t.is(child.status, 0, child.stderr)
+    const out = JSON.parse(child.stdout)
+    t.true(out.most > 0, `most ${out.most}`)
+    t.true(out.most <= 300, `most ${out.most}`)
+    t.true(out.same)
+  })
+}
+
 function svgWeightPixels(family: string, weight: string) {
   const img = new Image()
   img.src = Buffer.from(

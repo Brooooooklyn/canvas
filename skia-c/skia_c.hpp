@@ -393,6 +393,8 @@ class TypefaceFontProviderCustom : public TypefaceFontProvider {
     split_families.clear();
     font_face_cores.clear();
   }
+  // __debugTextLine: how many tagged sets are kept.
+  size_t splitFamilyCount() const { return split_families.size(); }
   // The FontFaceCore a tagged web family's set was made of, for its
   // siblings ("\x01s\x01" k) and quarter-weight sets ("\x01q\x01"), kept
   // as long as the sets.
@@ -1351,6 +1353,14 @@ struct skiac_font_collection {
   std::unordered_set<size_t> font_arguments;
   std::vector<size_t> layout_font_arguments;
   bool caches_over_budget = false;
+  // font_families.cpp AtRequest: every distinct request weight and oblique
+  // angle tag is a family name of its own, kept in the provider's tagged
+  // sets (split_families) and FontCollection's caches even when each picks
+  // the same face. Past kMaxRequestTags distinct tags the caches and the
+  // tagged sets are dropped after the layout (`drop_split_families`).
+  static constexpr size_t kMaxRequestTags = 256;
+  std::unordered_set<std::string> request_tags;
+  bool drop_split_families = false;
   // text.cpp: the resolved families, primary font metrics and laid out lines
   // of recent requests; dropped with the match caches.
   std::unique_ptr<TextCaches, TextCachesDeleter> text_caches;
@@ -1563,6 +1573,7 @@ struct skiac_font_collection {
       system_typefaces.clear();
       caps_features.clear();
       font_arguments.clear();
+      request_tags.clear();
       text_caches.reset();
       caches_dirty = false;
     }
@@ -1580,9 +1591,25 @@ struct skiac_font_collection {
     }
   }
 
+  // Called by AtRequest for the tag it puts before a declared family. Past
+  // kMaxRequestTags it marks the caches over budget, with the tagged sets.
+  void noteRequestTag(const std::string& tag) {
+    if (request_tags.insert(tag).second &&
+        request_tags.size() > kMaxRequestTags) {
+      caches_over_budget = true;
+      drop_split_families = true;
+    }
+  }
+
   // After a layout: the drop noteFontArguments asked for, keeping the font
-  // argument lists that layout noted.
+  // argument lists that layout noted; and the tagged sets noteRequestTag
+  // asked for (the layout's faces do not hold them).
   void dropCachesIfOverBudget() {
+    if (drop_split_families) {
+      assets->clearSplitFamilies();
+      request_tags.clear();
+      drop_split_families = false;
+    }
     if (caches_over_budget) {
       collection->clearCaches();
       hb_space_in_lookups.clear();
@@ -1619,6 +1646,7 @@ struct skiac_font_collection {
     system_typefaces.clear();
     caps_features.clear();
     font_arguments.clear();
+    request_tags.clear();
     text_caches.reset();
     if (system_fallbacks) {
       ForgetSystemFallbackFaces(system_fallbacks.get());

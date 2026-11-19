@@ -1630,10 +1630,16 @@ std::vector<SkString> AtRequest(skiac_font_collection* c_collection,
   if (weight_tag) {
     tag += kWeightTag + std::to_string(quarters) + "\x01";
   }
+  bool tagged = false;
   for (SkString& family : families) {
     if (IsDeclaredFamily(c_collection, {family.c_str(), family.size()})) {
       family.prepend(tag.c_str(), tag.size());
+      tagged = true;
     }
+  }
+  // Each tag is a family name of its own in the caches: they are bounded.
+  if (tagged) {
+    c_collection->noteRequestTag(tag);
   }
   return families;
 }
