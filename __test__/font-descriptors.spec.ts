@@ -6,7 +6,7 @@
 // draws every equivalence here alike (FontFace with the same descriptors).
 
 import { spawnSync } from 'node:child_process'
-import { copyFileSync, mkdtempSync, readFileSync, rmSync } from 'node:fs'
+import { copyFileSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -14,6 +14,8 @@ import { fileURLToPath } from 'node:url'
 import test from 'ava'
 
 import { convertSVGTextToPath, createCanvas, type FontFaceDescriptors, GlobalFonts, Image } from '../index'
+
+import { withoutGlyf } from './font-fixtures'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const font = (name: string) => readFileSync(join(__dirname, 'fonts', name))
@@ -1216,6 +1218,92 @@ test('the same path declared again with other descriptors is a face of its own',
   t.true(GlobalFonts.remove(key400!))
   t.false(GlobalFonts.has('Path Twin'))
   t.false(GlobalFonts.has('Path Twin Other'))
+})
+
+// A child process: a twin of a path is made from the data of the face the
+// path keeps. A font file the portable renderer reads and the system one
+// does not (Lato with no glyf table for CoreText, a Type 1 font for
+// Fontations) is declared {400} with the portable renderer; the file is
+// replaced by Oswald, and {700} is declared for it with the system
+// renderer, which cannot make a face of the kept data: null, as the call
+// gives when the file is not replaced, and the file's new bytes are not
+// listed. Each state: "bold 40px" font ascent and descent of the name
+// against "40px" (the {400} face, emboldened).
+const REJECTED_PATH_TWIN_PROBE = `
+  const { copyFileSync, readFileSync, renameSync } = require('fs')
+  const { createCanvas, GlobalFonts, setTextRenderer } = require(process.env.PROBE_INDEX)
+  const { PROBE_FONTS } = process.env
+  const files = JSON.parse(process.env.PROBE_FILES)
+  setTextRenderer('system')
+  const rejected = files.filter((file) => GlobalFonts.register(readFileSync(file), 'Rejected Pick') === null)
+  setTextRenderer('portable')
+  const file = rejected.find((file) => GlobalFonts.register(readFileSync(file), 'Rejected Pick') !== null)
+  if (!file) {
+    console.log(JSON.stringify({ skip: true }))
+    process.exit(0)
+  }
+  const ctx = createCanvas(10, 10).getContext('2d')
+  const metrics = (font) => {
+    ctx.font = font
+    const m = ctx.measureText('AgHW')
+    return [m.fontBoundingBoxAscent, m.fontBoundingBoxDescent]
+  }
+  const states = []
+  const state = (at) => states.push({ at, regular: metrics('40px "Rejected Twin"'), bold: metrics('bold 40px "Rejected Twin"') })
+  const listed = () => GlobalFonts.families.filter((f) => f.family === 'Rejected Twin').map((f) => f.styles.length)
+  const out = { declared: GlobalFonts.registerFromPath(file, 'Rejected Twin', { weight: 400 }) !== null }
+  state('portable')
+  out.listed = [listed()]
+  setTextRenderer('system')
+  copyFileSync(PROBE_FONTS + '/Oswald.ttf', file + '.new')
+  renameSync(file + '.new', file)
+  out.twin = GlobalFonts.registerFromPath(file, 'Rejected Twin', { weight: 700 })
+  out.listed.push(listed())
+  state('system, after the call')
+  GlobalFonts.remove(GlobalFonts.register(readFileSync(PROBE_FONTS + '/EBGaramond-Regular.ttf'), 'Rejected Unrelated'))
+  state('system, after a rebuild')
+  setTextRenderer('portable')
+  state('portable, after a switch')
+  out.listed.push(listed())
+  GlobalFonts.register(readFileSync(PROBE_FONTS + '/Oswald.ttf'), 'Rejected Oswald')
+  out.oswald = metrics('bold 40px "Rejected Oswald"')
+  out.states = states
+  console.log(JSON.stringify(out))`
+
+test('a path twin the renderer cannot make from the kept data is null', (t) => {
+  const dir = mkdtempSync(join(tmpdir(), 'canvas-rejected-path-twin-'))
+  t.teardown(() => rmSync(dir, { recursive: true, force: true }))
+  const files = ['Lato-Regular.ttf', 'Roboto2-Regular.pfb'].map((name, i) => {
+    const file = join(mkdtempSync(join(dir, `${i}-`)), name)
+    const data = readFileSync(join(__dirname, 'fonts', name))
+    writeFileSync(file, name.endsWith('.ttf') ? withoutGlyf(data) : data)
+    return file
+  })
+  const child = spawnSync(process.execPath, ['-e', REJECTED_PATH_TWIN_PROBE], {
+    encoding: 'utf8',
+    timeout: 60_000,
+    env: {
+      ...process.env,
+      PROBE_FILES: JSON.stringify(files),
+      PROBE_FONTS: join(__dirname, 'fonts'),
+      PROBE_INDEX: join(__dirname, '..', 'index.js'),
+    },
+  })
+  t.is(child.status, 0, child.stderr)
+  const out = JSON.parse(child.stdout)
+  if (out.skip) {
+    t.is(process.platform, 'win32', 'the system renderer reads every test file')
+    return
+  }
+  t.true(out.declared)
+  t.is(out.twin, null)
+  t.deepEqual(out.listed, [[1], [1], [1]])
+  t.is(out.states.length, 4)
+  for (const s of out.states) {
+    t.deepEqual(s.bold, s.regular, `${s.at}: the {400} face`)
+    t.deepEqual(s.regular, out.states[0].regular, s.at)
+    t.notDeepEqual(s.bold, out.oswald, `${s.at}: not the file read again`)
+  }
 })
 
 // A child process per renderer (the spec lists Lato and Oswald): the same

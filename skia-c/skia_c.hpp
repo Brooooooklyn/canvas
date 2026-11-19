@@ -878,8 +878,8 @@ class TypefaceFontProviderCustom : public TypefaceFontProvider {
   // is an installed font (FontCache), which has none, so a declared call
   // makes a twin. A twin's face is made from the data of the first
   // registration's face, as a rebuild makes it (a file replaced since then
-  // gives no other bytes, and no other own family); from this call's read
-  // only when that face gives no data. Returns the FontKey (a path hash), 0
+  // gives no other bytes, and no other own family); when that data gives no
+  // face in this mode, the call fails. Returns the FontKey (a path hash), 0
   // on failure.
   uint32_t registerTypefaceFromPathWithTracking(
       const std::string& path,
@@ -949,10 +949,14 @@ class TypefaceFontProviderCustom : public TypefaceFontProvider {
           registered_fonts.at(same.front()).typeface;
       std::unique_ptr<SkStreamAsset> stream =
           first ? first->openStream(&index) : nullptr;
-      if (sk_sp<SkTypeface> twin =
-              stream ? MakeCanvasTypeface(std::move(stream)) : nullptr) {
-        typeface = std::move(twin);
+      sk_sp<SkTypeface> twin =
+          stream ? MakeCanvasTypeface(std::move(stream)) : nullptr;
+      if (!twin) {
+        // This mode cannot make a face of the kept data: no key, no listing
+        // (the call fails as it does when the file is not replaced).
+        return 0;
       }
+      typeface = std::move(twin);
     }
 
     // The path hash, else the next free key past it (linear probe); a
