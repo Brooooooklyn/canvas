@@ -1276,14 +1276,32 @@ struct skiac_font_collection {
     bool web_face = false;
     const uint32_t font_key = assets->registrationOf(face_id, &web_face);
     if (!registered) {
-      for (auto& entry : set_aliases) {
+      for (auto it = set_aliases.begin(); it != set_aliases.end(); ++it) {
+        SetAlias& entry = *it;
         if (entry.family == family && entry.alias == alias) {
           // The provider lists the alias with the family's face.
-          const bool changed = !entry.active || entry.face_id != face_id;
+          bool changed = !entry.active || entry.face_id != face_id;
           entry.active = true;
           entry.face_id = face_id;
           entry.font_key = font_key;
           entry.web_face = web_face;
+          // The call is one more FontFace of the alias name, the newest of
+          // its segment (Blink FontFaceList keeps insertion order): a
+          // declaration or an alias of the face under the name made since
+          // the entry's turn goes before it now. The entry moves to the end
+          // (the replay and ResolveDescriptors go by the vector's order).
+          bool newer = assets->latestDeclarationOrder(
+                           face_id, entry.folded_alias) > entry.order;
+          for (auto later = it + 1; !newer && later != set_aliases.end();
+               ++later) {
+            newer = later->active && later->face_id == face_id &&
+                    later->folded_alias == entry.folded_alias;
+          }
+          if (newer) {
+            entry.order = assets->nextOrder();
+            std::rotate(it, it + 1, set_aliases.end());
+            changed = true;
+          }
           return changed;
         }
       }

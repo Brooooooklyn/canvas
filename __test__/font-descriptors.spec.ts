@@ -829,6 +829,37 @@ test('an alias newer than a declared direct entry of the same face takes its tar
   t.deepEqual(draw('bold 32px "Alias Under Dest"').pixels, bold400)
 })
 
+// Chrome 159: setAlias again is one more FontFace of the alias name, the
+// newest of its segment (FontFaceList keeps the faces in insertion order),
+// so it wins over a declaration or an alias made since the first call.
+test('a repeated setAlias is the newest declaration of the name', (t) => {
+  const bold400 = draw('bold 32px "Descriptors 400"').pixels
+  const bold700 = draw('bold 32px "Descriptors Auto"').pixels
+  const data = Buffer.concat([robotoMono, Buffer.alloc(736)])
+  t.truthy(GlobalFonts.register(data, 'Repeat Source'))
+  declare(t, data, 'Repeat Dest', { weight: 400 })
+  t.true(GlobalFonts.setAlias('Repeat Source', 'Repeat Dest'))
+  t.deepEqual(draw('bold 32px "Repeat Dest"').pixels, bold700)
+  declare(t, data, 'Repeat Dest', { weight: 400 })
+  t.deepEqual(draw('bold 32px "Repeat Dest"').pixels, bold400)
+  t.true(GlobalFonts.setAlias('Repeat Source', 'Repeat Dest'))
+  t.deepEqual(draw('bold 32px "Repeat Dest"').pixels, bold700)
+  // Alias against alias: the repeated one is the newest.
+  const other = Buffer.concat([robotoMono, Buffer.alloc(800)])
+  declare(t, other, 'Repeat A', { weight: 400 })
+  t.truthy(GlobalFonts.register(other, 'Repeat B'))
+  t.true(GlobalFonts.setAlias('Repeat A', 'Repeat X'))
+  t.deepEqual(draw('bold 32px "Repeat X"').pixels, bold400)
+  t.true(GlobalFonts.setAlias('Repeat B', 'Repeat X'))
+  t.deepEqual(draw('bold 32px "Repeat X"').pixels, bold700)
+  t.true(GlobalFonts.setAlias('Repeat A', 'Repeat X'))
+  t.deepEqual(draw('bold 32px "Repeat X"').pixels, bold400)
+  // A rebuild (an unrelated remove) keeps both.
+  t.true(GlobalFonts.remove(GlobalFonts.register(Buffer.concat([robotoMono, Buffer.alloc(864)]), 'Repeat Rebuild')!))
+  t.deepEqual(draw('bold 32px "Repeat Dest"').pixels, bold700)
+  t.deepEqual(draw('bold 32px "Repeat X"').pixels, bold400)
+})
+
 // A child process per renderer (a warm cache of its own): setAlias,
 // getVariationAxes and hasVariations look the family up after the faces
 // registered since its last lookup, as a text lookup does, so a registration
