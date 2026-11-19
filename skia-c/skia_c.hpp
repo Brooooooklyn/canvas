@@ -589,6 +589,31 @@ class TypefaceFontProviderCustom : public TypefaceFontProvider {
     return order;
   }
 
+  // When a register / registerFromPath call last declared the face
+  // `typeface_id` under the case-folded name (RegisteredFont::call_names),
+  // counting a registration again (relist); 0 for never.
+  uint64_t latestDeclarationOrder(SkTypefaceID typeface_id,
+                                  const std::string& folded) const {
+    const uint32_t key = registrationOf(typeface_id);
+    if (!key) {
+      return 0;
+    }
+    const RegisteredFont& font_info = registered_fonts.at(key);
+    uint64_t order = 0;
+    for (size_t i = 0; i < font_info.aliases.size(); ++i) {
+      if (!font_info.call_names[i] || !font_info.NameFace(i) ||
+          font_info.NameFace(i)->uniqueID() != typeface_id ||
+          FoldFamilyName(font_info.aliases[i]) != folded) {
+        continue;
+      }
+      order = std::max(order, font_info.orders[i]);
+      if (i < font_info.relists.size()) {
+        order = std::max(order, font_info.relists[i]);
+      }
+    }
+    return order;
+  }
+
   // The font `id` registered again under `name`, a name it has: as a
   // FontFace added again, its face is the newest under that name
   // (orderOf with `latest`). Nothing when the name was the last listing.

@@ -779,6 +779,30 @@ test('an alias keeps the face it named when its target is declared again', (t) =
   t.deepEqual(draw('bold 32px "Redeclare Alias"').pixels, declared400)
 })
 
+// Chrome 159: FontFace(Dest, V, {weight: 400}) then FontFace(Dest, V) are
+// one {400} segment, newest first, so bold Dest is the auto face at wght
+// 700; in the reverse order the {400} face is newest (wght 400 emboldened).
+// A direct auto declaration newer than the alias wins over it.
+test('an auto declaration newer than an alias of the same face is auto', (t) => {
+  const bold400 = draw('bold 32px "Descriptors 400"').pixels
+  const bold700 = draw('bold 32px "Descriptors Auto"').pixels
+  t.notDeepEqual(bold400, bold700)
+  const data = Buffer.concat([robotoMono, Buffer.alloc(352)])
+  declare(t, data, 'Newer Source', { weight: '400' })
+  t.true(GlobalFonts.setAlias('Newer Source', 'Newer Dest'))
+  t.deepEqual(draw('bold 32px "Newer Dest"').pixels, bold400)
+  t.truthy(GlobalFonts.register(data, 'Newer Dest'))
+  t.deepEqual(draw('bold 32px "Newer Dest"').pixels, bold700)
+  t.deepEqual(draw('bold 32px "Newer Source"').pixels, bold400)
+  // The alias newer than the auto declaration takes its target's.
+  const reversed = Buffer.concat([robotoMono, Buffer.alloc(416)])
+  t.truthy(GlobalFonts.register(reversed, 'Older Dest'))
+  declare(t, reversed, 'Older Source', { weight: '400' })
+  t.deepEqual(draw('bold 32px "Older Dest"').pixels, bold700)
+  t.true(GlobalFonts.setAlias('Older Source', 'Older Dest'))
+  t.deepEqual(draw('bold 32px "Older Dest"').pixels, bold400)
+})
+
 test('SVG text: an alias takes its target descriptors', (t) => {
   t.true(GlobalFonts.setAlias('Descriptors 400', 'Alias SVG 400'))
   const declared = svgPixels("'Descriptors 400'", 'Ham')

@@ -122,6 +122,9 @@ bool Seen(const std::vector<const std::string*>& seen,
 
 // The alias is the target name drawn (a FontFace of the same face and
 // descriptors), so it follows a target declared again; newest call first.
+// A direct `auto` declaration of the name newer than the alias is the
+// newest FontFace of their segment (css_segmented_font_face.cc
+// ForEachReverse): auto.
 FaceDescriptors DescriptorsUnder(skiac_font_collection* c_collection,
                                  SkTypefaceID id,
                                  const std::string& folded,
@@ -139,9 +142,16 @@ FaceDescriptors DescriptorsUnder(skiac_font_collection* c_collection,
     }
   }
   const auto& aliases = c_collection->set_aliases;
+  std::optional<uint64_t> declared;
   for (auto it = aliases.rbegin(); it != aliases.rend(); ++it) {
     if (!it->active || it->face_id != id || it->folded_alias != folded ||
         it->folded_family == folded || Seen(seen, it->folded_family)) {
+      continue;
+    }
+    if (!declared) {
+      declared = assets->latestDeclarationOrder(id, folded);
+    }
+    if (*declared > it->order) {
       continue;
     }
     if (!Seen(seen, folded)) {
