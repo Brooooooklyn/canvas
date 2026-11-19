@@ -131,13 +131,19 @@ namespace {
 // descriptors (auto: an empty FaceDescriptors) from one that does not
 // resolve (nullopt: each alias it has goes round a loop of aliases back to
 // a name looked up already, and it lists the face itself under no call).
-// The newest alias whose target resolves gives that target's, auto too.
+// Direct declarations (explicit or auto) and aliases compare by
+// registration order: the newest alias whose target resolves gives that
+// target's, auto too, unless a direct declaration is newer.
 std::optional<FaceDescriptors> ResolveDescriptors(
     skiac_font_collection* c_collection,
     SkTypefaceID id,
     const std::string& folded,
     std::vector<const std::string*>& seen) {
   const auto& assets = c_collection->assets;
+  // The direct declaration's descriptors (setDescriptors erases them when
+  // the name is declared again with none, so they are its latest call's).
+  std::optional<FaceDescriptors> direct;
+  std::optional<uint64_t> declared;
   if (assets->describes(folded)) {
     ++c_collection->descriptor_lookups;
     if (const uint32_t key = assets->registrationOf(id)) {
@@ -145,12 +151,12 @@ std::optional<FaceDescriptors> ResolveDescriptors(
           assets->getRegisteredFonts().at(key).descriptors;
       if (const auto found = descriptors.find(folded);
           found != descriptors.end()) {
-        return FaceDescriptors(found->second);
+        direct = FaceDescriptors(found->second);
+        declared = assets->latestDeclarationOrder(id, folded);
       }
     }
   }
   const auto& aliases = c_collection->set_aliases;
-  std::optional<uint64_t> declared;
   bool looped = false;
   for (auto it = aliases.rbegin(); it != aliases.rend(); ++it) {
     if (!it->active || it->face_id != id || it->folded_alias != folded ||
@@ -174,6 +180,9 @@ std::optional<FaceDescriptors> ResolveDescriptors(
             ResolveDescriptors(c_collection, id, it->folded_family, seen)) {
       return found;
     }
+  }
+  if (direct) {
+    return direct;
   }
   // The name lists the face itself (a call declared it, or it is a name
   // the face is listed under with no alias of it going round a loop): auto.

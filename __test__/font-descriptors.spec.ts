@@ -803,6 +803,32 @@ test('an auto declaration newer than an alias of the same face is auto', (t) => 
   t.deepEqual(draw('bold 32px "Older Dest"').pixels, bold400)
 })
 
+// A direct declared {400} and an alias of an auto name are one {400}
+// segment too: the newest wins in either order (setAlias is a FontFace of
+// the alias name with the target's face and descriptors), also after a
+// rebuild.
+test('an alias newer than a declared direct entry of the same face takes its target', (t) => {
+  const bold400 = draw('bold 32px "Descriptors 400"').pixels
+  const bold700 = draw('bold 32px "Descriptors Auto"').pixels
+  const data = Buffer.concat([robotoMono, Buffer.alloc(544)])
+  declare(t, data, 'Alias Over Dest', { weight: 400 })
+  t.truthy(GlobalFonts.register(data, 'Alias Over Source'))
+  t.deepEqual(draw('bold 32px "Alias Over Dest"').pixels, bold400)
+  t.true(GlobalFonts.setAlias('Alias Over Source', 'Alias Over Dest'))
+  t.deepEqual(draw('bold 32px "Alias Over Dest"').pixels, bold700)
+  // The declared entry newer than the alias wins over it.
+  const reversed = Buffer.concat([robotoMono, Buffer.alloc(608)])
+  t.truthy(GlobalFonts.register(reversed, 'Alias Under Source'))
+  t.true(GlobalFonts.setAlias('Alias Under Source', 'Alias Under Dest'))
+  t.deepEqual(draw('bold 32px "Alias Under Dest"').pixels, bold700)
+  declare(t, reversed, 'Alias Under Dest', { weight: 400 })
+  t.deepEqual(draw('bold 32px "Alias Under Dest"').pixels, bold400)
+  // A rebuild (an unrelated remove) keeps both.
+  t.true(GlobalFonts.remove(GlobalFonts.register(Buffer.concat([robotoMono, Buffer.alloc(672)]), 'Alias Rebuild')!))
+  t.deepEqual(draw('bold 32px "Alias Over Dest"').pixels, bold700)
+  t.deepEqual(draw('bold 32px "Alias Under Dest"').pixels, bold400)
+})
+
 // A child process per renderer (a warm cache of its own): setAlias,
 // getVariationAxes and hasVariations look the family up after the faces
 // registered since its last lookup, as a text lookup does, so a registration
