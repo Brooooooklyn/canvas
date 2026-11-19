@@ -152,7 +152,7 @@ A name registered over an installed family (for example `Helvetica`) works like 
 GlobalFonts.registerFromPath('./fonts/Lato-Regular.ttf', 'sans-serif')
 ```
 
-The unquoted keyword (`sans-serif`) then uses that font the way it uses installed fonts: each face is matched by the file's own style, and descriptors are ignored. Only the quoted name (`"sans-serif"`) follows the descriptor and newest-face rule below.
+For the unquoted keyword (`sans-serif`), each face of that font is matched by the file's own style and descriptors are ignored; bold is made from weight 600, as for other registered fonts. Only the quoted name (`"sans-serif"`) follows the descriptor and newest-face rule below.
 
 Faces of one family are chosen by their descriptors, as with `@font-face`. Without descriptors every face is `auto` and the newest face wins; give `{ weight, style }` for each file of a family, or use `loadFontsFromDir` (installed fonts match by the file's own style):
 
