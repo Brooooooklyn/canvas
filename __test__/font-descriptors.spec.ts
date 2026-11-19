@@ -943,6 +943,38 @@ test('the same path declared again with other descriptors is a face of its own',
   t.false(GlobalFonts.has('Path Twin Other'))
 })
 
+// A FontFace is an object: FontFaceSet.delete of a face deleted before
+// returns false and never deletes another face. The key of a removed
+// declaration twin does not name a twin declared after it.
+test('a removed twin key does not name the next twin of the same bytes', (t) => {
+  const dir = mkdtempSync(join(tmpdir(), 'canvas-stale-twin-'))
+  t.teardown(() => rmSync(dir, { recursive: true, force: true }))
+  const path = join(dir, 'StaleTwin.ttf')
+  copyFileSync(join(__dirname, 'fonts', 'RobotoMono-VariableFont_wght.ttf'), path)
+  const data = Buffer.concat([robotoMono, Buffer.alloc(224)])
+  const styles = (name: string) => GlobalFonts.families.find((f) => f.family === name)?.styles.length ?? 0
+  const cases: [string, (descriptors: FontFaceDescriptors) => ReturnType<typeof GlobalFonts.register>][] = [
+    ['Stale Twin', (descriptors) => GlobalFonts.register(data, 'Stale Twin', descriptors)],
+    ['Stale Path Twin', (descriptors) => GlobalFonts.registerFromPath(path, 'Stale Path Twin', descriptors)],
+  ]
+  for (const [name, declareAs] of cases) {
+    const key400 = declareAs({ weight: 400 })
+    const key500 = declareAs({ weight: 500 })
+    t.truthy(key400, name)
+    t.truthy(key500, name)
+    t.true(GlobalFonts.remove(key500!), name)
+    const key700 = declareAs({ weight: 700 })
+    t.truthy(key700, name)
+    t.not(key700!.typefaceId, key500!.typefaceId, name)
+    t.is(styles(name), 2, name)
+    t.false(GlobalFonts.remove(key500!), name)
+    t.is(GlobalFonts.removeBatch([key500!]), 0, name)
+    t.is(styles(name), 2, name)
+    t.is(GlobalFonts.removeBatch([key400!, key700!]), 2, name)
+    t.false(GlobalFonts.has(name), name)
+  }
+})
+
 // A child process: a file loadFontsFromDir loaded is an installed font and
 // takes no descriptors, so registerFromPath of it with descriptors makes a
 // twin (one more face of its family); without them it is the installed

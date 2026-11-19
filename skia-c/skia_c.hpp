@@ -501,7 +501,8 @@ class TypefaceFontProviderCustom : public TypefaceFontProvider {
     }
 
     // Find an available slot using linear probe
-    uint32_t id = content_hash;
+    uint32_t id = same.empty() ? content_hash
+                               : TwinSeed(content_hash, folded, descriptors);
     while (registered_fonts.find(id) != registered_fonts.end()) {
       id++;
       if (id == 0) {
@@ -925,7 +926,8 @@ class TypefaceFontProviderCustom : public TypefaceFontProvider {
     }
 
     // Find an available slot using linear probe
-    uint32_t id = content_hash;
+    uint32_t id = same.empty() ? content_hash
+                               : TwinSeed(content_hash, folded, descriptors);
     while (registered_fonts.find(id) != registered_fonts.end()) {
       id++;
       if (id == 0) {
@@ -1070,6 +1072,27 @@ class TypefaceFontProviderCustom : public TypefaceFontProvider {
     // registration (registrationOf finds it) as after a rebuild.
     this->registerTypeface(font.NameFace(aliases.size() - 1),
                            SkString(name.c_str()));
+  }
+
+  // Where a declaration twin's FontKey probe starts: a hash of the bytes'
+  // (`content_hash`), the folded name and the descriptors, so the key a
+  // removed twin had does not go to a twin with other descriptors (a stale
+  // key never removes another FontFace, as FontFaceSet.delete), and the same
+  // declaration made again gets it back.
+  static uint32_t TwinSeed(uint32_t content_hash,
+                           const std::string& folded,
+                           const skiac_face_descriptors* descriptors) {
+    std::string seed =
+        "\x01twin:" + std::to_string(content_hash) + ":" + folded;
+    auto add = [&](const skiac_face_range& range) {
+      seed += ":" + std::to_string(range.min) + "," +
+              std::to_string(range.max) + (range.from_auto ? "a" : "");
+    };
+    if (descriptors) {
+      add(descriptors->weight);
+      add(descriptors->slope);
+    }
+    return computePathHash(seed);
   }
 
   // Whether `map` holds `descriptors` for the folded name (null: none).
