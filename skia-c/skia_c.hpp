@@ -605,6 +605,21 @@ class TypefaceFontProviderCustom : public TypefaceFontProvider {
     return false;
   }
 
+  // Whether a register / registerFromPath call gave the face `typeface_id`
+  // the name `name` (RegisteredFont::call_names): a FontFace of that name.
+  bool isCallName(const std::string& name, SkTypefaceID typeface_id) const {
+    for (const auto& [id, font_info] : registered_fonts) {
+      for (size_t i = 0; i < font_info.aliases.size(); ++i) {
+        if (font_info.call_names[i] && font_info.aliases[i] == name &&
+            font_info.NameFace(i) &&
+            font_info.NameFace(i)->uniqueID() == typeface_id) {
+          return true;
+        }
+      }
+    }
+    return false;
+  }
+
   // Whether `name` is a FontFace name of the preloaded font `id`
   // (RegisteredFont::WebName).
   bool isWebName(uint32_t id, const std::string& name) const {

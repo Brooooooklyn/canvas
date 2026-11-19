@@ -985,3 +985,105 @@ for (const renderer of ['portable', 'system'] as const) {
     })
   })
 }
+
+// A child process: a face a register / registerFromPath call gave the name
+// of a family loadFontsFromDir loaded is a FontFace of that name. Chrome
+// asks FontFaceCache first for a non-generic name and the font cache only
+// when it has no face (CSSFontSelector::GetFontData), so the explicit name
+// draws the registered face alone, with its descriptors, whatever installed
+// faces the family has; after remove the installed faces draw again. The
+// own family a call with another alias lists the face under is no FontFace
+// (FontFaceCache keeps a face in the one family it was given), so it does
+// not shadow the installed faces.
+const CALL_NAME_PROBE = `
+  const { readFileSync } = require('fs')
+  const { createCanvas, GlobalFonts, setTextRenderer } = require(process.env.PROBE_INDEX)
+  const { RENDERER, PROBE_DIR, PROBE_FONTS } = process.env
+  setTextRenderer(RENDERER)
+  const font = (name) => readFileSync(PROBE_FONTS + '/' + name)
+  const pixels = (font) => {
+    const ctx = createCanvas(420, 60).getContext('2d')
+    ctx.font = font
+    ctx.fillText('Hamburgefonts', 10, 42)
+    return Buffer.from(ctx.getImageData(0, 0, 420, 60).data).toString('base64')
+  }
+  const out = { loaded: GlobalFonts.loadFontsFromDir(PROBE_DIR) }
+  const MONO = 'bold 32px "Roboto Mono"'
+  const installedMono = pixels(MONO)
+  const installedStatic = pixels('40px RMStatic')
+  const mono = font('RobotoMono-VariableFont_wght.ttf')
+  const bold = font('RMStatic-Bold.ttf')
+  const states = {}
+  // register(sameBytes, undefined, {weight: 400}).
+  let key = GlobalFonts.register(mono, undefined, { weight: 400 })
+  states.buffer = pixels(MONO)
+  out.removed = [GlobalFonts.remove(key)]
+  out.bufferAfter = pixels(MONO) === installedMono
+  // registerFromPath(sameFile, undefined, {weight: 400}): its twin.
+  key = GlobalFonts.registerFromPath(PROBE_DIR + '/RobotoMono-VariableFont_wght.ttf', undefined, { weight: 400 })
+  states.path = pixels(MONO)
+  out.removed.push(GlobalFonts.remove(key))
+  out.pathAfter = pixels(MONO) === installedMono
+  // No descriptors: the Bold file of the family, no alias.
+  key = GlobalFonts.register(bold)
+  states.plain = pixels('40px RMStatic')
+  states.plainBold = pixels('bold 40px RMStatic')
+  // ... across a rebuild (an unrelated remove) and a renderer switch.
+  GlobalFonts.remove(GlobalFonts.register(font('Lato-Regular.ttf'), 'Unrelated'))
+  setTextRenderer(RENDERER === 'system' ? 'portable' : 'system')
+  setTextRenderer(RENDERER)
+  states.plainRebuilt = pixels('40px RMStatic')
+  out.removed.push(GlobalFonts.remove(key))
+  out.plainAfter = pixels('40px RMStatic') === installedStatic
+  // Guard: the Bold file under another name.
+  key = GlobalFonts.register(bold, 'Brand')
+  out.guard = pixels('40px RMStatic') === installedStatic
+  const brand = pixels('40px Brand')
+  const brandBold = pixels('bold 40px Brand')
+  out.removed.push(GlobalFonts.remove(key))
+  // References: the same faces under a name no installed font has.
+  GlobalFonts.register(mono, 'Ref 400', { weight: 400 })
+  const ref400 = pixels('bold 32px "Ref 400"')
+  out.refs = [ref400 !== installedMono, brand !== installedStatic]
+  out.buffer = states.buffer === ref400
+  out.path = states.path === ref400
+  out.plain = [states.plain === brand, states.plainBold === brandBold, states.plainRebuilt === brand]
+  console.log(JSON.stringify(out))`
+
+for (const renderer of ['portable', 'system'] as const) {
+  test(`a registered face is a FontFace of the installed family name its call gave (${renderer})`, (t) => {
+    const dir = mkdtempSync(join(tmpdir(), 'canvas-call-name-'))
+    t.teardown(() => rmSync(dir, { recursive: true, force: true }))
+    copyFileSync(
+      join(__dirname, 'fonts', 'RobotoMono-VariableFont_wght.ttf'),
+      join(dir, 'RobotoMono-VariableFont_wght.ttf'),
+    )
+    copyFileSync(join(__dirname, 'fonts', 'RMStatic-Regular.ttf'), join(dir, 'RMStatic-Regular.ttf'))
+    const child = spawnSync(process.execPath, ['-e', CALL_NAME_PROBE], {
+      encoding: 'utf8',
+      timeout: 60_000,
+      env: {
+        ...process.env,
+        RENDERER: renderer,
+        PROBE_DIR: dir,
+        PROBE_FONTS: join(__dirname, 'fonts'),
+        PROBE_INDEX: join(__dirname, '..', 'index.js'),
+      },
+    })
+    t.is(child.status, 0, child.stderr)
+    t.deepEqual(JSON.parse(child.stdout), {
+      loaded: 2,
+      removed: [true, true, true, true],
+      bufferAfter: true,
+      pathAfter: true,
+      plainAfter: true,
+      guard: true,
+      refs: [true, true],
+      // bold "Roboto Mono" is the {400} FontFace drawn bold, not wght 700.
+      buffer: true,
+      path: true,
+      // "RMStatic" is the Bold FontFace for every request.
+      plain: [true, true, true],
+    })
+  })
+}

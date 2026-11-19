@@ -382,8 +382,10 @@ class FamilyResolver {
   // the tagged name "\x01a\x01" + family: Chrome 157, Lato FontFace
   // "Brand" and a bold one "brand": "40px BRAND" is Lato, 47.64, and
   // "bold 40px Brand" the bold face, 53.28. A family whose faces are the
-  // installed ones and registrations of its own files (registerFromPath
-  // with no alias) keeps the provider's set (S14 deviation 2).
+  // installed ones and registrations of its own files that no call named
+  // (registerFromPath of a loadFontsFromDir file with no alias, the own
+  // family of a call with another alias) keeps the provider's set (S14
+  // deviation 2).
   bool FindWebFont(std::string_view name, std::string* out) const {
     if (!Find(name, out)) {
       return false;
@@ -459,17 +461,19 @@ class FamilyResolver {
           SkString family;
           face->getFamilyName(&family);
           const bool own = Fold({family.c_str(), family.size()}) == folded;
-          // A registered face of the family itself (registerFromPath of a
-          // font file, which also registers it under its own name next to
-          // an alias) is that family again, not a FontFace over it: it is
-          // neither kind, and the family keeps its installed faces first
-          // (a deviation: a FontFace of its own name would win in Chrome).
-          // An installed face is a web face of a name a registration gave
-          // it (AliasArg).
+          // A registered face of the family itself is a FontFace of it
+          // when a call gave that name (CallName): CSSFontSelector::
+          // GetFontData asks FontFaceCache first for a non-generic name, so
+          // it shadows the installed faces of the explicit name. The own
+          // family a call with another alias lists the face under is no
+          // FontFace (FontFaceCache::SegmentedFacesByFamily::AddFontFace
+          // keeps a face in its one family): neither kind. An installed
+          // face is a web face of a name a registration gave it (AliasArg).
           const bool keep =
               kind == FaceKind::kAll ? true
-              : web ? alias || (!own && (!system || AliasArg(spelling, folded,
-                                                             face.get())))
+              : web ? alias || (own ? !system && CallName(spelling, face.get())
+                                    : !system || AliasArg(spelling, folded,
+                                                          face.get()))
                     : system && own;
           if (keep) {
             const uint64_t order =
@@ -513,11 +517,12 @@ class FamilyResolver {
 
   // Which kinds of faces the family `name` has, all its spellings
   // together (FontFaceCache folds case): web faces (a registered face of
-  // another family, or the face a setAlias call names), installed faces in
-  // `assets` (an installed face of that family: loadSystemFonts,
-  // loadFontsFromDir), and an installed family outside `assets` (CoreText's
-  // match with the system renderer, else the asset font manager's), and
-  // (kOwnInstalledFaces) installed faces in `assets` without web faces too.
+  // another family or of the name a call gave it, or the face a setAlias
+  // call names), installed faces in `assets` (an installed face of that
+  // family: loadSystemFonts, loadFontsFromDir), and an installed family
+  // outside `assets` (CoreText's match with the system renderer, else the
+  // asset font manager's), and (kOwnInstalledFaces) installed faces in
+  // `assets` without web faces too.
   // Only a family `assets` has can have web faces; cached per
   // families_generation.
   uint8_t Kinds(std::string_view name) const {
@@ -566,6 +571,12 @@ class FamilyResolver {
     face->getFamilyName(&family);
     return Fold({family.c_str(), family.size()}) != folded &&
            c_collection_->assets->isAliasArg(spelling, face->uniqueID());
+  }
+
+  // Whether a register / registerFromPath call gave `face` the name
+  // `spelling` (a FontFace of it), its own family too.
+  bool CallName(const std::string& spelling, SkTypeface* face) const {
+    return c_collection_->assets->isCallName(spelling, face->uniqueID());
   }
 
   // When the provider listed the face `id` under `spelling`: the earliest
