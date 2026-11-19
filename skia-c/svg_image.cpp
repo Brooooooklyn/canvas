@@ -365,10 +365,12 @@ class SvgFontMgr final : public SkFontMgr {
     text_request.families = families.data();
     text_request.family_count = families.size();
     std::vector<bool> generic;
-    request.families = AtRequestWeight(
+    // SkSVG gives no oblique angle (its font-style is a keyword).
+    request.families = AtRequest(
         c_collection_,
-        ResolveFontFamilies(c_collection_, text_request, &generic),
-        font.weight);
+        ResolveFontFamilies(c_collection_, text_request, &generic), font.weight,
+        style.slant() == SkFontStyle::kUpright_Slant ? 0.0f : 14.0f,
+        style.slant());
     request.faces = c_collection_->collection->findTypefaces(request.families,
                                                              request.style);
     request.declared =

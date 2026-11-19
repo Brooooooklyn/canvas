@@ -29,15 +29,20 @@ std::vector<SkString> ResolveFontFamilies(
     std::vector<bool>* generic = nullptr,
     const LocaleFamilies* locale = nullptr);
 
-// `families` (ResolveFontFamilies) for a request of `weight`: a family whose
-// faces are matched by their descriptors (FontFaceStyleSet) gets the weight
-// as a FontSelectionValue (quarter steps, FontSelectionAlgorithm::
-// WeightDistance), under the tag "\x01q\x01" quarters "\x01", since
-// SkFontStyle and FontCollection's cache key hold an integer weight. The
-// same list for a whole weight or when no font has descriptors.
-std::vector<SkString> AtRequestWeight(skiac_font_collection* c_collection,
-                                      std::vector<SkString> families,
-                                      float weight);
+// `families` (ResolveFontFamilies) for a request of `weight`, `slope` (in
+// degrees) and `style` (SkFontStyle::Slant): a family whose faces are
+// matched by their descriptors (FontFaceStyleSet) gets the weight as a
+// FontSelectionValue (quarter steps, FontSelectionAlgorithm::
+// WeightDistance) under the tag "\x01q\x01" quarters "\x01", and an oblique
+// slope other than 14deg (StyleDistance) under "\x01o\x01" quarters + 360
+// "\x01" before it, since SkFontStyle and FontCollection's cache key hold an
+// integer weight and a slant only. The same list for a whole weight with an
+// upright, italic or 14deg style, or when no font has descriptors.
+std::vector<SkString> AtRequest(skiac_font_collection* c_collection,
+                                std::vector<SkString> families,
+                                float weight,
+                                float slope,
+                                int style);
 
 // FontCache::GetLastResortFallbackFont's family for `request`: on macOS with
 // the system renderer Times (else Lucida Grande); empty when none resolves

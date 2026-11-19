@@ -1320,8 +1320,9 @@ class FontFaceStyleSet : public SkFontStyleSet {
  public:
   FontFaceStyleSet(std::shared_ptr<const FontFaceCore> core,
                    size_t rank,
-                   std::optional<font_selection::Value> weight)
-      : core_(std::move(core)), rank_(rank), weight_(weight) {}
+                   std::optional<font_selection::Value> weight,
+                   std::optional<font_selection::Value> slope)
+      : core_(std::move(core)), rank_(rank), weight_(weight), slope_(slope) {}
   int count() override { return static_cast<int>(core_->faces.size()); }
   // One style per capabilities, so SameStyleDepth counts a segment's faces
   // together.
@@ -1352,12 +1353,13 @@ class FontFaceStyleSet : public SkFontStyleSet {
       return nullptr;
     }
     // FontSelectionRequest of the font description: the width keyword's
-    // percentage (FontSelectionValue for each font-stretch keyword);
-    // italic and oblique as 14deg (an oblique angle is not in the style).
+    // percentage (FontSelectionValue for each font-stretch keyword); the
+    // slope 0 upright, else the request's angle (AtRequest), 14deg for
+    // italic and oblique with no angle (ConvertFontStyle).
     static constexpr float kWidths[] = {50,     62.5f, 75,  87.5f, 100,
                                         112.5f, 125,   150, 200};
     const int width = std::clamp(pattern.width(), 1, 9);
-    // The weight: the request's FontSelectionValue (AtRequestWeight), which
+    // The weight: the request's FontSelectionValue (AtRequest), which
     // `pattern` holds rounded.
     const font_selection::Value weight =
         weight_ && lroundf(weight_->ToFloat()) == pattern.weight()
@@ -1365,8 +1367,9 @@ class FontFaceStyleSet : public SkFontStyleSet {
             : font_selection::Value(static_cast<float>(pattern.weight()));
     const font_selection::Request request{
         weight, font_selection::Value(kWidths[width - 1]),
-        font_selection::Value(
-            pattern.slant() == SkFontStyle::kUpright_Slant ? 0.0f : 14.0f)};
+        pattern.slant() == SkFontStyle::kUpright_Slant
+            ? font_selection::Value()
+            : slope_.value_or(font_selection::Value(14))};
     const font_selection::Algorithm algorithm(request, core_->bounds);
     size_t best = 0;
     for (size_t s = 1; s < segments.size(); ++s) {
@@ -1385,6 +1388,9 @@ class FontFaceStyleSet : public SkFontStyleSet {
   size_t rank_;
   // A quarter-step request weight ("\x01q\x01"), else the pattern's.
   std::optional<font_selection::Value> weight_;
+  // An oblique request angle other than 14deg ("\x01o\x01"), else the
+  // pattern's slant.
+  std::optional<font_selection::Value> slope_;
 };
 
 // Whether a face of the web family `name` declares descriptors
@@ -1448,6 +1454,10 @@ std::shared_ptr<const FontFaceCore> MakeFontFaceCore(
 
 constexpr char kSiblingTag[] = "\x01s\x01";
 constexpr char kWeightTag[] = "\x01q\x01";
+constexpr char kSlopeTag[] = "\x01o\x01";
+// kSlopeTag's number: the slope in quarter steps plus this (TagNumber reads
+// digits only; a slope is -90deg to 90deg).
+constexpr int kSlopeTagOffset = 360;
 
 // Whether a ResolveFontFamilies name is a FontFaceStyleSet whose segments
 // can differ in weight: "\x01a\x01" or "\x01w\x01" + a family of
@@ -1592,16 +1602,32 @@ std::vector<SkString> ResolveFontFamilies(skiac_font_collection* c_collection,
   return resolved;
 }
 
-std::vector<SkString> AtRequestWeight(skiac_font_collection* c_collection,
-                                      std::vector<SkString> families,
-                                      float weight) {
-  // FontDescription's weight is a FontSelectionValue (ConvertFontWeight).
+std::vector<SkString> AtRequest(skiac_font_collection* c_collection,
+                                std::vector<SkString> families,
+                                float weight,
+                                float slope,
+                                int style) {
+  // FontDescription's weight and slope are FontSelectionValues
+  // (ConvertFontWeight, ConvertFontStyle).
   const int quarters =
       static_cast<int>(font_selection::Value(weight).ToFloat() * 4);
-  if (quarters % 4 == 0 || !c_collection->assets->describesAny()) {
+  const int slope_quarters =
+      static_cast<int>(font_selection::Value(slope).ToFloat() * 4);
+  const bool weight_tag = quarters % 4 != 0;
+  const bool slope_tag =
+      style != SkFontStyle::kUpright_Slant && slope_quarters != 14 * 4;
+  if ((!weight_tag && !slope_tag) || !c_collection->assets->describesAny()) {
     return families;
   }
-  const std::string tag = kWeightTag + std::to_string(quarters) + "\x01";
+  // The slope outside the weight, so each name has one spelling.
+  std::string tag;
+  if (slope_tag) {
+    tag +=
+        kSlopeTag + std::to_string(slope_quarters + kSlopeTagOffset) + "\x01";
+  }
+  if (weight_tag) {
+    tag += kWeightTag + std::to_string(quarters) + "\x01";
+  }
   for (SkString& family : families) {
     if (IsDeclaredFamily(c_collection, {family.c_str(), family.size()})) {
       family.prepend(tag.c_str(), tag.size());
@@ -1900,18 +1926,30 @@ std::optional<std::pair<int, size_t>> TagNumber(std::string_view tagged) {
   return std::make_pair(number, end);
 }
 
-// MakeSplitFamily, a FontFaceStyleSet matched at `weight` when given.
+// MakeSplitFamily, a FontFaceStyleSet matched at `weight` and `slope` when
+// given.
 sk_sp<SkFontStyleSet> MakeSplitFamilyAt(
     skiac_font_collection* c_collection,
     std::string_view tagged,
-    std::optional<font_selection::Value> weight) {
+    std::optional<font_selection::Value> weight,
+    std::optional<font_selection::Value> slope) {
   // "\x01" kind "\x01" family (FamilyResolver::FindSystem, FindWebFont),
-  // "\x01s\x01" k "\x01" + a tagged family (ResolveFontFamilies), or
-  // "\x01q\x01" quarters "\x01" + either (AtRequestWeight).
+  // "\x01s\x01" k "\x01" + a tagged family (ResolveFontFamilies),
+  // "\x01q\x01" quarters "\x01" + either, and "\x01o\x01" slope "\x01" +
+  // any of these (AtRequest).
   if (tagged.size() < 4 || tagged[0] != '\x01' || tagged[2] != '\x01' ||
       (tagged[1] != 'i' && tagged[1] != 'w' && tagged[1] != 'a' &&
-       tagged[1] != 's' && tagged[1] != 'q')) {
+       tagged[1] != 's' && tagged[1] != 'q' && tagged[1] != 'o')) {
     return nullptr;
+  }
+  if (tagged[1] == 'o') {
+    const auto number = TagNumber(tagged);
+    if (!number || weight || slope) {
+      return nullptr;
+    }
+    return MakeSplitFamilyAt(
+        c_collection, tagged.substr(number->second + 1), std::nullopt,
+        font_selection::Value((number->first - kSlopeTagOffset) / 4.0f));
   }
   if (tagged[1] == 'q') {
     const auto number = TagNumber(tagged);
@@ -1919,7 +1957,8 @@ sk_sp<SkFontStyleSet> MakeSplitFamilyAt(
       return nullptr;
     }
     return MakeSplitFamilyAt(c_collection, tagged.substr(number->second + 1),
-                             font_selection::Value(number->first / 4.0f));
+                             font_selection::Value(number->first / 4.0f),
+                             slope);
   }
   if (tagged[1] == 's') {
     const auto number = TagNumber(tagged);
@@ -1940,7 +1979,7 @@ sk_sp<SkFontStyleSet> MakeSplitFamilyAt(
     // FontFaceCore the base set was made of.
     if (std::shared_ptr<const FontFaceCore> core =
             c_collection->assets->fontFaceCore(base)) {
-      return sk_make_sp<FontFaceStyleSet>(std::move(core), rank, weight);
+      return sk_make_sp<FontFaceStyleSet>(std::move(core), rank, weight, slope);
     }
     return sk_make_sp<SegmentStyleSet>(std::move(set), rank);
   }
@@ -1956,7 +1995,7 @@ sk_sp<SkFontStyleSet> MakeSplitFamilyAt(
     const std::string key(tagged);
     if (std::shared_ptr<const FontFaceCore> core =
             c_collection->assets->fontFaceCore(key)) {
-      return sk_make_sp<FontFaceStyleSet>(std::move(core), 0, weight);
+      return sk_make_sp<FontFaceStyleSet>(std::move(core), 0, weight, slope);
     }
     std::vector<sk_sp<SkTypeface>> faces = FontFaces(resolver, name, tagged[1]);
     std::shared_ptr<const FontFaceCore> core =
@@ -1964,7 +2003,7 @@ sk_sp<SkFontStyleSet> MakeSplitFamilyAt(
                       : MakeFontFaceCore(c_collection, name, std::move(faces));
     c_collection->assets->setFontFaceCore(key, core);
     if (core) {
-      return sk_make_sp<FontFaceStyleSet>(std::move(core), 0, weight);
+      return sk_make_sp<FontFaceStyleSet>(std::move(core), 0, weight, slope);
     }
   }
   sk_sp<SkFontStyleSet> elsewhere;
@@ -1989,7 +2028,7 @@ sk_sp<SkFontStyleSet> MakeSplitFamilyAt(
 
 sk_sp<SkFontStyleSet> MakeSplitFamily(skiac_font_collection* c_collection,
                                       std::string_view tagged) {
-  return MakeSplitFamilyAt(c_collection, tagged, std::nullopt);
+  return MakeSplitFamilyAt(c_collection, tagged, std::nullopt, std::nullopt);
 }
 
 sk_sp<SkTypeface> MatchNamedFamily(skiac_font_collection* c_collection,

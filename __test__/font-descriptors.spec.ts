@@ -1349,7 +1349,11 @@ test('a fractional request weight matches in quarter steps', (t) => {
   ]
   for (const [weight, family, bold] of rows) {
     const ref = bold ? 'Cap Ref Bold' : 'Cap Ref Regular'
-    t.deepEqual(draw(`${weight} 32px "${family}"`).pixels, draw(`${weight} 32px "${ref}"`).pixels, `${weight} ${family}`)
+    t.deepEqual(
+      draw(`${weight} 32px "${family}"`).pixels,
+      draw(`${weight} 32px "${ref}"`).pixels,
+      `${weight} ${family}`,
+    )
   }
   // An older face of the segment the quarter weight matches.
   declare(t, rmRegular, 'Cap Fraction Older', { weight: 400 })
@@ -1369,6 +1373,82 @@ test('a fractional request weight matches in quarter steps', (t) => {
   }
   t.deepEqual(adjusted('"Cap Fraction Lato"'), adjusted('"Descriptors Lato"'))
 })
+
+// The request slope is the font-style angle (FontSelectionRequest from
+// ConvertFontStyle), not 14deg for every oblique: StyleDistance. Chrome 159,
+// FontFace U {style: normal} + A {oblique 2deg 6deg} + B {oblique 12deg
+// 18deg}, each face found by its width, in a child process per renderer.
+const OBLIQUE_ANGLE_PROBE = `
+  const { readFileSync } = require('fs')
+  const { createCanvas, GlobalFonts, setTextRenderer } = require(process.env.PROBE_INDEX)
+  const { RENDERER, PROBE_FONTS } = process.env
+  setTextRenderer(RENDERER)
+  const font = (name) => readFileSync(PROBE_FONTS + '/' + name)
+  const [u, a, b] = ['RMStatic-Regular.ttf', 'Lato-Regular.ttf', 'Oswald.ttf'].map(font)
+  GlobalFonts.register(u, 'Angle Three', { style: 'normal' })
+  GlobalFonts.register(a, 'Angle Three', { style: 'oblique 2deg 6deg' })
+  GlobalFonts.register(b, 'Angle Three', { style: 'oblique 12deg 18deg' })
+  GlobalFonts.register(a, 'Angle Two', { style: 'oblique 2deg 6deg' })
+  GlobalFonts.register(b, 'Angle Two', { style: 'oblique 12deg 18deg' })
+  GlobalFonts.register(u, 'Angle U')
+  GlobalFonts.register(a, 'Angle A')
+  GlobalFonts.register(b, 'Angle B')
+  const ctx = createCanvas(10, 10).getContext('2d')
+  const width = (font) => { ctx.font = font; return ctx.measureText('Hamburgefonts').width }
+  const refs = { U: width('32px "Angle U"'), A: width('32px "Angle A"'), B: width('32px "Angle B"') }
+  const face = (font) => { const w = width(font); return Object.keys(refs).find((k) => refs[k] === w) || String(w) }
+  const STYLES = JSON.parse(process.env.STYLES)
+  const out = {}
+  for (const family of ['Angle Three', 'Angle Two']) {
+    out[family] = Object.fromEntries(STYLES.map((s) => [s, face(s + ' 32px "' + family + '"')]))
+  }
+  // A warm cache, other angles in turn.
+  out.warm = JSON.parse(process.env.WARM).map((s) => face(s + ' 32px "Angle Three"'))
+  console.log(JSON.stringify(out))`
+
+const OBLIQUE_CHROME: Record<string, [string, string]> = {
+  normal: ['U', 'A'],
+  'oblique 4deg': ['A', 'A'],
+  'oblique 8deg': ['A', 'A'],
+  'oblique 10deg': ['A', 'A'],
+  'oblique 11deg': ['A', 'A'],
+  'oblique 13deg': ['B', 'B'],
+  'oblique 15deg': ['B', 'B'],
+  italic: ['B', 'B'],
+  oblique: ['B', 'B'],
+  'oblique -4deg': ['U', 'A'],
+}
+const OBLIQUE_WARM: [string, string][] = [
+  ['oblique 4deg', 'A'],
+  ['oblique 15deg', 'B'],
+  ['oblique 4deg', 'A'],
+  ['italic', 'B'],
+  ['oblique 10deg', 'A'],
+  ['oblique -4deg', 'U'],
+]
+
+for (const renderer of ['portable', 'system'] as const) {
+  test(`an oblique request angle chooses the face (${renderer})`, (t) => {
+    const child = spawnSync(process.execPath, ['-e', OBLIQUE_ANGLE_PROBE], {
+      encoding: 'utf8',
+      timeout: 60_000,
+      env: {
+        ...process.env,
+        RENDERER: renderer,
+        PROBE_FONTS: join(__dirname, 'fonts'),
+        PROBE_INDEX: join(__dirname, '..', 'index.js'),
+        STYLES: JSON.stringify(Object.keys(OBLIQUE_CHROME)),
+        WARM: JSON.stringify(OBLIQUE_WARM.map(([style]) => style)),
+      },
+    })
+    t.is(child.status, 0, child.stderr)
+    t.deepEqual(JSON.parse(child.stdout), {
+      'Angle Three': Object.fromEntries(Object.entries(OBLIQUE_CHROME).map(([s, [three]]) => [s, three])),
+      'Angle Two': Object.fromEntries(Object.entries(OBLIQUE_CHROME).map(([s, [, two]]) => [s, two])),
+      warm: OBLIQUE_WARM.map(([, face]) => face),
+    })
+  })
+}
 
 function svgWeightPixels(family: string, weight: string) {
   const img = new Image()
