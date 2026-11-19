@@ -1161,6 +1161,61 @@ test('the same path declared again with other descriptors is a face of its own',
   t.false(GlobalFonts.has('Path Twin Other'))
 })
 
+// A child process per renderer (the spec lists Lato and Oswald): the same
+// path is not read again, so registerFromPath of a file replaced on disk
+// with no alias is the registration it has, under the family of the face it
+// keeps; the replaced file's family gets no face.
+const REPLACED_PATH_PROBE = `
+  const { copyFileSync, renameSync } = require('fs')
+  const { createCanvas, GlobalFonts, setTextRenderer } = require(process.env.PROBE_INDEX)
+  const { RENDERER, PROBE_FONTS, PROBE_FILE } = process.env
+  setTextRenderer(RENDERER)
+  const ctx = createCanvas(10, 10).getContext('2d')
+  const width = (family) => {
+    ctx.font = '40px "' + family + '"'
+    return ctx.measureText('Hamburg').width
+  }
+  const listed = () => GlobalFonts.families.filter((f) => f.family === 'Lato' || f.family === 'Oswald').map((f) => f.family)
+  const out = {}
+  copyFileSync(PROBE_FONTS + '/Lato-Regular.ttf', PROBE_FILE)
+  const first = GlobalFonts.registerFromPath(PROBE_FILE)
+  copyFileSync(PROBE_FONTS + '/Oswald.ttf', PROBE_FILE + '.new')
+  renameSync(PROBE_FILE + '.new', PROBE_FILE)
+  out.sameKey = GlobalFonts.registerFromPath(PROBE_FILE).typefaceId === first.typefaceId
+  out.has = [GlobalFonts.has('Oswald')]
+  out.listed = listed()
+  out.oswaldIsLato = width('Oswald') === width('Lato')
+  out.declared = GlobalFonts.registerFromPath(PROBE_FILE, undefined, { weight: '700' }) !== null
+  out.has.push(GlobalFonts.has('Oswald'))
+  out.listed.push(...listed())
+  console.log(JSON.stringify(out))`
+
+for (const renderer of ['portable', 'system'] as const) {
+  test(`registerFromPath of a replaced file gives its new family no face (${renderer})`, (t) => {
+    const dir = mkdtempSync(join(tmpdir(), 'canvas-replaced-path-'))
+    t.teardown(() => rmSync(dir, { recursive: true, force: true }))
+    const child = spawnSync(process.execPath, ['-e', REPLACED_PATH_PROBE], {
+      encoding: 'utf8',
+      timeout: 60_000,
+      env: {
+        ...process.env,
+        RENDERER: renderer,
+        PROBE_FILE: join(dir, 'Replaced.ttf'),
+        PROBE_FONTS: join(__dirname, 'fonts'),
+        PROBE_INDEX: join(__dirname, '..', 'index.js'),
+      },
+    })
+    t.is(child.status, 0, child.stderr)
+    t.deepEqual(JSON.parse(child.stdout), {
+      sameKey: true,
+      has: [false, false],
+      listed: ['Lato', 'Lato'],
+      oswaldIsLato: false,
+      declared: true,
+    })
+  })
+}
+
 // A FontFace is an object: FontFaceSet.delete of a face deleted before
 // returns false and never deletes another face. The key of a removed
 // declaration twin does not name a twin declared after it.

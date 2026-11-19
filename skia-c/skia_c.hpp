@@ -896,8 +896,9 @@ class TypefaceFontProviderCustom : public TypefaceFontProvider {
   // is an installed font (FontCache), which has none, so a declared call
   // makes a twin. A twin's face is made from the data of the first
   // registration's face, as a rebuild makes it (a file replaced since then
-  // gives no other bytes); from this call's read only when that face gives
-  // no data. Returns the FontKey (a path hash), 0 on failure.
+  // gives no other bytes, and no other own family); from this call's read
+  // only when that face gives no data. Returns the FontKey (a path hash), 0
+  // on failure.
   uint32_t registerTypefaceFromPathWithTracking(
       const std::string& path,
       sk_sp<SkTypeface> typeface,
@@ -907,14 +908,6 @@ class TypefaceFontProviderCustom : public TypefaceFontProvider {
       return 0;
     }
     uint32_t content_hash = computePathHash(path);
-    SkString familyName;
-    typeface->getFamilyName(&familyName);
-    std::string originalName = std::string(familyName.c_str());
-    // The name the call declares; an alias argument unless the own family.
-    std::string name = alias ? std::string(alias) : originalName;
-    const bool alias_arg = name != originalName;
-    const std::string folded = FoldFamilyName(name);
-
     // The registrations of the same path, through the secondary index (the
     // probe chain may be broken by a removal).
     std::vector<uint32_t> same;
@@ -928,6 +921,24 @@ class TypefaceFontProviderCustom : public TypefaceFontProvider {
         }
       }
     }
+
+    // The own family of the face the path has (a file replaced since then
+    // gives no other family); this call's read only for a new path.
+    const SkTypeface* own_face = typeface.get();
+    for (uint32_t existing_id : same) {
+      if (const sk_sp<SkTypeface>& kept =
+              registered_fonts.at(existing_id).typeface) {
+        own_face = kept.get();
+        break;
+      }
+    }
+    SkString familyName;
+    own_face->getFamilyName(&familyName);
+    std::string originalName = std::string(familyName.c_str());
+    // The name the call declares; an alias argument unless the own family.
+    std::string name = alias ? std::string(alias) : originalName;
+    const bool alias_arg = name != originalName;
+    const std::string folded = FoldFamilyName(name);
     if (!same.empty()) {
       for (uint32_t existing_id : same) {
         const RegisteredFont& font = registered_fonts.at(existing_id);
