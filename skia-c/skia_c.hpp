@@ -1742,6 +1742,9 @@ struct skiac_font_collection {
           ++families_generation;
           typeface =
               MatchNamedFamily(this, entry.family.c_str(), SkFontStyle());
+          // The sets this lookup made are of the provider as far as it is
+          // made: the fonts replayed after it change them.
+          new_assets->clearSplitFamilies();
           ++families_generation;
           assets = std::move(old_assets);
         }

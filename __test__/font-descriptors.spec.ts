@@ -887,6 +887,59 @@ test('an alias of an auto name newer than an alias of a declared name is auto', 
   t.deepEqual(draw('bold 32px "Alias Newer Chain"').pixels, bold700)
 })
 
+// A child process per renderer: a rebuild (an unrelated remove) replays an
+// alias of an alias of an installed family before the register that made
+// the middle name a FontFace name; the face that name draws stays the
+// registered one (the replay's lookups leave nothing cached).
+const ALIAS_REPLAY_PROBE = `
+  const { readFileSync } = require('fs')
+  const { createCanvas, GlobalFonts, setTextRenderer } = require(process.env.PROBE_INDEX)
+  const { RENDERER, PROBE_FONTS } = process.env
+  setTextRenderer(RENDERER)
+  const font = (name) => readFileSync(PROBE_FONTS + '/' + name)
+  const ctx = createCanvas(10, 10).getContext('2d')
+  const width = (family) => {
+    ctx.font = '40px "' + family + '"'
+    return ctx.measureText('Hamburgefonstiv WWW mmm 0123').width
+  }
+  if (!GlobalFonts.has('Arial')) {
+    console.log(JSON.stringify({ skip: true }))
+    process.exit(0)
+  }
+  const lato = font('Lato-Regular.ttf')
+  GlobalFonts.register(Buffer.concat([lato, Buffer.alloc(64)]), 'Replay Lato Ref')
+  const out = { differs: width('Replay Lato Ref') !== width('Arial') }
+  GlobalFonts.setAlias('Arial', 'Replay F')
+  GlobalFonts.setAlias('Replay F', 'Replay G')
+  GlobalFonts.register(lato, 'Replay F')
+  out.widths = [width('Replay F') === width('Replay Lato Ref')]
+  GlobalFonts.remove(GlobalFonts.register(font('SourceSerifPro-Regular.ttf'), 'Replay Unrelated'))
+  out.widths.push(width('Replay F') === width('Replay Lato Ref'))
+  out.aliasArial = width('Replay G') === width('Arial')
+  console.log(JSON.stringify(out))`
+
+for (const renderer of ['portable', 'system'] as const) {
+  test(`a rebuild keeps the registered face of a name an alias chain replays (${renderer})`, (t) => {
+    const child = spawnSync(process.execPath, ['-e', ALIAS_REPLAY_PROBE], {
+      encoding: 'utf8',
+      timeout: 60_000,
+      env: {
+        ...process.env,
+        RENDERER: renderer,
+        PROBE_FONTS: join(__dirname, 'fonts'),
+        PROBE_INDEX: join(__dirname, '..', 'index.js'),
+      },
+    })
+    t.is(child.status, 0, child.stderr)
+    const out = JSON.parse(child.stdout)
+    if (out.skip) {
+      t.pass('no installed Arial')
+      return
+    }
+    t.deepEqual(out, { differs: true, widths: [true, true], aliasArial: true })
+  })
+}
+
 test('SVG text: an alias takes its target descriptors', (t) => {
   t.true(GlobalFonts.setAlias('Descriptors 400', 'Alias SVG 400'))
   const declared = svgPixels("'Descriptors 400'", 'Ham')
