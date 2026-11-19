@@ -174,6 +174,80 @@ fn set_system_font_renderer(enabled: bool) -> napi::Result<()> {
   Ok(())
 }
 
+/// The descriptors `register` declares, checked as Chrome's FontFace parses
+/// them (an invalid one makes the face's status "error", never used): a
+/// weight in [1, 1000], a style `normal`, `italic`, `oblique` or
+/// `oblique <angle>deg` (-90 to 90), ASCII case-insensitive. A missing field
+/// is the FontFace default, 400 or normal.
+fn face_descriptors(
+  weight: Option<f64>,
+  style: Option<&str>,
+) -> Option<crate::sk::ffi::skiac_face_descriptors> {
+  let weight = weight.unwrap_or(400.0);
+  if !(1.0..=1000.0).contains(&weight) {
+    return None;
+  }
+  let slope = match style {
+    Some(style) => style_slope(style)?,
+    None => 0.0,
+  };
+  Some(crate::sk::ffi::skiac_face_descriptors {
+    weight: weight as f32,
+    slope: slope as f32,
+  })
+}
+
+/// Blink's slope of a font-style descriptor: normal 0, italic and oblique 14
+/// (kItalicSlopeValue), `oblique <angle>deg` the angle.
+fn style_slope(style: &str) -> Option<f64> {
+  let style = style.to_ascii_lowercase();
+  let mut words = style
+    .split([' ', '\t', '\n', '\r', '\x0c'])
+    .filter(|word| !word.is_empty());
+  let slope = match (words.next()?, words.next()) {
+    ("normal", None) => 0.0,
+    ("italic", None) | ("oblique", None) => 14.0,
+    ("oblique", Some(angle)) => {
+      let angle = css_number(angle.strip_suffix("deg")?)?;
+      if !(-90.0..=90.0).contains(&angle) {
+        return None;
+      }
+      angle
+    }
+    _ => return None,
+  };
+  words.next().is_none().then_some(slope)
+}
+
+/// A CSS <number> token: a sign, digits with an optional fraction (at least
+/// one digit), an optional exponent.
+fn css_number(text: &str) -> Option<f64> {
+  let digits = |s: &str| s.bytes().take_while(u8::is_ascii_digit).count();
+  let unsigned = text.strip_prefix(['+', '-']).unwrap_or(text);
+  let int = digits(unsigned);
+  let mut rest = &unsigned[int..];
+  let mut frac = 0;
+  if let Some(after) = rest.strip_prefix('.') {
+    frac = digits(after);
+    if frac == 0 {
+      return None;
+    }
+    rest = &after[frac..];
+  }
+  if int + frac == 0 {
+    return None;
+  }
+  if let Some(after) = rest.strip_prefix('e') {
+    let exponent = after.strip_prefix(['+', '-']).unwrap_or(after);
+    if digits(exponent) == 0 || digits(exponent) != exponent.len() {
+      return None;
+    }
+  } else if !rest.is_empty() {
+    return None;
+  }
+  text.parse().ok()
+}
+
 #[napi(js_name = "GlobalFonts")]
 #[allow(non_snake_case)]
 pub mod global_fonts {
@@ -189,6 +263,8 @@ pub mod global_fonts {
     pub style: Option<String>,
   }
 
+  /// `descriptors`: the face's @font-face descriptors (super::face_descriptors);
+  /// an invalid one registers nothing and gives null. Without them, `auto`.
   #[napi]
   pub fn register(
     font_data: &[u8],
@@ -196,14 +272,13 @@ pub mod global_fonts {
     descriptors: Option<FontFaceDescriptors>,
   ) -> Result<Option<FontKey>> {
     let maybe_name_alias = name_alias.filter(|s| !s.is_empty());
-    let descriptors = descriptors.map(|d| crate::sk::ffi::skiac_face_descriptors {
-      weight: d.weight.unwrap_or(400.0) as f32,
-      slope: if matches!(d.style.as_deref(), Some("italic" | "oblique")) {
-        14.0
-      } else {
-        0.0
+    let descriptors = match descriptors {
+      Some(d) => match super::face_descriptors(d.weight, d.style.as_deref()) {
+        Some(descriptors) => Some(descriptors),
+        None => return Ok(None),
       },
-    });
+      None => None,
+    };
     let font = get_font().map_err(into_napi_error)?;
     let result = font
       .register(font_data, maybe_name_alias, descriptors.as_ref())

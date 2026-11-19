@@ -1132,16 +1132,29 @@ export interface FontVariationAxis {
   hidden: boolean
 }
 
+/**
+ * A font's `@font-face` descriptors, as `new FontFace(name, data, descriptors)`
+ * takes them. An invalid value fails the registration (FontFace's status
+ * 'error'); unknown keys are ignored.
+ */
 export interface FontFaceDescriptors {
-  /** Default 400. */
+  /** A number from 1 to 1000. Default 400. */
   weight?: number
-  /** Default 'normal'. */
-  style?: 'normal' | 'italic' | 'oblique'
+  /**
+   * `normal`, `italic`, `oblique` or `oblique <angle>deg` (-90 to 90), in any
+   * ASCII case. Default 'normal'.
+   */
+  style?: 'normal' | 'italic' | 'oblique' | `oblique ${number}deg`
 }
 
 interface IGlobalFonts {
   readonly families: { family: string; styles: { weight: number; width: string; style: string }[] }[]
-  /** The FontKey, or null if it failed. `descriptors`: this name's @font-face descriptors; without them, `auto`. */
+  /**
+   * The FontKey, or null if it failed (also for invalid `descriptors`, which
+   * registers nothing). `descriptors`: the font's descriptors under this name;
+   * a text font list uses them where this name matches the font. Without
+   * them, `auto`: the font's own weight and style ranges.
+   */
   register(font: Buffer, nameAlias?: string, descriptors?: FontFaceDescriptors): FontKey | null
   // absolute path - returns FontKey if succeeded, null if failed
   registerFromPath(path: string, nameAlias?: string): FontKey | null

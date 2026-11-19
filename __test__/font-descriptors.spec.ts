@@ -11,7 +11,7 @@ import { fileURLToPath } from 'node:url'
 
 import test from 'ava'
 
-import { createCanvas, GlobalFonts, Image } from '../index'
+import { createCanvas, type FontFaceDescriptors, GlobalFonts, Image } from '../index'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const font = (name: string) => readFileSync(join(__dirname, 'fonts', name))
@@ -30,6 +30,8 @@ const scienceGothic = font('ScienceGothic-VariableFont.ttf')
 GlobalFonts.register(scienceGothic, 'Slant Auto')
 GlobalFonts.register(scienceGothic, 'Slant Normal', { weight: 400 })
 GlobalFonts.register(scienceGothic, 'Slant Italic', { style: 'italic' })
+GlobalFonts.register(scienceGothic, 'Slant Oblique 5', { style: 'Oblique  +5DEG' })
+GlobalFonts.register(scienceGothic, 'Slant Oblique 20', { style: 'oblique 20deg' })
 
 const GREEK = 'ΑΒΓΔΕΘΛΞ'
 const DIGRAPHS = 'ǅǄǆǇǈ'
@@ -111,6 +113,52 @@ test('declared italic draws slanted for any request', (t) => {
   t.deepEqual(draw('32px "Slant Italic"').pixels, slanted)
   t.deepEqual(draw('italic 32px "Slant Italic"').pixels, slanted)
   t.notDeepEqual(slanted, draw('32px "Slant Auto"').pixels)
+})
+
+test('declared oblique <angle>: slnt at the angle, skewed under 14deg', (t) => {
+  const at5 = (font: string) => draw(font, undefined, '"slnt" -5').pixels
+  t.deepEqual(draw('32px "Slant Oblique 5"').pixels, at5('32px "Slant Normal"'))
+  t.deepEqual(draw('italic 32px "Slant Oblique 5"').pixels, at5('italic 32px "Slant Normal"'))
+  // 20deg: past the axis like italic, and not skewed.
+  t.deepEqual(draw('italic 32px "Slant Oblique 20"').pixels, draw('32px "Slant Italic"').pixels)
+})
+
+test('style keywords are ASCII case-insensitive', (t) => {
+  t.truthy(GlobalFonts.register(robotoMono, 'Descriptors ITALIC', { style: 'ITALIC' as 'italic' }))
+  t.deepEqual(draw('italic 32px "Descriptors ITALIC"').pixels, draw('italic 32px "Descriptors Italic"').pixels)
+})
+
+test('a missing field is the FontFace default; unknown keys are ignored', (t) => {
+  t.truthy(GlobalFonts.register(robotoMono, 'Descriptors Empty', {}))
+  t.truthy(GlobalFonts.register(robotoMono, 'Descriptors Typo', { wieght: 700 } as unknown as FontFaceDescriptors))
+  const declared400 = draw('bold italic 32px "Descriptors 400"').pixels
+  t.deepEqual(draw('bold italic 32px "Descriptors Empty"').pixels, declared400)
+  t.deepEqual(draw('bold italic 32px "Descriptors Typo"').pixels, declared400)
+})
+
+test('invalid descriptors register nothing and give null', (t) => {
+  const garamond = font('EBGaramond-Regular.ttf')
+  const invalid: unknown[] = [
+    { weight: Number.NaN },
+    { weight: 0 },
+    { weight: -100 },
+    { weight: 1001 },
+    { weight: Number.POSITIVE_INFINITY },
+    { style: 'bold' },
+    { style: '' },
+    { style: 'oblique 91deg' },
+    { style: 'oblique 10' },
+    { style: 'oblique 5.deg' },
+    { style: 'italic italic' },
+    { weight: 400, style: 'Italics' },
+  ]
+  for (const [i, descriptors] of invalid.entries()) {
+    const name = `Descriptors Invalid ${i}`
+    t.is(GlobalFonts.register(garamond, name, descriptors as FontFaceDescriptors), null, JSON.stringify(descriptors))
+    t.false(GlobalFonts.has(name))
+  }
+  t.truthy(GlobalFonts.register(garamond, 'Descriptors Edges', { weight: 1000, style: 'oblique -90deg' }))
+  t.truthy(GlobalFonts.register(garamond, 'Descriptors Edges 1', { weight: 1, style: 'oblique .5deg' }))
 })
 
 function svgPixels(family: string, text: string) {
