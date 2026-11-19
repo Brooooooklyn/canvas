@@ -298,6 +298,10 @@ class SvgFontMgr final : public SkFontMgr {
     request.font_args.reset();
     request.weight = static_cast<float>(style.weight());
     request.allowed = {true, true};
+    // A register since the last lookup marks the caches dirty only: both
+    // branches read FontCollection's cache (findTypefaces), so they flush it
+    // first, as canvas text does.
+    c_collection_->flushCachesIfDirty();
     if (names_) {
       std::string matched;
       sk_sp<SkTypeface> face =
@@ -360,7 +364,6 @@ class SvgFontMgr final : public SkFontMgr {
     text_request.size_adjust_metric = -1;
     text_request.families = families.data();
     text_request.family_count = families.size();
-    c_collection_->flushCachesIfDirty();
     std::vector<bool> generic;
     request.families = AtRequestWeight(
         c_collection_,

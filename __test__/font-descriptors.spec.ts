@@ -1959,3 +1959,50 @@ svgPixelTest('SVG text draws the pixels canvas text draws (system)', (t) => {
     if (text !== 'ǅǄ') t.is(oracle[id], 0, `${id}: ${oracle[id]} px differ from canvas text`)
   }
 })
+
+// A child process per renderer: a document only SkSVG reads (Latin-1)
+// converted after a register replaced the face its family names draws the
+// instance canvas text draws, as a UTF-8 one does: the font caches are
+// flushed before the named family is looked up, warm or not.
+const RAW_SVG_FLUSH_PROBE = `
+  const { readFileSync } = require('fs')
+  const { convertSVGTextToPath, createCanvas, GlobalFonts, setTextRenderer } = require(process.env.PROBE_INDEX)
+  const { RENDERER, PROBE_FONTS } = process.env
+  setTextRenderer(RENDERER)
+  const font = (name) => readFileSync(PROBE_FONTS + '/' + name)
+  const svg = (encoding) =>
+    '<?xml version="1.0" encoding="' + encoding + '"?><svg xmlns="http://www.w3.org/2000/svg" width="300" height="60">' +
+    '<!-- caf\\xe9 --><text x="5" y="40" font-family="Raw Flush" font-size="30" font-weight="bold">HHmm</text></svg>'
+  const latin1 = Buffer.from(svg('ISO-8859-1'), 'latin1')
+  const utf8 = Buffer.from(svg('UTF-8'), 'utf8')
+  const paths = (doc) => JSON.stringify(convertSVGTextToPath(doc).toString().match(/ d="[^"]*"/g))
+  GlobalFonts.register(font('RMStatic-Regular.ttf'), 'Raw Flush')
+  const out = {}
+  const before = paths(latin1)
+  GlobalFonts.register(font('RobotoMono-VariableFont_wght.ttf'), 'Raw Flush')
+  const after = paths(latin1)
+  const prepared = paths(utf8)
+  const ctx = createCanvas(10, 10).getContext('2d')
+  ctx.font = 'bold 30px "Raw Flush"'
+  ctx.measureText('HHmm')
+  out.changed = after !== before
+  out.afterRegister = after === prepared
+  out.afterMeasure = paths(latin1) === prepared
+  console.log(JSON.stringify(out))`
+
+for (const renderer of ['portable', 'system'] as const) {
+  test(`SVG text: a document only SkSVG reads sees a face registered after a conversion (${renderer})`, (t) => {
+    const child = spawnSync(process.execPath, ['-e', RAW_SVG_FLUSH_PROBE], {
+      encoding: 'utf8',
+      timeout: 60_000,
+      env: {
+        ...process.env,
+        RENDERER: renderer,
+        PROBE_FONTS: join(__dirname, 'fonts'),
+        PROBE_INDEX: join(__dirname, '..', 'index.js'),
+      },
+    })
+    t.is(child.status, 0, child.stderr)
+    t.deepEqual(JSON.parse(child.stdout), { changed: true, afterRegister: true, afterMeasure: true })
+  })
+}
