@@ -5,7 +5,9 @@
 // one family up at a time), and its own variation coordinates. Chrome 159
 // draws every equivalence here alike (FontFace with the same descriptors).
 
-import { readFileSync } from 'node:fs'
+import { spawnSync } from 'node:child_process'
+import { copyFileSync, mkdtempSync, readFileSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
@@ -287,6 +289,34 @@ test('the font data is read after the descriptors convert', (t) => {
   t.false(GlobalFonts.has('Descriptors Shrunk'))
 })
 
+// The layout counters of skiac_debug_text_line (cumulative per collection).
+type LineCounters = { familyInstanceFaces: number; requestInstanceFaces: number; descriptorLookups: number }
+function lineCounters(font: string, text: string): LineCounters {
+  const ctx = createCanvas(10, 10).getContext('2d')
+  ctx.font = font
+  return JSON.parse((ctx as unknown as { __debugTextLine(text: string): string }).__debugTextLine(text))
+}
+
+// The instances one cold layout (a new text) of `font` looked up: at the
+// request's coordinates for the whole list (ResolveLineFaces) and a family
+// entry's own (FamilyFaces).
+function instanceDelta(font: string, text: string) {
+  const before = lineCounters('32px "Descriptors Lato"', `${text} (before)`)
+  const after = lineCounters(font, text)
+  return {
+    request: after.requestInstanceFaces - before.requestInstanceFaces,
+    family: after.familyInstanceFaces - before.familyInstanceFaces,
+  }
+}
+
+// The faces the list adds after its families: the standard font, when the
+// host has one (FontFallbackList::GetFontData's -webkit-standard).
+function standardFaces(t: import('ava').ExecutionContext, text: string) {
+  const standard = instanceDelta('32px "Descriptors Auto"', text).request - 1
+  t.true(standard === 0 || standard === 1, `standard faces ${standard}`)
+  return standard
+}
+
 test('a face with its own descriptors is the only face cloned at its coordinates', (t) => {
   // Six faces (one file padded apart), each declared with its own weight: a
   // cold layout looks up one instance per face, not every matched face at
@@ -297,16 +327,100 @@ test('a face with its own descriptors is the only face cloned at its coordinates
     t.truthy(GlobalFonts.register(data, name, { weight: 100 + 100 * i }))
     return `"${name}"`
   })
-  const ctx = createCanvas(10, 10).getContext('2d')
-  const instanceFaces = (font: string) => {
-    ctx.font = font
-    const debug = ctx as unknown as { __debugTextLine(text: string): string }
-    return JSON.parse(debug.__debugTextLine('Own instances')).familyInstanceFaces
-  }
   // The registrations dropped the caches: the layout of the list is cold.
-  const before = instanceFaces('32px "Descriptors Lato"')
-  t.is(instanceFaces(`32px ${names.join(', ')}`) - before, 6)
+  const delta = instanceDelta(`32px ${names.join(', ')}`, 'Own instances')
+  t.is(delta.family, 6)
+  // Each face is also cloned at the request's coordinates (C3: one too many).
+  t.is(delta.request, 6 + standardFaces(t, 'Own instances standard'))
 })
+
+test('the debug line reports its instance and descriptor lookups', (t) => {
+  const counters = lineCounters('32px "Descriptors 400"', 'Counters')
+  t.is(typeof counters.requestInstanceFaces, 'number')
+  t.is(typeof counters.descriptorLookups, 'number')
+  t.is(typeof counters.familyInstanceFaces, 'number')
+})
+
+test('request instances: one per matched face, also for faces with their own', (t) => {
+  // ResolveLineFaces clones every matched face at the request's coordinates;
+  // a face with descriptors gets its own instance on top (FamilyFaces).
+  const standard = standardFaces(t, 'Request standard')
+  t.deepEqual(instanceDelta('32px "Descriptors 400", "Descriptors Oswald"', 'Request 400 Oswald'), {
+    request: 2 + standard,
+    family: 1,
+  })
+  t.deepEqual(instanceDelta('32px "Descriptors Auto", "Descriptors Oswald"', 'Request Auto Oswald'), {
+    request: 2 + standard,
+    family: 0,
+  })
+})
+
+// A child process (its own counters): fonts with no descriptors, drawn
+// through every DeclaredDescriptors caller (font list, font-size-adjust,
+// SVG text), then one declared face.
+const NO_DESCRIPTORS_PROBE = `
+  const { readFileSync } = require('fs')
+  const { createCanvas, GlobalFonts, Image, setTextRenderer } = require(process.env.PROBE_INDEX)
+  const { RENDERER, PROBE_DIR, PROBE_FONTS } = process.env
+  setTextRenderer(RENDERER)
+  const font = (name) => readFileSync(PROBE_FONTS + '/' + name)
+  const out = { loaded: GlobalFonts.loadFontsFromDir(PROBE_DIR), keys: [] }
+  out.keys.push(GlobalFonts.register(font('RobotoMono-VariableFont_wght.ttf'), 'Guard Mono'))
+  out.keys.push(GlobalFonts.register(font('Oswald.ttf'), 'Guard Oswald', null))
+  out.keys.push(GlobalFonts.register(font('Lato-Regular.ttf')))
+  out.keys.push(GlobalFonts.registerFromPath(PROBE_FONTS + '/ScienceGothic-VariableFont.ttf', 'Guard Slant'))
+  const FONTS = [
+    '32px "Guard Mono"', 'bold 32px "Guard Mono", serif', 'italic 32px "Guard Slant"',
+    '300 32px "Guard Oswald", "Guard Mono"', '32px Lato', 'bold italic 32px Lato, "Source Serif Pro"',
+    '32px "Source Serif Pro"', '32px sans-serif', '32px monospace', '32px NoSuchFamily, "Guard Oswald"',
+  ]
+  const ctx = createCanvas(400, 60).getContext('2d')
+  const counters = (text) => JSON.parse(ctx.__debugTextLine(text))
+  for (let i = 0; i < 50; ++i) {
+    ctx.font = FONTS[i % FONTS.length]
+    ctx.fontSizeAdjust = i % 3 === 0 ? '0.5' : 'none'
+    ctx.fillText('Line ' + i + ' Hamburgefonts ΑΒΓ ǅǄ', 10, 40)
+  }
+  ctx.fontSizeAdjust = 'none'
+  for (const family of ['Guard Mono', 'Guard Slant', 'Lato', 'Source Serif Pro']) {
+    const img = new Image()
+    img.src = Buffer.from('<svg xmlns="http://www.w3.org/2000/svg" width="200" height="60"><text x="10" y="44" font-family="' + family + '" font-weight="bold" font-size="32">Ham</text></svg>')
+    ctx.drawImage(img, 0, 0)
+  }
+  out.none = counters('Line done')
+  out.keys.push(GlobalFonts.register(font('RobotoMono-VariableFont_wght.ttf'), 'Guard Declared', { weight: 400 }))
+  ctx.font = 'bold 32px "Guard Declared"'
+  out.declared = counters('Line declared')
+  console.log(JSON.stringify(out))`
+
+for (const renderer of ['portable', 'system'] as const) {
+  test(`no font with descriptors: no descriptor lookup (${renderer})`, (t) => {
+    const dir = mkdtempSync(join(tmpdir(), 'canvas-no-descriptors-'))
+    t.teardown(() => rmSync(dir, { recursive: true, force: true }))
+    copyFileSync(join(__dirname, 'fonts', 'SourceSerifPro-Regular.ttf'), join(dir, 'SourceSerifPro-Regular.ttf'))
+    const child = spawnSync(process.execPath, ['-e', NO_DESCRIPTORS_PROBE], {
+      encoding: 'utf8',
+      timeout: 60_000,
+      env: {
+        ...process.env,
+        RENDERER: renderer,
+        PROBE_DIR: dir,
+        PROBE_FONTS: join(__dirname, 'fonts'),
+        PROBE_INDEX: join(__dirname, '..', 'index.js'),
+      },
+    })
+    t.is(child.status, 0, child.stderr)
+    const out = JSON.parse(child.stdout)
+    t.is(out.loaded, 1)
+    t.true(
+      out.keys.every((key: unknown) => key !== null),
+      `keys ${out.keys}`,
+    )
+    t.is(out.none.descriptorLookups, 0)
+    // The counter counts: a declared face is looked up.
+    t.true(out.declared.descriptorLookups > 0)
+  })
+}
 
 test('descriptors stay with their name across a rebuild and go with a remove', (t) => {
   // RegisteredFontAssets counts the names with descriptors

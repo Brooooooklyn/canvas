@@ -1568,6 +1568,9 @@ LineFaces ResolveLineFaces(skiac_font_collection* c_collection,
   out.faces = coords.empty() ? out.base_faces
                              : font_collection->findTypefaces(
                                    out.families, out.font_style, out.font_args);
+  if (!coords.empty()) {
+    c_collection->request_instance_faces += out.faces.size();
+  }
   out.family_faces =
       FamilyFaces(c_collection, out.families, out.font_style, out.base_faces,
                   out.declared, out.faces, out.sizes, request);

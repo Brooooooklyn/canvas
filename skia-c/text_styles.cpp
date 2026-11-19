@@ -98,6 +98,7 @@ FaceDescriptors DeclaredDescriptors(skiac_font_collection* c_collection,
   if (!c_collection->assets->describes(folded)) {
     return std::nullopt;
   }
+  ++c_collection->descriptor_lookups;
   const uint32_t id = c_collection->assets->registrationOf(base->uniqueID());
   if (!id) {
     return std::nullopt;

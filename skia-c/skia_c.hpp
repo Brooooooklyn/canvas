@@ -1146,6 +1146,14 @@ struct skiac_font_collection {
   // (shaper.cpp FamilyFaces; each one a clone unless cached), for
   // skiac_debug_text_line's familyInstanceFaces.
   uint64_t family_instance_faces = 0;
+  // The faces ResolveLineFaces looked up at the request's coordinates for
+  // the whole family list (shaper.cpp; each one a clone unless cached), for
+  // skiac_debug_text_line's requestInstanceFaces.
+  uint64_t request_instance_faces = 0;
+  // The registrationOf walks DeclaredDescriptors made (text_styles.cpp), for
+  // skiac_debug_text_line's descriptorLookups: none while no font declares
+  // descriptors.
+  uint64_t descriptor_lookups = 0;
 #if defined(__APPLE__)
   // loadSystemFonts turned the installed fonts on (kept across renderer
   // switches); they are registered the first time a font is looked up or
