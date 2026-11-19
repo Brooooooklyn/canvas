@@ -293,10 +293,6 @@ struct RegisteredFont {
   // every rebuild, so a name never gets other bytes (a file read again)
   // or a face that a later switch makes.
   bool no_web_twin = false;
-  // A declaration twin's TwinSignature (empty for every other registration):
-  // its key is retired with it on remove and removeAll
-  // (retired_twins).
-  std::string twin_signature;
 
   // Whether name `i` is a FontFace name of a preloaded font: the alias
   // argument of a call and not the face's own family in any case.
@@ -507,23 +503,16 @@ class TypefaceFontProviderCustom : public TypefaceFontProvider {
       }
     }
 
-    // Find an available slot using linear probe
-    const std::string signature =
-        same.empty() ? std::string()
-                     : TwinSignature(content_hash, folded, descriptors);
-    uint32_t id = same.empty() ? content_hash : computePathHash(signature);
-    while (SlotTaken(id, signature)) {
-      id++;
-      if (id == 0) {
-        return 0;  // Overflow protection - treat as registration failure
-      }
+    // The content hash, else the next free key past it (linear probe); a
+    // twin's key is one never issued before (NextTwinKey).
+    const uint32_t id = same.empty() ? FreeKey(content_hash) : NextTwinKey();
+    if (id == 0) {
+      return 0;  // Overflow protection - treat as registration failure
     }
-    retired_twins.erase(id);
 
     RegisteredFont font_info;
     font_info.data = data;
     font_info.typeface = typeface;
-    font_info.twin_signature = signature;
     if (same.empty()) {
       // The own family first, then the alias (when not the same name).
       font_info.AddName(originalName, false, !alias_arg, ++registrations);
@@ -550,13 +539,10 @@ class TypefaceFontProviderCustom : public TypefaceFontProvider {
     if (!typeface) {
       return 0;
     }
-    uint32_t id = computePathHash("\x01installed:" +
-                                  std::to_string(typeface->uniqueID()));
-    while (SlotTaken(id, std::string())) {
-      id++;
-      if (id == 0) {
-        return 0;
-      }
+    const uint32_t id = FreeKey(computePathHash(
+        "\x01installed:" + std::to_string(typeface->uniqueID())));
+    if (id == 0) {
+      return 0;
     }
     SkString family;
     typeface->getFamilyName(&family);
@@ -781,7 +767,6 @@ class TypefaceFontProviderCustom : public TypefaceFontProvider {
       ++described_names[name];
     }
     font_info.no_web_twin = old.no_web_twin;
-    font_info.twin_signature = old.twin_signature;
     font_info.typeface = std::move(typeface);
     font_info.mode_typefaces[0] = mode_typefaces[0];
     font_info.mode_typefaces[1] = mode_typefaces[1];
@@ -861,12 +846,9 @@ class TypefaceFontProviderCustom : public TypefaceFontProvider {
     }
 
     // Find an available slot using linear probe
-    uint32_t id = content_hash;
-    while (SlotTaken(id, std::string())) {
-      id++;
-      if (id == 0) {
-        return 0;  // Overflow protection - treat as registration failure
-      }
+    const uint32_t id = FreeKey(content_hash);
+    if (id == 0) {
+      return 0;  // Overflow protection - treat as registration failure
     }
 
     // Get original family name
@@ -973,24 +955,17 @@ class TypefaceFontProviderCustom : public TypefaceFontProvider {
       }
     }
 
-    // Find an available slot using linear probe
-    const std::string signature =
-        same.empty() ? std::string()
-                     : TwinSignature(content_hash, folded, descriptors);
-    uint32_t id = same.empty() ? content_hash : computePathHash(signature);
-    while (SlotTaken(id, signature)) {
-      id++;
-      if (id == 0) {
-        return 0;  // Overflow protection - treat as registration failure
-      }
+    // The path hash, else the next free key past it (linear probe); a
+    // twin's key is one never issued before (NextTwinKey).
+    const uint32_t id = same.empty() ? FreeKey(content_hash) : NextTwinKey();
+    if (id == 0) {
+      return 0;  // Overflow protection - treat as registration failure
     }
-    retired_twins.erase(id);
 
     // Store path (not data) for rebuild
     RegisteredFont font_info;
     font_info.path = path;
     font_info.typeface = typeface;
-    font_info.twin_signature = signature;
     if (same.empty()) {
       // The own family first, then the alias (when not the same name).
       font_info.AddName(originalName, false, !alias_arg, ++registrations);
@@ -1022,9 +997,6 @@ class TypefaceFontProviderCustom : public TypefaceFontProvider {
     }
     for (const auto& [name, unused] : it->second.descriptors) {
       forgetDescribedName(name);
-    }
-    if (!it->second.twin_signature.empty()) {
-      retired_twins[typeface_id] = it->second.twin_signature;
     }
 
     // Get the content hash to update the secondary index
@@ -1059,21 +1031,15 @@ class TypefaceFontProviderCustom : public TypefaceFontProvider {
   // replays both in this order).
   uint64_t nextOrder() { return ++registrations; }
 
-  // A rebuild: the keys the removed twins of `old` had stay theirs.
-  void keepRetiredTwins(const TypefaceFontProviderCustom& old) {
-    retired_twins = old.retired_twins;
+  // A rebuild: the twin keys `old` issued stay issued (NextTwinKey).
+  void keepTwinKeys(const TypefaceFontProviderCustom& old) {
+    twin_keys_next = old.twin_keys_next;
   }
 
-  // Remove all typefaces from tracking; the twin keys are retired as
-  // removeTypeface retires them.
+  // Remove all typefaces from tracking; the twin keys issued stay issued.
   // Note: caller must also clear set_aliases in skiac_font_collection
   size_t removeAllTypefaces() {
     size_t count = registered_fonts.size();
-    for (const auto& [id, font] : registered_fonts) {
-      if (!font.twin_signature.empty()) {
-        retired_twins[id] = font.twin_signature;
-      }
-    }
     registered_fonts.clear();
     content_hash_index.clear();
     described_names.clear();
@@ -1140,36 +1106,35 @@ class TypefaceFontProviderCustom : public TypefaceFontProvider {
                            SkString(name.c_str()));
   }
 
-  // A declaration twin's declaration: the bytes' hash (`content_hash`), the
-  // folded name and the descriptors. Its FontKey probe starts at the hash of
-  // this, and a removed twin's key stays this declaration's
-  // (retired_twins), so a stale key never removes another FontFace, as
-  // FontFaceSet.delete, and the same declaration made again gets it back.
-  static std::string TwinSignature(uint32_t content_hash,
-                                   const std::string& folded,
-                                   const skiac_face_descriptors* descriptors) {
-    std::string seed =
-        "\x01twin:" + std::to_string(content_hash) + ":" + folded;
-    auto add = [&](const skiac_face_range& range) {
-      seed += ":" + std::to_string(range.min) + "," +
-              std::to_string(range.max) + (range.from_auto ? "a" : "");
-    };
-    if (descriptors) {
-      add(descriptors->weight);
-      add(descriptors->slope);
+  // A declaration twin's FontKey: the next key of a counter that is never
+  // decremented or reset (also not by removeAllTypefaces), past any live
+  // key, so no key is issued twice. A stale key never removes another
+  // FontFace, as FontFaceSet.delete: a removed twin's key is not issued
+  // again, also not to the same declaration made again. 0 when the keys run
+  // out.
+  uint32_t NextTwinKey() {
+    while (twin_keys_next != UINT32_MAX &&
+           registered_fonts.count(twin_keys_next)) {
+      ++twin_keys_next;
     }
-    return seed;
+    return twin_keys_next == UINT32_MAX ? 0 : twin_keys_next++;
   }
 
-  // Whether a registration declared as `signature` (a twin's TwinSignature,
-  // empty for any other) cannot take the key `id`: a live registration has
-  // it, or a removed twin with another declaration had it.
-  bool SlotTaken(uint32_t id, const std::string& signature) const {
-    if (registered_fonts.count(id)) {
-      return true;
+  // The first key from `id` on (linear probe) that no live registration has
+  // and that was never issued to a twin (NextTwinKey), so a stale twin key
+  // never goes to a registration either. 0 when none is left.
+  uint32_t FreeKey(uint32_t id) const {
+    while (true) {
+      if (id >= kTwinKeyBase && id < twin_keys_next) {
+        id = twin_keys_next;
+      }
+      if (!registered_fonts.count(id)) {
+        return id;
+      }
+      if (++id == 0) {
+        return 0;
+      }
     }
-    auto retired = retired_twins.find(id);
-    return retired != retired_twins.end() && retired->second != signature;
   }
 
   // Whether `map` holds `descriptors` for the folded name (null: none).
@@ -1209,10 +1174,10 @@ class TypefaceFontProviderCustom : public TypefaceFontProvider {
   // chain. Complexity is O(k) where k is the number of hash collisions
   // (typically 1-2).
   std::map<uint32_t, std::set<uint32_t>> content_hash_index;
-  // The key of each removed declaration twin -> its TwinSignature: only the
-  // same declaration takes the key again (SlotTaken). One entry per distinct
-  // removed declaration, kept across rebuilds and removeAll.
-  std::map<uint32_t, std::string> retired_twins;
+  // The twin keys issued so far are [kTwinKeyBase, twin_keys_next)
+  // (NextTwinKey), kept across rebuilds and removeAll.
+  static constexpr uint32_t kTwinKeyBase = 0x80000000u;
+  uint32_t twin_keys_next = kTwinKeyBase;
 };
 
 struct skiac_svg_surface {
@@ -1675,7 +1640,7 @@ struct skiac_font_collection {
     // Create new provider
     auto new_assets = sk_make_sp<TypefaceFontProviderCustom>(font_mgr);
     new_assets->setSplitFamilies(this);
-    new_assets->keepRetiredTwins(*assets);
+    new_assets->keepTwinKeys(*assets);
 
     // Re-register all remaining fonts, preserving original IDs, under each
     // name in the order the names were registered (IDs are hashes, and a

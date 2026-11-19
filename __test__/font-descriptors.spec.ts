@@ -1251,17 +1251,59 @@ test('a removed twin key does not name the next twin of the same bytes', (t) => 
   }
 })
 
-// A twin's FontKey probe starts at a 32-bit hash of its declaration
-// (skia_c.hpp TwinSignature), so two declarations can start at one key. The
-// key of a removed twin then still does not go to the other one: only the
-// same declaration gets it back.
+// Two paths whose 32-bit hashes (computePathHash, FNV-1a) are equal: the
+// key of a removed twin of one does not go to a twin of the other, so a
+// stale key removes nothing.
+test('a removed twin key does not go to a twin of another path that hashes alike', (t) => {
+  const dir = mkdtempSync(join(tmpdir(), 'canvas-path-hash-twin-'))
+  t.teardown(() => rmSync(dir, { recursive: true, force: true }))
+  const fnv = (text: string) => {
+    let hash = 2166136261
+    for (const byte of Buffer.from(text, 'utf8')) hash = Math.imul(hash ^ byte, 16777619) >>> 0
+    return hash || 1
+  }
+  const seen = new Map<number, string>()
+  let pair: [string, string] | undefined
+  for (let i = 0; !pair; ++i) {
+    const path = join(dir, `f${i.toString(36)}.ttf`)
+    const other = seen.get(fnv(path))
+    if (other) pair = [other, path]
+    seen.set(fnv(path), path)
+  }
+  const [pathA, pathB] = pair
+  copyFileSync(join(__dirname, 'fonts', 'Lato-Regular.ttf'), pathA)
+  copyFileSync(join(__dirname, 'fonts', 'Oswald.ttf'), pathB)
+  const name = 'Path Hash Twin'
+  const styles = () => GlobalFonts.families.find((f) => f.family === name)?.styles.length ?? 0
+  const firstA = GlobalFonts.registerFromPath(pathA, name)
+  const twinA = GlobalFonts.registerFromPath(pathA, name, { weight: 700 })
+  t.truthy(firstA)
+  t.truthy(twinA)
+  t.true(GlobalFonts.remove(twinA!))
+  const firstB = GlobalFonts.registerFromPath(pathB, name)
+  const twinB = GlobalFonts.registerFromPath(pathB, name, { weight: 700 })
+  t.truthy(firstB)
+  t.truthy(twinB)
+  t.not(twinB!.typefaceId, twinA!.typefaceId)
+  t.is(styles(), 3)
+  t.false(GlobalFonts.remove(twinA!))
+  t.is(styles(), 3)
+  t.is(GlobalFonts.removeBatch([firstA!, firstB!, twinB!]), 3)
+  t.false(GlobalFonts.has(name))
+})
+
+// Two declarations whose 32-bit hashes are equal (a twin key seeded from a
+// hash of its declaration would start at one key): a removed twin's key is
+// never issued again (skia_c.hpp NextTwinKey), to the other one or to the
+// same declaration made again, so a stale key removes nothing.
 test('a removed twin key does not go to a twin whose declaration hashes alike', (t) => {
   const dir = mkdtempSync(join(tmpdir(), 'canvas-twin-collision-'))
   t.teardown(() => rmSync(dir, { recursive: true, force: true }))
   const path = join(dir, 'TwinCollision.ttf')
   copyFileSync(join(__dirname, 'fonts', 'RobotoMono-VariableFont_wght.ttf'), path)
   const data = Buffer.concat([robotoMono, Buffer.alloc(480)])
-  // computePathHash (FNV-1a) of TwinSignature.
+  // computePathHash (FNV-1a) of the bytes' hash, the folded name and the
+  // descriptors.
   const fnv = (text: string) => {
     let hash = 2166136261
     for (const byte of Buffer.from(text, 'latin1')) hash = Math.imul(hash ^ byte, 16777619) >>> 0
@@ -1279,10 +1321,6 @@ test('a removed twin key does not go to a twin whose declaration hashes alike', 
     const first = declareAs()
     t.truthy(first, name)
     const contentHash = first!.typefaceId
-    // The hash is the one the twin keys start at.
-    const probe = declareAs({ weight: 300, style: 'oblique 10deg' })
-    t.is(probe?.typefaceId, seed(contentHash, name, 300, 10), name)
-    t.true(GlobalFonts.remove(probe!), name)
     const seen = new Map<number, [number, number]>()
     let pair: [[number, number], [number, number]] | undefined
     for (let weight = 1; weight <= 1000 && !pair; ++weight) {
@@ -1309,16 +1347,22 @@ test('a removed twin key does not go to a twin whose declaration hashes alike', 
     t.false(GlobalFonts.remove(keyA!), name)
     t.is(GlobalFonts.removeBatch([keyA!]), 0, name)
     t.is(styles(name), 2, name)
-    // The same declaration again names the same face: its old key.
-    t.is(declareAs(declarationA)?.typefaceId, keyA!.typefaceId, name)
-    t.is(GlobalFonts.removeBatch([first!, keyA!, keyB!]), 3, name)
+    // The same declaration again is a new FontFace: a new key.
+    const againA = declareAs(declarationA)
+    t.truthy(againA, name)
+    t.not(againA!.typefaceId, keyA!.typefaceId, name)
+    t.not(againA!.typefaceId, keyB!.typefaceId, name)
+    t.false(GlobalFonts.remove(keyA!), name)
+    t.is(styles(name), 3, name)
+    t.is(GlobalFonts.removeBatch([first!, againA!, keyB!]), 3, name)
     t.false(GlobalFonts.has(name), name)
   }
 })
 
 // A child process (removeAll drops every font): the twin keys removeAll
-// removed are retired as a remove retires them, so a declaration that
-// hashes alike gets another key and the old one removes nothing.
+// removed are never issued again, as the key of a removed twin, so a
+// declaration that hashes alike, or the same one made again, gets another
+// key and the old one removes nothing.
 const REMOVE_ALL_TWIN_PROBE = `
   const { readFileSync } = require('fs')
   const { GlobalFonts } = require(process.env.PROBE_INDEX)
@@ -1341,9 +1385,6 @@ const REMOVE_ALL_TWIN_PROBE = `
   const out = {}
   const first = declareAs()
   const contentHash = first.typefaceId
-  const probe = declareAs({ weight: 300, style: 'oblique 10deg' })
-  out.seed = probe.typefaceId === seed(contentHash, 300, 10)
-  GlobalFonts.remove(probe)
   const seen = new Map()
   let pair
   for (let weight = 1; weight <= 1000 && !pair; ++weight) {
@@ -1368,8 +1409,11 @@ const REMOVE_ALL_TWIN_PROBE = `
   out.removed = GlobalFonts.remove(keyA)
   out.removedBatch = GlobalFonts.removeBatch([keyA])
   out.styles.push(styles())
-  // The same declaration again names the same face: its old key.
-  out.sameAgain = declareAs(declarationA).typefaceId === keyA.typefaceId
+  // The same declaration again is a new FontFace: a new key.
+  const againA = declareAs(declarationA)
+  out.newAgain = againA.typefaceId !== keyA.typefaceId && againA.typefaceId !== keyB.typefaceId
+  out.removedAgain = GlobalFonts.remove(keyA)
+  out.styles.push(styles())
   console.log(JSON.stringify(out))`
 
 for (const mode of ['buffer', 'path'] as const) {
@@ -1391,13 +1435,13 @@ for (const mode of ['buffer', 'path'] as const) {
     })
     t.is(child.status, 0, child.stderr)
     t.deepEqual(JSON.parse(child.stdout), {
-      seed: true,
       firstAgain: true,
       keysDiffer: true,
-      styles: [2, 2],
+      styles: [2, 2, 3],
       removed: false,
       removedBatch: 0,
-      sameAgain: true,
+      newAgain: true,
+      removedAgain: false,
     })
   })
 }
