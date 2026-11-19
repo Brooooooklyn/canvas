@@ -91,9 +91,15 @@ bool SetsOpszDefault(const skiac_text_request& request) {
 #endif
 }
 
-// `family` case-folded, without ResolveFontFamilies' tags: "\x01s\x01" k
-// "\x01" before a tagged name, "\x01" kind "\x01" before a family.
+// `family` case-folded, without ResolveFontFamilies' tags: "\x01q\x01"
+// quarters "\x01" (AtRequestWeight) and "\x01s\x01" k "\x01" before a
+// tagged name, "\x01" kind "\x01" before a family.
 std::string FoldedUntaggedFamily(std::string_view family) {
+  if (family.substr(0, 3) == "\x01q\x01") {
+    const size_t end = family.find('\x01', 3);
+    family = end == std::string_view::npos ? std::string_view()
+                                           : family.substr(end + 1);
+  }
   if (family.substr(0, 3) == "\x01s\x01") {
     const size_t end = family.find('\x01', 3);
     family = end == std::string_view::npos ? std::string_view()
@@ -549,8 +555,10 @@ UsedSizes ComputeUsedSizes(skiac_font_collection* c_collection,
   // named installed family (FontCache::GetFontData) and the system fallback
   // take the primary's size.
   std::vector<bool> generic;
-  const std::vector<SkString> families =
-      ResolveFontFamilies(c_collection, request, &generic, locale);
+  const std::vector<SkString> families = AtRequestWeight(
+      c_collection,
+      ResolveFontFamilies(c_collection, request, &generic, locale),
+      request.weight);
   const SkFontStyle style(static_cast<int>(roundf(request.weight)),
                           request.stretch,
                           static_cast<SkFontStyle::Slant>(request.style));
@@ -564,9 +572,11 @@ UsedSizes ComputeUsedSizes(skiac_font_collection* c_collection,
   bool differs = false;
   for (size_t i = 0; i < families.size(); ++i) {
     // An older face of a web family's style ("\x01s\x01"; font_families.cpp
-    // SegmentStyleSet) that this style has none of is no family, as the
-    // font list's findTypefaces skips it; alone it would give the default.
-    if (families[i].startsWith("\x01s\x01") &&
+    // SegmentStyleSet; or at a quarter weight, "\x01q\x01") that this style
+    // has none of is no family, as the font list's findTypefaces skips it;
+    // alone it would give the default.
+    if ((families[i].startsWith("\x01s\x01") ||
+         families[i].startsWith("\x01q\x01")) &&
         !c_collection->assets->matchFamilyStyle(families[i].c_str(), style)) {
       continue;
     }

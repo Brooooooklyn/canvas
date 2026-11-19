@@ -341,6 +341,12 @@ class SvgFontMgr final : public SkFontMgr {
                                           ? families_[font.families]
                                           : kNoFamilies;
     request.weight = font.weight;
+    // Canvas text's SkFontStyle (ResolveLineFaces): the computed weight,
+    // not the 100s SkSVG takes (LayoutSVGInlineText::
+    // ComputeNewScaledFontForStyle keeps the style's FontDescription). The
+    // `names_` path has only SkSVG's weight.
+    request.style = SkFontStyle(static_cast<int>(roundf(font.weight)),
+                                style.width(), style.slant());
     request.allowed = font.allowed;
     std::vector<skiac_text_family> families;
     families.reserve(list.size());
@@ -356,13 +362,15 @@ class SvgFontMgr final : public SkFontMgr {
     text_request.family_count = families.size();
     c_collection_->flushCachesIfDirty();
     std::vector<bool> generic;
-    request.families =
-        ResolveFontFamilies(c_collection_, text_request, &generic);
-    request.faces =
-        c_collection_->collection->findTypefaces(request.families, style);
+    request.families = AtRequestWeight(
+        c_collection_,
+        ResolveFontFamilies(c_collection_, text_request, &generic),
+        font.weight);
+    request.faces = c_collection_->collection->findTypefaces(request.families,
+                                                             request.style);
     request.declared =
-        FamilyDescriptors(c_collection_, request.families, generic, style,
-                          request.faces, &request.family_of);
+        FamilyDescriptors(c_collection_, request.families, generic,
+                          request.style, request.faces, &request.family_of);
     return request.faces.empty() ? nullptr : request.faces.front();
   }
 

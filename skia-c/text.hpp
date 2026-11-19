@@ -29,6 +29,16 @@ std::vector<SkString> ResolveFontFamilies(
     std::vector<bool>* generic = nullptr,
     const LocaleFamilies* locale = nullptr);
 
+// `families` (ResolveFontFamilies) for a request of `weight`: a family whose
+// faces are matched by their descriptors (FontFaceStyleSet) gets the weight
+// as a FontSelectionValue (quarter steps, FontSelectionAlgorithm::
+// WeightDistance), under the tag "\x01q\x01" quarters "\x01", since
+// SkFontStyle and FontCollection's cache key hold an integer weight. The
+// same list for a whole weight or when no font has descriptors.
+std::vector<SkString> AtRequestWeight(skiac_font_collection* c_collection,
+                                      std::vector<SkString> families,
+                                      float weight);
+
 // FontCache::GetLastResortFallbackFont's family for `request`: on macOS with
 // the system renderer Times (else Lucida Grande); empty when none resolves
 // (font_families.cpp).

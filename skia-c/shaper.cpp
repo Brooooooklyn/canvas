@@ -1589,7 +1589,8 @@ LineFaces ResolveLineFaces(skiac_font_collection* c_collection,
                   static_cast<SkFontStyle::Slant>(request.style));
   const TextCaches::Families& resolved =
       CachedFontFamilies(c_collection, request, resolution.locale());
-  out.families = resolved.names;
+  // FontSelectionRequest's weight in quarter steps, which font_style rounds.
+  out.families = AtRequestWeight(c_collection, resolved.names, request.weight);
   const std::vector<bool> generic = resolved.generic;
   out.base_faces = font_collection->findTypefaces(out.families, out.font_style);
   std::optional<std::vector<std::optional<size_t>>> family_of;

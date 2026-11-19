@@ -1178,6 +1178,78 @@ test('measureText follows the face the descriptors choose', (t) => {
   t.is(width('bold 32px "Cap Width"'), width('32px "Descriptors Lato"'))
 })
 
+// The request weight is a FontSelectionValue (quarter steps, truncated), not
+// an integer: FontSelectionAlgorithm::WeightDistance. Chrome 159, FontFace
+// R{400} + B{400.5}: 400.4 and 400.25 draw B, 400.2 R; R{599.6} + B{600}:
+// 599.7 R, 599.9 B.
+test('a fractional request weight matches in quarter steps', (t) => {
+  declare(t, rmRegular, 'Cap Fraction', { weight: 400 })
+  declare(t, rmBold, 'Cap Fraction', { weight: '400.5' })
+  declare(t, rmRegular, 'Cap Fraction 600', { weight: '599.6' })
+  declare(t, rmBold, 'Cap Fraction 600', { weight: 600 })
+  const rows: [string, string, boolean][] = [
+    ['400.4', 'Cap Fraction', true],
+    ['400.25', 'Cap Fraction', true],
+    ['400.2', 'Cap Fraction', false],
+    ['400', 'Cap Fraction', false],
+    ['599.7', 'Cap Fraction 600', false],
+    ['599.9', 'Cap Fraction 600', true],
+  ]
+  for (const [weight, family, bold] of rows) {
+    const ref = bold ? 'Cap Ref Bold' : 'Cap Ref Regular'
+    t.deepEqual(draw(`${weight} 32px "${family}"`).pixels, draw(`${weight} 32px "${ref}"`).pixels, `${weight} ${family}`)
+  }
+  // An older face of the segment the quarter weight matches.
+  declare(t, rmRegular, 'Cap Fraction Older', { weight: 400 })
+  declare(t, rmBold, 'Cap Fraction Older', { weight: '400.5' })
+  declare(t, font('Lato-Regular.ttf'), 'Cap Fraction Older', { weight: '400.5' })
+  t.deepEqual(draw('400.4 32px "Cap Fraction Older"', GREEK).pixels, draw('400.4 32px "Cap Ref Bold"', GREEK).pixels)
+  t.deepEqual(draw('400.4 32px "Cap Fraction Older"').pixels, draw('400.4 32px "Descriptors Lato"').pixels)
+  // font-size-adjust sizes the face the quarter weight matches.
+  declare(t, rmRegular, 'Cap Fraction Lato', { weight: 400 })
+  declare(t, font('Lato-Regular.ttf'), 'Cap Fraction Lato', { weight: '400.5' })
+  const adjusted = (family: string) => {
+    const ctx = createCanvas(420, 60).getContext('2d')
+    ctx.font = `400.4 32px ${family}, "Descriptors Oswald"`
+    ctx.fontSizeAdjust = '0.5'
+    ctx.fillText(`Ham${DIGRAPHS}`, 10, 42)
+    return Buffer.from(ctx.getImageData(0, 0, 420, 60).data)
+  }
+  t.deepEqual(adjusted('"Cap Fraction Lato"'), adjusted('"Descriptors Lato"'))
+})
+
+function svgWeightPixels(family: string, weight: string) {
+  const img = new Image()
+  img.src = Buffer.from(
+    `<svg xmlns="http://www.w3.org/2000/svg" width="200" height="60"><text x="10" y="44" font-family="${family}" font-weight="${weight}" font-size="32">Ham</text></svg>`,
+  )
+  const ctx = createCanvas(200, 60).getContext('2d')
+  ctx.drawImage(img, 0, 0)
+  return Buffer.from(ctx.getImageData(0, 0, 60, 60).data)
+}
+
+// SVG text's Font is canvas text's (LayoutSVGInlineText::
+// ComputeNewScaledFontForStyle): the computed weight, not SkSVG's 100s.
+// Chrome 159, SVG @font-face R{400} + B{420}: 420 and 449 draw B.
+test('SVG text: a declared family matches the computed font-weight', (t) => {
+  declare(t, rmRegular, 'Cap SVG Weight', { weight: 400 })
+  declare(t, rmBold, 'Cap SVG Weight', { weight: 420 })
+  for (const weight of ['420', '449']) {
+    const bold = svgWeightPixels("'Cap Ref Bold'", weight)
+    t.notDeepEqual(bold, svgWeightPixels("'Cap Ref Regular'", weight), weight)
+    t.deepEqual(svgWeightPixels("'Cap SVG Weight'", weight), bold, weight)
+  }
+  // Quarter steps, as canvas text.
+  declare(t, rmRegular, 'Cap Fraction SVG', { weight: 400 })
+  declare(t, rmBold, 'Cap Fraction SVG', { weight: '400.5' })
+  for (const [weight, ref] of [
+    ['400.4', 'Cap Ref Bold'],
+    ['400.2', 'Cap Ref Regular'],
+  ]) {
+    t.deepEqual(svgWeightPixels("'Cap Fraction SVG'", weight), svgWeightPixels(`'${ref}'`, weight), weight)
+  }
+})
+
 // A child process (no other face of RMStatic listed): the own family a call
 // with another alias lists the face under is no FontFace of a declared
 // family either (FontFaceCache::SegmentedFacesByFamily::AddFontFace keys a
