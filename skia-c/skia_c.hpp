@@ -391,7 +391,8 @@ class TypefaceFontProviderCustom : public TypefaceFontProvider {
     font_face_cores.clear();
   }
   // The FontFaceCore a tagged web family's set was made of, for its
-  // siblings ("\x01s\x01" k), kept as long as the sets.
+  // siblings ("\x01s\x01" k) and quarter-weight sets ("\x01q\x01"), kept
+  // as long as the sets.
   std::shared_ptr<const FontFaceCore> fontFaceCore(
       const std::string& tagged) const {
     auto it = font_face_cores.find(tagged);

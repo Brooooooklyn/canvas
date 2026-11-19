@@ -1295,7 +1295,8 @@ class SegmentStyleSet : public SkFontStyleSet {
 // (MakeFontFaceCore), the faces of each capabilities (a
 // CSSSegmentedFontFace each, in the order of their newest face) and the
 // capabilities they span. Built once per family until the caches are
-// flushed, and shared by its sibling sets (fontFaceCore).
+// flushed, and shared by its sibling and quarter-weight sets
+// (fontFaceCore).
 struct FontFaceCore {
   SkString family;
   std::vector<sk_sp<SkTypeface>> faces;
@@ -1949,11 +1950,19 @@ sk_sp<SkFontStyleSet> MakeSplitFamilyAt(
   // (FontFace::GetFontSelectionCapabilities: one segment, newest first); a
   // name with none keeps its files' styles.
   if (tagged[1] != 'i') {
+    // The family's set and its quarter-weight sets ("\x01q\x01") share one
+    // FontFaceCore, as Blink's FontFaceCache keeps one CapabilitiesSet per
+    // family whatever the request.
+    const std::string key(tagged);
+    if (std::shared_ptr<const FontFaceCore> core =
+            c_collection->assets->fontFaceCore(key)) {
+      return sk_make_sp<FontFaceStyleSet>(std::move(core), 0, weight);
+    }
     std::vector<sk_sp<SkTypeface>> faces = FontFaces(resolver, name, tagged[1]);
     std::shared_ptr<const FontFaceCore> core =
         faces.empty() ? nullptr
                       : MakeFontFaceCore(c_collection, name, std::move(faces));
-    c_collection->assets->setFontFaceCore(std::string(tagged), core);
+    c_collection->assets->setFontFaceCore(key, core);
     if (core) {
       return sk_make_sp<FontFaceStyleSet>(std::move(core), 0, weight);
     }

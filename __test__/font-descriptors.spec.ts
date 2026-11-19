@@ -632,6 +632,63 @@ test('the faces of an auto family are gathered once per flush, not once per sibl
   t.deepEqual(JSON.parse(child.stdout), [1, 0, 1])
 })
 
+// A child process (its own counters): a declared family's sets for quarter
+// request weights ("\x01q\x01", AtRequestWeight) share its FontFaces, as
+// Blink's FontFaceCache keeps one CSSSegmentedFontFace per capabilities
+// whatever the request.
+const QUARTER_WEIGHT_CORES_PROBE = `
+  const { readFileSync } = require('fs')
+  const { createCanvas, GlobalFonts } = require(process.env.PROBE_INDEX)
+  const { PROBE_FONTS } = process.env
+  const regular = readFileSync(PROBE_FONTS + '/RMStatic-Regular.ttf')
+  const bold = readFileSync(PROBE_FONTS + '/RMStatic-Bold.ttf')
+  const own = (data, i) => Buffer.concat([data, Buffer.from('\\0\\0\\0\\0' + String(i).padStart(8, '0'))])
+  for (let i = 0; i < 4; ++i) {
+    GlobalFonts.register(own(regular, i), 'Guard Quarter', { weight: 400 })
+    GlobalFonts.register(own(bold, i), 'Guard Quarter', { weight: 700 })
+  }
+  GlobalFonts.register(regular, 'Guard Quarter Regular')
+  GlobalFonts.register(bold, 'Guard Quarter Bold', { weight: 700 })
+  const ctx = createCanvas(400, 60).getContext('2d')
+  const cores = (font, text) => { ctx.font = font; return JSON.parse(ctx.__debugTextLine(text)).fontFaceCores }
+  const pixels = (font) => {
+    const c = createCanvas(300, 60).getContext('2d')
+    c.font = font
+    c.fillText('Hamburg', 10, 42)
+    return Buffer.from(c.getImageData(0, 0, 300, 60).data).toString('base64')
+  }
+  const out = { cores: [], faces: {} }
+  let last = cores('32px serif', 'Flushed')
+  for (const weight of ['', '400.25 ', '400.5 ', '650.75 ', '400.5 ']) {
+    const now = cores(weight + '32px "Guard Quarter"', 'Weight ' + weight)
+    out.cores.push(now - last)
+    last = now
+  }
+  for (const weight of ['400.5', '650.75']) {
+    const drawn = pixels(weight + ' 32px "Guard Quarter"')
+    out.faces[weight] = drawn === pixels(weight + ' 32px "Guard Quarter Regular"') ? 'regular'
+      : drawn === pixels(weight + ' 32px "Guard Quarter Bold"') ? 'bold' : 'other'
+  }
+  console.log(JSON.stringify(out))`
+
+test('the sets of quarter request weights share the family FontFaces', (t) => {
+  const child = spawnSync(process.execPath, ['-e', QUARTER_WEIGHT_CORES_PROBE], {
+    encoding: 'utf8',
+    timeout: 60_000,
+    env: {
+      ...process.env,
+      PROBE_FONTS: join(__dirname, 'fonts'),
+      PROBE_INDEX: join(__dirname, '..', 'index.js'),
+    },
+  })
+  t.is(child.status, 0, child.stderr)
+  // Cold line: one; each quarter weight: none.
+  t.deepEqual(JSON.parse(child.stdout), {
+    cores: [1, 0, 0, 0, 0],
+    faces: { '400.5': 'regular', '650.75': 'bold' },
+  })
+})
+
 test('descriptors stay with their name across a rebuild and go with a remove', (t) => {
   // RegisteredFontAssets counts the names with descriptors
   // (DeclaredDescriptors' check): a rebuild carries them, a remove drops them.
