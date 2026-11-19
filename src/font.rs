@@ -192,6 +192,22 @@ pub(crate) fn font_selection_value(v: f64) -> f32 {
   (raw.trunc() / FONT_SELECTION_STEP) as f32
 }
 
+/// The lengths a FontFace descriptor resolves against
+/// (FontFace::EnsureLengthResolver): the initial style's media values, a
+/// 16px font without font data (MediaValues em, ex, ch), no viewport.
+fn font_face_lengths() -> Lengths {
+  let initial = FontRelativeUnits::fallback(ROOT_FONT_SIZE);
+  Lengths {
+    em: ROOT_FONT_SIZE,
+    ..FontParseContext {
+      parent: initial,
+      root: initial,
+      system: false,
+    }
+    .lengths()
+  }
+}
+
 /// The slope of a `@font-face` style descriptor
 /// (FontFace::GetFontSelectionCapabilities): `normal` 0, else ConsumeFontStyle
 /// (italic and oblique 14, `oblique <angle>` that angle). None when it is
@@ -206,7 +222,7 @@ pub(crate) fn parse_font_face_style(input: &str) -> Option<f32> {
   });
   let slope = match normal {
     Ok(()) => 0.0,
-    Err(()) => consume_font_style(p, &Lengths::default())?.0,
+    Err(()) => consume_font_style(p, &font_face_lengths())?.0,
   };
   p.is_exhausted().then_some(slope)
 }

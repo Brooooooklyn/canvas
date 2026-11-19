@@ -200,6 +200,9 @@ test('style takes any CSS angle, math functions and comments', (t) => {
     ['oblique 1rad', 'Slant Italic'],
     ['oblique 2rad', 'Slant Italic'],
     ['oblique calc(100deg)', 'Slant Italic'],
+    // Font-relative units resolve against the initial 16px font.
+    ['oblique calc(1em / 1px * 1deg)', 'Slant Italic'],
+    ['oblique calc(80deg * 1px / 1em)', 'Slant Oblique 5'],
     ['italic /**/', 'Slant Italic'],
   ]
   for (const [i, [style, same]] of styles.entries()) {
