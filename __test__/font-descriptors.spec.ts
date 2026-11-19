@@ -1116,6 +1116,71 @@ test('a removed twin key does not name the next twin of the same bytes', (t) => 
   }
 })
 
+// A twin's FontKey probe starts at a 32-bit hash of its declaration
+// (skia_c.hpp TwinSignature), so two declarations can start at one key. The
+// key of a removed twin then still does not go to the other one: only the
+// same declaration gets it back.
+test('a removed twin key does not go to a twin whose declaration hashes alike', (t) => {
+  const dir = mkdtempSync(join(tmpdir(), 'canvas-twin-collision-'))
+  t.teardown(() => rmSync(dir, { recursive: true, force: true }))
+  const path = join(dir, 'TwinCollision.ttf')
+  copyFileSync(join(__dirname, 'fonts', 'RobotoMono-VariableFont_wght.ttf'), path)
+  const data = Buffer.concat([robotoMono, Buffer.alloc(480)])
+  // computePathHash (FNV-1a) of TwinSignature.
+  const fnv = (text: string) => {
+    let hash = 2166136261
+    for (const byte of Buffer.from(text, 'latin1')) hash = Math.imul(hash ^ byte, 16777619) >>> 0
+    return hash || 1
+  }
+  const range = (min: number, max: number, auto = false) => `:${min.toFixed(6)},${max.toFixed(6)}${auto ? 'a' : ''}`
+  const seed = (contentHash: number, name: string, weight: number, angle: number) =>
+    fnv(`\x01twin:${contentHash}:${name.toLowerCase()}${range(weight, weight)}${range(angle, angle)}`)
+  const styles = (name: string) => GlobalFonts.families.find((f) => f.family === name)?.styles.length ?? 0
+  const cases: [string, (descriptors?: FontFaceDescriptors) => ReturnType<typeof GlobalFonts.register>][] = [
+    ['Twin Collision', (descriptors) => GlobalFonts.register(data, 'Twin Collision', descriptors)],
+    ['Path Twin Collision', (descriptors) => GlobalFonts.registerFromPath(path, 'Path Twin Collision', descriptors)],
+  ]
+  for (const [name, declareAs] of cases) {
+    const first = declareAs()
+    t.truthy(first, name)
+    const contentHash = first!.typefaceId
+    // The hash is the one the twin keys start at.
+    const probe = declareAs({ weight: 300, style: 'oblique 10deg' })
+    t.is(probe?.typefaceId, seed(contentHash, name, 300, 10), name)
+    t.true(GlobalFonts.remove(probe!), name)
+    const seen = new Map<number, [number, number]>()
+    let pair: [[number, number], [number, number]] | undefined
+    for (let weight = 1; weight <= 1000 && !pair; ++weight) {
+      for (let quarter = -360; quarter <= 360; ++quarter) {
+        const key = seed(contentHash, name, weight, quarter / 4)
+        const other = seen.get(key)
+        if (other) {
+          pair = [other, [weight, quarter / 4]]
+          break
+        }
+        seen.set(key, [weight, quarter / 4])
+      }
+    }
+    t.truthy(pair, name)
+    const [[weightA, angleA], [weightB, angleB]] = pair!
+    const declarationA = { weight: weightA, style: `oblique ${angleA}deg` }
+    const keyA = declareAs(declarationA)
+    t.truthy(keyA, name)
+    t.true(GlobalFonts.remove(keyA!), name)
+    const keyB = declareAs({ weight: weightB, style: `oblique ${angleB}deg` })
+    t.truthy(keyB, name)
+    t.not(keyB!.typefaceId, keyA!.typefaceId, name)
+    t.is(styles(name), 2, name)
+    t.false(GlobalFonts.remove(keyA!), name)
+    t.is(GlobalFonts.removeBatch([keyA!]), 0, name)
+    t.is(styles(name), 2, name)
+    // The same declaration again names the same face: its old key.
+    t.is(declareAs(declarationA)?.typefaceId, keyA!.typefaceId, name)
+    t.is(GlobalFonts.removeBatch([first!, keyA!, keyB!]), 3, name)
+    t.false(GlobalFonts.has(name), name)
+  }
+})
+
 // A child process: a file loadFontsFromDir loaded is an installed font and
 // takes no descriptors, so registerFromPath of it with descriptors makes a
 // twin (one more face of its family); without them it is the installed
