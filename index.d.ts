@@ -1166,12 +1166,17 @@ interface IGlobalFonts {
    * registers nothing; a `descriptors` that is not an object, or a Symbol
    * value, throws a TypeError). `descriptors`: the font's descriptors under
    * this name; a text font list uses them where this name matches the font.
-   * Without them (or with every one `auto`), `auto`: the font's own weight
-   * and style ranges.
+   * Without them (or with every one `auto`), `auto`: the face is picked as
+   * `normal` (weight 400, upright), and the font's own weight and style axis
+   * ranges are kept for variations (no clamping).
    * Faces of one family are chosen by their descriptors, as with
    * `@font-face`. Without descriptors every face is `auto` and the newest
    * face wins; give `{ weight, style }` for each file of a family, or use
    * `loadFontsFromDir` (installed fonts match by the file's own style).
+   * A font registered under a generic keyword (`serif`, `sans-serif`, ...)
+   * is used for that keyword written unquoted the way installed fonts are:
+   * matched by the file's own style, descriptors ignored. Only the quoted
+   * name (`"serif"`) follows the descriptor and newest-face rule.
    */
   register(font: Buffer, nameAlias?: string, descriptors?: FontFaceDescriptors): FontKey | null
   /**
@@ -1179,7 +1184,7 @@ interface IGlobalFonts {
    * `register`'s; a file `loadFontsFromDir` loaded is an installed font and
    * takes none, so a call with them registers the file again. Faces of one
    * family are chosen as for `register`: without descriptors the newest
-   * face wins.
+   * face wins (an unquoted generic keyword name is the exception).
    */
   registerFromPath(path: string, nameAlias?: string, descriptors?: FontFaceDescriptors): FontKey | null
   has(name: string): boolean

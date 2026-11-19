@@ -146,11 +146,13 @@ ctx.font = '20px MyLato'
 ctx.lang = 'en'
 ```
 
-A name registered over an installed family (for example `Helvetica`) works like a CSS `@font-face` in Chrome: only font lists that name it use it, for every style (bold and italic are made from the faces you registered when you registered no bold or italic face). The generic families, such as `sans-serif`, keep the installed family. To change a generic family, register the font under the keyword itself:
+A name registered over an installed family (for example `Helvetica`) works like a CSS `@font-face` in Chrome: only font lists that name it use it, for every style (the faces are chosen as described below; bold or italic is made from the chosen face when that file is not bold or italic). The generic families, such as `sans-serif`, keep the installed family. To change a generic family, register the font under the keyword itself:
 
 ```js
 GlobalFonts.registerFromPath('./fonts/Lato-Regular.ttf', 'sans-serif')
 ```
+
+The unquoted keyword (`sans-serif`) then uses that font the way it uses installed fonts: each face is matched by the file's own style, and descriptors are ignored. Only the quoted name (`"sans-serif"`) follows the descriptor and newest-face rule below.
 
 Faces of one family are chosen by their descriptors, as with `@font-face`. Without descriptors every face is `auto` and the newest face wins; give `{ weight, style }` for each file of a family, or use `loadFontsFromDir` (installed fonts match by the file's own style):
 
