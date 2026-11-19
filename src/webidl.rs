@@ -168,7 +168,7 @@ pub(crate) fn to_js_string(env: sys::napi_env, value: sys::napi_value) -> Result
 }
 
 /// Dictionary member `key`; None when it is undefined. Runs getters.
-fn member(
+pub(crate) fn member(
   env: sys::napi_env,
   dictionary: sys::napi_value,
   key: &str,

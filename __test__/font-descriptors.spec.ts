@@ -144,7 +144,16 @@ test('invalid descriptors register nothing and give null', (t) => {
     { weight: 0 },
     { weight: -100 },
     { weight: 1001 },
+    // ConsumeFontWeight checks the double, before any float rounding.
+    { weight: 1000.00001 },
+    { weight: 0.9999999999 },
     { weight: Number.POSITIVE_INFINITY },
+    // Every member is a DOMString: these are no font-weight or font-style.
+    { weight: null },
+    { weight: true },
+    { style: null },
+    { style: 14 },
+    { style: ['italic', 'normal'] },
     { style: 'bold' },
     { style: '' },
     { style: 'oblique 91deg' },
@@ -152,6 +161,8 @@ test('invalid descriptors register nothing and give null', (t) => {
     { style: 'oblique 5.deg' },
     { style: 'italic italic' },
     { weight: 400, style: 'Italics' },
+    // Not parsed yet (Chrome takes a string weight).
+    { weight: '700' },
   ]
   for (const [i, descriptors] of invalid.entries()) {
     const name = `Descriptors Invalid ${i}`
@@ -160,6 +171,12 @@ test('invalid descriptors register nothing and give null', (t) => {
   }
   t.truthy(GlobalFonts.register(garamond, 'Descriptors Edges', { weight: 1000, style: 'oblique -90deg' }))
   t.truthy(GlobalFonts.register(garamond, 'Descriptors Edges 1', { weight: 1, style: 'oblique .5deg' }))
+  // FontSelectionValue(float): 1000, in range.
+  t.truthy(GlobalFonts.register(garamond, 'Descriptors Edges 2', { weight: 999.9999999 }))
+  // A style is ToString'd: ['italic'] is 'italic'.
+  t.truthy(
+    GlobalFonts.register(garamond, 'Descriptors Edges 3', { style: ['italic'] } as unknown as FontFaceDescriptors),
+  )
 })
 
 test('declared values are kept in quarter steps', (t) => {
@@ -199,6 +216,34 @@ test('descriptors that are not an object throw a TypeError and register nothing'
     t.throws(() => GlobalFonts.register(garamond, name, descriptors as unknown as FontFaceDescriptors), {
       instanceOf: TypeError,
       message: "The provided value is not of type 'FontFaceDescriptors'.",
+    })
+    t.false(GlobalFonts.has(name))
+  }
+})
+
+test('members convert as DOMStrings, style then weight; a Symbol throws a TypeError', (t) => {
+  const garamond = font('EBGaramond-Regular.ttf')
+  const read: string[] = []
+  const descriptors = {
+    get weight() {
+      read.push('weight')
+      return 400
+    },
+    get style() {
+      read.push('style')
+      return { toString: () => (read.push('toString'), 'italic') }
+    },
+  }
+  t.truthy(GlobalFonts.register(garamond, 'Descriptors Getters', descriptors as unknown as FontFaceDescriptors))
+  t.deepEqual(read, ['style', 'toString', 'weight'])
+  for (const [key, i] of [
+    ['style', 0],
+    ['weight', 1],
+  ] as const) {
+    const name = `Descriptors Symbol ${i}`
+    t.throws(() => GlobalFonts.register(garamond, name, { [key]: Symbol('x') } as unknown as FontFaceDescriptors), {
+      instanceOf: TypeError,
+      message: `Failed to read the '${key}' property from 'FontFaceDescriptors': Cannot convert a Symbol value to a string`,
     })
     t.false(GlobalFonts.has(name))
   }

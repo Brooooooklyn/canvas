@@ -178,13 +178,14 @@ fn set_system_font_renderer(enabled: bool) -> napi::Result<()> {
 /// them (an invalid one makes the face's status "error", never used): a
 /// weight in [1, 1000], a style `normal`, `italic` or `oblique [<angle>]`
 /// (font::parse_font_face_style). A missing field is the FontFace default,
-/// 400 or normal. GetFontSelectionCapabilities checks the float, then keeps
-/// FontSelectionValues (quarter steps).
+/// 400 or normal. ConsumeFontWeight checks the double; then
+/// GetFontSelectionCapabilities keeps FontSelectionValue(float) (quarter
+/// steps).
 fn face_descriptors(
   weight: Option<f64>,
   style: Option<&str>,
 ) -> Option<crate::sk::ffi::skiac_face_descriptors> {
-  let weight = weight.unwrap_or(400.0) as f32;
+  let weight = weight.unwrap_or(400.0);
   if !(1.0..=1000.0).contains(&weight) {
     return None;
   }
@@ -193,9 +194,47 @@ fn face_descriptors(
     None => 0.0,
   };
   Some(crate::sk::ffi::skiac_face_descriptors {
-    weight: crate::font::font_selection_value(weight.into()),
+    weight: crate::font::font_selection_value((weight as f32).into()),
     slope,
   })
+}
+
+/// FontFaceDescriptors (font_face_descriptors.idl): `descriptors` must be an
+/// object, else a TypeError, as the FontFace constructor throws. Its members
+/// are DOMStrings, converted in IDL order (style, then weight); a conversion
+/// may throw (a Symbol). Ok(None) when one is invalid: a weight that is not
+/// a number (a string such as '700' is not parsed) or face_descriptors.
+fn read_face_descriptors(
+  env: napi::sys::napi_env,
+  value: napi::sys::napi_value,
+) -> napi::Result<Option<crate::sk::ffi::skiac_face_descriptors>> {
+  use napi::bindgen_prelude::FromNapiValue;
+  if !matches!(
+    webidl::type_of(env, value)?,
+    ValueType::Object | ValueType::Function
+  ) {
+    return Err(webidl::type_error(
+      env,
+      "The provided value is not of type 'FontFaceDescriptors'.",
+    ));
+  }
+  let prefix =
+    |key: &str| format!("Failed to read the '{key}' property from 'FontFaceDescriptors': ");
+  let style = match webidl::member(env, value, "style")? {
+    Some(style) => Some(webidl::to_dom_string(env, style, &prefix("style"))?),
+    None => None,
+  };
+  let weight = match webidl::member(env, value, "weight")? {
+    Some(weight) if webidl::type_of(env, weight)? == ValueType::Number => {
+      Some(unsafe { f64::from_napi_value(env, weight)? })
+    }
+    Some(weight) => {
+      webidl::to_dom_string(env, weight, &prefix("weight"))?;
+      return Ok(None);
+    }
+    None => None,
+  };
+  Ok(face_descriptors(weight, style.as_deref()))
 }
 
 #[napi(js_name = "GlobalFonts")]
@@ -207,16 +246,9 @@ pub mod global_fonts {
   use super::FONT_DIR;
   use super::{FontKey, get_font, into_napi_error};
 
-  #[napi(object)]
-  pub struct FontFaceDescriptors {
-    pub weight: Option<f64>,
-    pub style: Option<String>,
-  }
-
-  /// `descriptors`: the face's @font-face descriptors (super::face_descriptors);
-  /// an invalid one registers nothing and gives null. Without them, `auto`.
-  /// A value that is not an object is a TypeError, as the FontFace
-  /// constructor throws for its FontFaceDescriptors dictionary.
+  /// `descriptors`: the face's @font-face descriptors
+  /// (super::read_face_descriptors); an invalid one registers nothing and
+  /// gives null. Without them, `auto`.
   #[napi]
   pub fn register(
     env: &Env,
@@ -226,23 +258,10 @@ pub mod global_fonts {
   ) -> Result<Option<FontKey>> {
     let maybe_name_alias = name_alias.filter(|s| !s.is_empty());
     let descriptors = match descriptors {
-      Some(d) => {
-        let (env, value) = (env.raw(), d.raw());
-        if !matches!(
-          super::webidl::type_of(env, value)?,
-          ValueType::Object | ValueType::Function
-        ) {
-          return Err(super::webidl::type_error(
-            env,
-            "The provided value is not of type 'FontFaceDescriptors'.",
-          ));
-        }
-        let d = unsafe { FontFaceDescriptors::from_napi_value(env, value)? };
-        match super::face_descriptors(d.weight, d.style.as_deref()) {
-          Some(descriptors) => Some(descriptors),
-          None => return Ok(None),
-        }
-      }
+      Some(d) => match super::read_face_descriptors(env.raw(), d.raw())? {
+        Some(descriptors) => Some(descriptors),
+        None => return Ok(None),
+      },
       None => None,
     };
     let font = get_font().map_err(into_napi_error)?;
