@@ -499,8 +499,9 @@ test('a face with its own descriptors is the only face cloned at its coordinates
   // The registrations dropped the caches: the layout of the list is cold.
   const delta = instanceDelta(`32px ${names.join(', ')}`, 'Own instances')
   t.is(delta.family, 6)
-  // Each face is also cloned at the request's coordinates (C3: one too many).
-  t.is(delta.request, 6 + standardFaces(t, 'Own instances standard'))
+  // None is also cloned at the request's coordinates; only the standard
+  // font (no descriptors) is.
+  t.is(delta.request, standardFaces(t, 'Own instances standard'))
 })
 
 test('the debug line reports its instance and descriptor lookups', (t) => {
@@ -510,14 +511,15 @@ test('the debug line reports its instance and descriptor lookups', (t) => {
   t.is(typeof counters.familyInstanceFaces, 'number')
 })
 
-test('request instances: one per matched face, also for faces with their own', (t) => {
-  // ResolveLineFaces clones every matched face at the request's coordinates;
-  // a face with descriptors gets its own instance on top (FamilyFaces).
+test('request instances: one per matched face without its own', (t) => {
+  // A face with descriptors gets only its own instance (FamilyFaces); the
+  // others take the request's coordinates, one lookup each.
   const standard = standardFaces(t, 'Request standard')
   t.deepEqual(instanceDelta('32px "Descriptors 400", "Descriptors Oswald"', 'Request 400 Oswald'), {
-    request: 2 + standard,
+    request: 1 + standard,
     family: 1,
   })
+  // No face has its own: one lookup of the whole list, as before.
   t.deepEqual(instanceDelta('32px "Descriptors Auto", "Descriptors Oswald"', 'Request Auto Oswald'), {
     request: 2 + standard,
     family: 0,

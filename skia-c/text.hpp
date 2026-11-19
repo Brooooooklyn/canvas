@@ -180,14 +180,16 @@ bool DescribesName(skiac_font_collection* c_collection,
 // For each of `base_faces` (findTypefaces of `families` at `style`), the
 // descriptors of the family that matched it, as Blink's CSSFontSelector
 // takes the FontFace of one family at a time; none for a generic family
-// (`generic`, ResolveFontFamilies). Empty when no font has descriptors
+// (`generic`, ResolveFontFamilies). Empty when no font has descriptors;
+// `family_of`, when given, gets the FaceFamilies it looked up, if any
 // (text_styles.cpp).
 std::vector<FaceDescriptors> FamilyDescriptors(
     skiac_font_collection* c_collection,
     const std::vector<SkString>& families,
     const std::vector<bool>& generic,
     const SkFontStyle& style,
-    const std::vector<sk_sp<SkTypeface>>& base_faces);
+    const std::vector<sk_sp<SkTypeface>>& base_faces,
+    std::optional<std::vector<std::optional<size_t>>>* family_of = nullptr);
 
 // For each of `base_faces` (findTypefaces of `families` at `style`), the
 // index in `families` of the family that matched it (findTypefaces of that
@@ -198,6 +200,16 @@ std::vector<std::optional<size_t>> FaceFamilies(
     const std::vector<SkString>& families,
     const SkFontStyle& style,
     const std::vector<sk_sp<SkTypeface>>& base_faces);
+
+// `base`, the face `family` matches at `style` (FaceFamilies), at `args`:
+// the clone from findTypefaces of the family alone, or `base` when the
+// clone fails, as FontCustomPlatformData::GetFontPlatformData keeps
+// base_typeface_ (text_styles.cpp).
+sk_sp<SkTypeface> FaceInstance(skiac_font_collection* c_collection,
+                               const SkString& family,
+                               const SkFontStyle& style,
+                               const sk_sp<SkTypeface>& base,
+                               const std::optional<FontArguments>& args);
 
 // The variation coordinates for `request` when `faces` (the request's
 // families' faces before font arguments) vary or the request has its own

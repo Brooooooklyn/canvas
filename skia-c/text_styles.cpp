@@ -177,7 +177,8 @@ std::vector<FaceDescriptors> FamilyDescriptors(
     const std::vector<SkString>& families,
     const std::vector<bool>& generic,
     const SkFontStyle& style,
-    const std::vector<sk_sp<SkTypeface>>& base_faces) {
+    const std::vector<sk_sp<SkTypeface>>& base_faces,
+    std::optional<std::vector<std::optional<size_t>>>* family_of_out) {
   std::vector<FaceDescriptors> out;
   // No named family has descriptors: no lookup at all.
   const auto& assets = c_collection->assets;
@@ -199,7 +200,7 @@ std::vector<FaceDescriptors> FamilyDescriptors(
     return out;
   }
   out.resize(base_faces.size());
-  const std::vector<std::optional<size_t>> family_of =
+  std::vector<std::optional<size_t>> family_of =
       FaceFamilies(c_collection, families, style, base_faces);
   for (size_t k = 0; k < base_faces.size(); ++k) {
     const std::optional<size_t> i = family_of[k];
@@ -207,6 +208,9 @@ std::vector<FaceDescriptors> FamilyDescriptors(
       out[k] = DeclaredDescriptors(c_collection, base_faces[k].get(),
                                    {families[*i].c_str(), families[*i].size()});
     }
+  }
+  if (family_of_out) {
+    *family_of_out = std::move(family_of);
   }
   return out;
 }
@@ -218,16 +222,15 @@ std::vector<std::optional<size_t>> FaceFamilies(
     const std::vector<sk_sp<SkTypeface>>& base_faces) {
   std::vector<std::optional<size_t>> out(base_faces.size());
   // findTypefaces keeps the faces of the families that match, in order: the
-  // family of face k is the next one whose own match it is.
+  // family of face k is the next one whose own match it is. The family is
+  // looked up twice in one list: two faces when it matches, one (the
+  // collection's default face) when it does not.
   size_t k = 0;
   for (size_t i = 0; i < families.size() && k < base_faces.size(); ++i) {
-    if (families[i].startsWith("\x01s\x01") &&
-        !c_collection->assets->matchFamilyStyle(families[i].c_str(), style)) {
-      continue;
-    }
     const std::vector<sk_sp<SkTypeface>> found =
-        c_collection->collection->findTypefaces({families[i]}, style);
-    if (found.empty() || !found.front() || !base_faces[k] ||
+        c_collection->collection->findTypefaces({families[i], families[i]},
+                                                style);
+    if (found.size() != 2 || !found.front() || !base_faces[k] ||
         found.front()->uniqueID() != base_faces[k]->uniqueID()) {
       continue;
     }
@@ -235,6 +238,18 @@ std::vector<std::optional<size_t>> FaceFamilies(
     ++k;
   }
   return out;
+}
+
+sk_sp<SkTypeface> FaceInstance(skiac_font_collection* c_collection,
+                               const SkString& family,
+                               const SkFontStyle& style,
+                               const sk_sp<SkTypeface>& base,
+                               const std::optional<FontArguments>& args) {
+  // Two faces: the family matched and the clone worked (both the cached
+  // clone); else findTypefaces gave the collection's default face.
+  const std::vector<sk_sp<SkTypeface>> found =
+      c_collection->collection->findTypefaces({family, family}, style, args);
+  return found.size() == 2 && found.front() ? found.front() : base;
 }
 
 std::vector<SkFontArguments::VariationPosition::Coordinate> FontVariations(
