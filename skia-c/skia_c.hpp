@@ -1053,6 +1053,10 @@ struct skiac_font_collection {
     // loadFontsFromDir loaded: RegisteredFont::web_typeface), so a rebuild
     // gives the alias the twin made again.
     bool web_face = false;
+    // FoldFamilyName of `family` and `alias`, for the descriptor lookups
+    // through the alias (text_styles.cpp DescriptorsUnder).
+    std::string folded_family;
+    std::string folded_alias;
   };
   std::vector<SetAlias> set_aliases;
 
@@ -1094,7 +1098,8 @@ struct skiac_font_collection {
       }
     }
     set_aliases.push_back({family, alias, assets->nextOrder(), installed, true,
-                           face_id, font_key, web_face});
+                           face_id, font_key, web_face, FoldFamilyName(family),
+                           FoldFamilyName(alias)});
     return true;
   }
   // Set when the dynamic provider gains a face or an alias. FontCollection

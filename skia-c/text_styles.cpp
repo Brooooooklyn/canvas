@@ -96,6 +96,75 @@ std::string FoldedUntaggedFamily(std::string_view family) {
   return FoldFamilyName(family);
 }
 
+// Whether `folded` is one of `seen`.
+bool Seen(const std::vector<const std::string*>& seen,
+          const std::string& folded) {
+  return std::any_of(seen.begin(), seen.end(),
+                     [&](const std::string* name) { return *name == folded; });
+}
+
+// The descriptors the face `id` has under the case-folded `folded`: those
+// its registration declares for the name, else, when the name is a setAlias
+// alias of that face, those of the name the alias names (a chain too),
+// newest call first. The alias is the target name drawn (a FontFace of the
+// same face and descriptors), so it follows a target declared again.
+// `seen`: the names looked up already, so a loop of aliases ends.
+FaceDescriptors DescriptorsUnder(skiac_font_collection* c_collection,
+                                 SkTypefaceID id,
+                                 const std::string& folded,
+                                 std::vector<const std::string*>& seen) {
+  const auto& assets = c_collection->assets;
+  if (assets->describes(folded)) {
+    ++c_collection->descriptor_lookups;
+    if (const uint32_t key = assets->registrationOf(id)) {
+      const auto& descriptors =
+          assets->getRegisteredFonts().at(key).descriptors;
+      if (const auto found = descriptors.find(folded);
+          found != descriptors.end()) {
+        return found->second;
+      }
+    }
+  }
+  const auto& aliases = c_collection->set_aliases;
+  for (auto it = aliases.rbegin(); it != aliases.rend(); ++it) {
+    if (!it->active || it->face_id != id || it->folded_alias != folded ||
+        it->folded_family == folded || Seen(seen, it->folded_family)) {
+      continue;
+    }
+    if (!Seen(seen, folded)) {
+      seen.push_back(&folded);
+    }
+    if (FaceDescriptors found =
+            DescriptorsUnder(c_collection, id, it->folded_family, seen)) {
+      return found;
+    }
+  }
+  return std::nullopt;
+}
+
+// Whether a face may have descriptors under the case-folded `folded`
+// (DescriptorsUnder), so a list of names without any looks nothing up.
+bool DescribesName(skiac_font_collection* c_collection,
+                   const std::string& folded,
+                   std::vector<const std::string*>& seen) {
+  if (c_collection->assets->describes(folded)) {
+    return true;
+  }
+  for (const auto& entry : c_collection->set_aliases) {
+    if (!entry.active || entry.folded_alias != folded ||
+        entry.folded_family == folded || Seen(seen, entry.folded_family)) {
+      continue;
+    }
+    if (!Seen(seen, folded)) {
+      seen.push_back(&folded);
+    }
+    if (DescribesName(c_collection, entry.folded_family, seen)) {
+      return true;
+    }
+  }
+  return false;
+}
+
 }  // namespace
 
 FaceDescriptors DeclaredDescriptors(skiac_font_collection* c_collection,
@@ -104,22 +173,9 @@ FaceDescriptors DeclaredDescriptors(skiac_font_collection* c_collection,
   if (!base || !c_collection->assets->describesAny()) {
     return std::nullopt;
   }
-  const std::string folded = FoldedUntaggedFamily(family);
-  if (!c_collection->assets->describes(folded)) {
-    return std::nullopt;
-  }
-  ++c_collection->descriptor_lookups;
-  const uint32_t id = c_collection->assets->registrationOf(base->uniqueID());
-  if (!id) {
-    return std::nullopt;
-  }
-  const auto& descriptors =
-      c_collection->assets->getRegisteredFonts().at(id).descriptors;
-  const auto found = descriptors.find(folded);
-  if (found == descriptors.end()) {
-    return std::nullopt;
-  }
-  return found->second;
+  std::vector<const std::string*> seen;
+  return DescriptorsUnder(c_collection, base->uniqueID(),
+                          FoldedUntaggedFamily(family), seen);
 }
 
 std::vector<FaceDescriptors> FamilyDescriptors(
@@ -133,9 +189,14 @@ std::vector<FaceDescriptors> FamilyDescriptors(
   const auto& assets = c_collection->assets;
   bool described = false;
   for (size_t i = 0; assets->describesAny() && i < families.size(); ++i) {
-    if ((i >= generic.size() || !generic[i]) &&
-        assets->describes(
-            FoldedUntaggedFamily({families[i].c_str(), families[i].size()}))) {
+    if (i < generic.size() && generic[i]) {
+      continue;
+    }
+    std::vector<const std::string*> seen;
+    if (DescribesName(
+            c_collection,
+            FoldedUntaggedFamily({families[i].c_str(), families[i].size()}),
+            seen)) {
       described = true;
       break;
     }

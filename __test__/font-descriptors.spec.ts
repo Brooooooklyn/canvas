@@ -13,7 +13,7 @@ import { fileURLToPath } from 'node:url'
 
 import test from 'ava'
 
-import { createCanvas, type FontFaceDescriptors, GlobalFonts, Image } from '../index'
+import { convertSVGTextToPath, createCanvas, type FontFaceDescriptors, GlobalFonts, Image } from '../index'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const font = (name: string) => readFileSync(join(__dirname, 'fonts', name))
@@ -624,4 +624,71 @@ test('SVG text: a face has the same descriptors with and without a fallback run'
   t.deepEqual(svgPixels(family, `Ham${DIGRAPHS}`), alone)
   // Declared 400: bold is emboldened, unlike `auto`.
   t.notDeepEqual(alone, svgPixels("'Descriptors Auto', 'Descriptors Oswald'", 'Ham'))
+})
+
+// setAlias lists the face of its target under the alias: the face has the
+// target's descriptors there, looked up through the alias at draw time, so
+// along a chain and after the target is declared again.
+test('setAlias of a declared name takes its descriptors', (t) => {
+  const declared = draw('bold 32px "Descriptors 400"').pixels
+  t.notDeepEqual(declared, draw('bold 32px "Descriptors Auto"').pixels)
+  t.true(GlobalFonts.setAlias('Descriptors 400', 'Alias 400'))
+  t.deepEqual(draw('bold 32px "Alias 400"').pixels, declared)
+  t.deepEqual(draw('bold 32px "alias 400"').pixels, declared)
+  // After an auto face: the alias face draws the Greek with its descriptors.
+  t.deepEqual(
+    draw('bold 32px "Descriptors Lato", "Alias 400"', GREEK).pixels,
+    draw('bold 32px "Descriptors 400"', GREEK).pixels,
+  )
+  t.true(GlobalFonts.setAlias('Descriptors Italic', 'Alias Italic'))
+  t.deepEqual(draw('italic 32px "Alias Italic"').pixels, draw('32px "Descriptors Auto"').pixels)
+})
+
+test('setAlias of an alias takes the descriptors at the end of the chain', (t) => {
+  const declared = draw('bold 32px "Descriptors 400"').pixels
+  t.true(GlobalFonts.setAlias('Descriptors 400', 'Alias Chain 1'))
+  t.true(GlobalFonts.setAlias('Alias Chain 1', 'Alias Chain 2'))
+  t.deepEqual(draw('bold 32px "Alias Chain 2"').pixels, declared)
+  // A loop back to a name in the chain changes nothing.
+  t.true(GlobalFonts.setAlias('Alias Chain 2', 'Alias Chain 1'))
+  t.deepEqual(draw('bold 32px "Alias Chain 1"').pixels, declared)
+  t.deepEqual(draw('bold 32px "Alias Chain 2"').pixels, declared)
+  // A loop of aliases of an auto name ends: auto.
+  t.true(GlobalFonts.setAlias('Descriptors Auto', 'Alias Loop 1'))
+  t.true(GlobalFonts.setAlias('Alias Loop 1', 'Alias Loop 2'))
+  t.true(GlobalFonts.setAlias('Alias Loop 2', 'Alias Loop 1'))
+  t.deepEqual(draw('bold 32px "Alias Loop 1", "Alias Loop 2"').pixels, draw('bold 32px "Descriptors Auto"').pixels)
+  // A rebuild (an unrelated remove) makes the faces and aliases again.
+  const key = GlobalFonts.register(Buffer.concat([robotoMono, Buffer.alloc(96)]), 'Alias Chain Removed')
+  t.truthy(key)
+  t.true(GlobalFonts.remove(key!))
+  t.deepEqual(draw('bold 32px "Alias Chain 2"').pixels, declared)
+})
+
+test('an alias follows its target declared again', (t) => {
+  // Own bytes: no other name shares the registration.
+  const data = Buffer.concat([robotoMono, Buffer.alloc(64)])
+  t.truthy(GlobalFonts.register(data, 'Redeclare', { weight: 400 }))
+  t.true(GlobalFonts.setAlias('Redeclare', 'Redeclare Alias'))
+  t.deepEqual(draw('bold 32px "Redeclare Alias"').pixels, draw('bold 32px "Descriptors 400"').pixels)
+  t.truthy(GlobalFonts.register(data, 'Redeclare', { weight: 700 }))
+  t.deepEqual(draw('bold 32px "Redeclare Alias"').pixels, draw('32px "Descriptors 700"').pixels)
+})
+
+test('SVG text: an alias takes its target descriptors', (t) => {
+  t.true(GlobalFonts.setAlias('Descriptors 400', 'Alias SVG 400'))
+  const declared = svgPixels("'Descriptors 400'", 'Ham')
+  t.notDeepEqual(declared, svgPixels("'Descriptors Auto'", 'Ham'))
+  t.deepEqual(svgPixels("'Alias SVG 400'", 'Ham'), declared)
+  // convertSVGTextToPath: the attribute names one family (MatchNamedFamily).
+  const paths = (family: string) =>
+    convertSVGTextToPath(
+      `<svg xmlns="http://www.w3.org/2000/svg" width="200" height="60"><text x="10" y="44" font-family="${family}" font-weight="bold" font-size="32">Ham</text></svg>`,
+    )
+      .toString()
+      .match(/ d="[^"]*"/g)
+  const declaredPaths = paths('Descriptors 400')
+  t.truthy(declaredPaths)
+  t.notDeepEqual(declaredPaths, paths('Descriptors Auto'))
+  t.deepEqual(paths('Alias SVG 400'), declaredPaths)
 })

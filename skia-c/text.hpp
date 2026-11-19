@@ -153,7 +153,8 @@ size_t NextWordEndIndex(const char16_t* text,
 using FaceDescriptors = std::optional<skiac_face_descriptors>;
 
 // The descriptors `base` (a face before font arguments) was registered with
-// under `family`, a family name or ResolveFontFamilies' spelling of one
+// under `family`, a family name or ResolveFontFamilies' spelling of one, or,
+// for a setAlias alias of the face, under the name the alias names
 // (text_styles.cpp).
 FaceDescriptors DeclaredDescriptors(skiac_font_collection* c_collection,
                                     SkTypeface* base,
