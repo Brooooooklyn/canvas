@@ -1245,6 +1245,76 @@ for (const renderer of ['portable', 'system'] as const) {
   })
 }
 
+// A child process per renderer: registerFromPath of a path registered
+// before is a FontFace added again, so its face becomes the newest of its
+// segment under the family of the face the registration keeps, whether or
+// not the file was replaced on disk since (Regular and Bold, both
+// "RMStatic" {400}: Regular draws after the call again).
+const RELIST_PATH_PROBE = `
+  const { copyFileSync, renameSync } = require('fs')
+  const { createCanvas, GlobalFonts, setTextRenderer } = require(process.env.PROBE_INDEX)
+  const { RENDERER, PROBE_FONTS, PROBE_DIR } = process.env
+  setTextRenderer(RENDERER)
+  const ctx = createCanvas(400, 60).getContext('2d')
+  // Ink: the two faces have the same advances.
+  const ink = (font) => {
+    ctx.clearRect(0, 0, 400, 60)
+    ctx.font = font
+    ctx.fillText('Hamburg', 5, 45)
+    const { data } = ctx.getImageData(0, 0, 400, 60)
+    let sum = 0
+    for (let i = 3; i < data.length; i += 4) sum += data[i]
+    return sum
+  }
+  GlobalFonts.registerFromPath(PROBE_FONTS + '/RMStatic-Regular.ttf', 'Relist Ref Regular')
+  GlobalFonts.registerFromPath(PROBE_FONTS + '/RMStatic-Bold.ttf', 'Relist Ref Bold')
+  const refs = { Regular: ink('40px "Relist Ref Regular"'), Bold: ink('40px "Relist Ref Bold"') }
+  const face = () => {
+    const value = ink('40px "RMStatic"')
+    return Object.keys(refs).find((k) => refs[k] === value) || String(value)
+  }
+  const out = {}
+  for (const replace of [false, true]) {
+    const regular = PROBE_DIR + '/Regular-' + replace + '.ttf'
+    const bold = PROBE_DIR + '/Bold-' + replace + '.ttf'
+    copyFileSync(PROBE_FONTS + '/RMStatic-Regular.ttf', regular)
+    copyFileSync(PROBE_FONTS + '/RMStatic-Bold.ttf', bold)
+    const keys = [regular, bold].map((path) => GlobalFonts.registerFromPath(path, undefined, { weight: '400' }))
+    const result = { before: face() }
+    if (replace) {
+      copyFileSync(PROBE_FONTS + '/Oswald.ttf', regular + '.new')
+      renameSync(regular + '.new', regular)
+    }
+    result.sameKey = GlobalFonts.registerFromPath(regular, undefined, { weight: '400' }).typefaceId === keys[0].typefaceId
+    result.after = face()
+    out[replace ? 'replaced' : 'unchanged'] = result
+    GlobalFonts.removeBatch(keys)
+  }
+  console.log(JSON.stringify(out))`
+
+for (const renderer of ['portable', 'system'] as const) {
+  test(`registerFromPath of a replaced file again makes its kept face the newest (${renderer})`, (t) => {
+    const dir = mkdtempSync(join(tmpdir(), 'canvas-relist-path-'))
+    t.teardown(() => rmSync(dir, { recursive: true, force: true }))
+    const child = spawnSync(process.execPath, ['-e', RELIST_PATH_PROBE], {
+      encoding: 'utf8',
+      timeout: 60_000,
+      env: {
+        ...process.env,
+        RENDERER: renderer,
+        PROBE_DIR: dir,
+        PROBE_FONTS: join(__dirname, 'fonts'),
+        PROBE_INDEX: join(__dirname, '..', 'index.js'),
+      },
+    })
+    t.is(child.status, 0, child.stderr)
+    t.deepEqual(JSON.parse(child.stdout), {
+      unchanged: { before: 'Bold', sameKey: true, after: 'Regular' },
+      replaced: { before: 'Bold', sameKey: true, after: 'Regular' },
+    })
+  })
+}
+
 // A FontFace is an object: FontFaceSet.delete of a face deleted before
 // returns false and never deletes another face. The key of a removed
 // declaration twin does not name a twin declared after it.
