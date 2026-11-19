@@ -1178,6 +1178,58 @@ test('measureText follows the face the descriptors choose', (t) => {
   t.is(width('bold 32px "Cap Width"'), width('32px "Descriptors Lato"'))
 })
 
+// A child process (no other face of RMStatic listed): the own family a call
+// with another alias lists the face under is no FontFace of a declared
+// family either (FontFaceCache::SegmentedFacesByFamily::AddFontFace keys a
+// face by its FontFace's family): Chrome 159, FontFace('Brand', Regular) +
+// FontFace('RMStatic', Bold, {weight: '700'}): "40px RMStatic" is Bold.
+const IMPLICIT_LISTING_PROBE = `
+  const { readFileSync } = require('fs')
+  const { createCanvas, GlobalFonts, setTextRenderer } = require(process.env.PROBE_INDEX)
+  const { RENDERER, PROBE_FONTS } = process.env
+  setTextRenderer(RENDERER)
+  const font = (name) => readFileSync(PROBE_FONTS + '/' + name)
+  const pixels = (font) => {
+    const ctx = createCanvas(420, 60).getContext('2d')
+    ctx.font = font
+    ctx.fillText('Hamburgefonts', 10, 42)
+    return Buffer.from(ctx.getImageData(0, 0, 420, 60).data).toString('base64')
+  }
+  const regular = font('RMStatic-Regular.ttf')
+  const bold = font('RMStatic-Bold.ttf')
+  GlobalFonts.register(regular, 'Brand')
+  GlobalFonts.register(bold, undefined, { weight: 700 })
+  const drawn = [pixels('40px RMStatic'), pixels('bold 40px RMStatic'), pixels('40px Brand')]
+  // References, registered after the draws: the same faces under names of
+  // their own.
+  GlobalFonts.register(regular, 'Ref Regular')
+  GlobalFonts.register(bold, 'Ref Bold')
+  const refs = [pixels('40px "Ref Regular"'), pixels('40px "Ref Bold"')]
+  console.log(JSON.stringify({
+    refs: refs[0] !== refs[1],
+    normal: drawn[0] === refs[1],
+    bold: drawn[1] === refs[1],
+    brand: drawn[2] === refs[0],
+  }))`
+
+for (const renderer of ['portable', 'system'] as const) {
+  test(`a declared family has no face its name only lists implicitly (${renderer})`, (t) => {
+    const child = spawnSync(process.execPath, ['-e', IMPLICIT_LISTING_PROBE], {
+      encoding: 'utf8',
+      timeout: 60_000,
+      env: {
+        ...process.env,
+        RENDERER: renderer,
+        PROBE_FONTS: join(__dirname, 'fonts'),
+        PROBE_INDEX: join(__dirname, '..', 'index.js'),
+      },
+    })
+    t.is(child.status, 0, child.stderr)
+    // "RMStatic" has one FontFace, Bold {700}; the Regular file is a Brand one.
+    t.deepEqual(JSON.parse(child.stdout), { refs: true, normal: true, bold: true, brand: true })
+  })
+}
+
 // A child process: two declared faces under the name of a family
 // loadFontsFromDir loaded are FontFaces of that name ("\x01w\x01"): they
 // choose by their descriptors, across a rebuild and a renderer switch; after

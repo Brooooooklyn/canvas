@@ -235,8 +235,9 @@ bool HasInstalledFamily(std::string_view name) {
 
 // The faces FamilyResolver::Faces gives a tagged name: the family's
 // installed faces ("\x01i\x01"), its web faces ("\x01w\x01"), or every face
-// of a family with no installed face ("\x01a\x01").
-enum class FaceKind { kInstalled, kWeb, kAll };
+// of a family with no installed face ("\x01a\x01"); kAllFontFaces the
+// FontFaces of such a family (a capabilities family: CapabilitiesFaces).
+enum class FaceKind { kInstalled, kWeb, kAll, kAllFontFaces };
 
 class FamilyResolver {
  public:
@@ -416,9 +417,10 @@ class FamilyResolver {
   }
 
   // The faces of a tagged name (MakeSplitFamily): kWeb the family's web
-  // faces, kAll every face `assets` lists under any of its spellings, else
-  // (kInstalled) its installed faces in `assets`. `elsewhere` gets the
-  // installed family outside `assets` when there is none in it.
+  // faces, kAll every face `assets` lists under any of its spellings,
+  // kAllFontFaces those of them kWeb keeps, else (kInstalled) its installed
+  // faces in `assets`. `elsewhere` gets the installed family outside
+  // `assets` when there is none in it.
   // Web faces are FontFaces: CSSSegmentedFontFace lists the faces of one
   // style newest first (css_segmented_font_face.cc GetFontData,
   // ForEachReverse), and FontFaceCache folds the spellings into one
@@ -1810,6 +1812,27 @@ bool skiac_font_collection_default_font_units(
   return true;
 }
 
+namespace {
+
+// The faces of the capabilities family `name` under its tag `kind` ('a' or
+// 'w'): FontFaces only. FontFaceCache::SegmentedFacesByFamily::AddFontFace
+// keys a face by its FontFace's family only, so the own family that a call
+// with another alias lists the face under has no FontFace there
+// (FontFace('Brand', R) makes no "RMStatic" face). Kept whole when that
+// leaves nothing.
+std::vector<sk_sp<SkTypeface>> CapabilitiesFaces(const FamilyResolver& resolver,
+                                                 std::string_view name,
+                                                 char kind) {
+  if (kind == 'w') {
+    return resolver.Faces(name, FaceKind::kWeb, nullptr);
+  }
+  std::vector<sk_sp<SkTypeface>> faces =
+      resolver.Faces(name, FaceKind::kAllFontFaces, nullptr);
+  return faces.empty() ? resolver.Faces(name, FaceKind::kAll, nullptr) : faces;
+}
+
+}  // namespace
+
 sk_sp<SkFontStyleSet> MakeSplitFamily(skiac_font_collection* c_collection,
                                       std::string_view tagged) {
   // "\x01" kind "\x01" family (FamilyResolver::FindSystem, FindWebFont), or
@@ -1840,11 +1863,8 @@ sk_sp<SkFontStyleSet> MakeSplitFamily(skiac_font_collection* c_collection,
         UseCapabilities(c_collection, std::string_view(base).substr(3))) {
       FamilyResolver resolver(c_collection);
       const std::string_view name = std::string_view(base).substr(3);
-      return MakeFontFaceSet(
-          c_collection, name,
-          resolver.Faces(name, base[1] == 'w' ? FaceKind::kWeb : FaceKind::kAll,
-                         nullptr),
-          rank);
+      return MakeFontFaceSet(c_collection, name,
+                             CapabilitiesFaces(resolver, name, base[1]), rank);
     }
     sk_sp<SkFontStyleSet> set = c_collection->assets->matchFamily(base.c_str());
     if (!set) {
@@ -1854,6 +1874,14 @@ sk_sp<SkFontStyleSet> MakeSplitFamily(skiac_font_collection* c_collection,
   }
   const std::string_view name = tagged.substr(3);
   FamilyResolver resolver(c_collection);
+  if (tagged[1] != 'i' && UseCapabilities(c_collection, name)) {
+    std::vector<sk_sp<SkTypeface>> faces =
+        CapabilitiesFaces(resolver, name, tagged[1]);
+    if (faces.empty()) {
+      return nullptr;
+    }
+    return MakeFontFaceSet(c_collection, name, std::move(faces), 0);
+  }
   sk_sp<SkFontStyleSet> elsewhere;
   std::vector<sk_sp<SkTypeface>> faces =
       resolver.Faces(name,
@@ -1863,9 +1891,6 @@ sk_sp<SkFontStyleSet> MakeSplitFamily(skiac_font_collection* c_collection,
                      &elsewhere);
   if (faces.empty()) {
     return elsewhere;
-  }
-  if (tagged[1] != 'i' && UseCapabilities(c_collection, name)) {
-    return MakeFontFaceSet(c_collection, name, std::move(faces), 0);
   }
   auto set =
       sk_make_sp<TypefaceFontStyleSet>(SkString(name.data(), name.size()));
