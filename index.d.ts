@@ -1153,7 +1153,8 @@ interface IGlobalFonts {
   readonly families: { family: string; styles: { weight: number; width: string; style: string }[] }[]
   /**
    * The FontKey, or null if it failed (also for invalid `descriptors`, which
-   * registers nothing). `descriptors`: the font's descriptors under this name;
+   * registers nothing; a `descriptors` that is not an object throws a
+   * TypeError). `descriptors`: the font's descriptors under this name;
    * a text font list uses them where this name matches the font. Without
    * them, `auto`: the font's own weight and style ranges.
    */

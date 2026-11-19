@@ -192,6 +192,18 @@ test('style takes any CSS angle, math functions and comments', (t) => {
   }
 })
 
+test('descriptors that are not an object throw a TypeError and register nothing', (t) => {
+  const garamond = font('EBGaramond-Regular.ttf')
+  for (const [i, descriptors] of [5, 'italic', true].entries()) {
+    const name = `Descriptors Primitive ${i}`
+    t.throws(() => GlobalFonts.register(garamond, name, descriptors as unknown as FontFaceDescriptors), {
+      instanceOf: TypeError,
+      message: "The provided value is not of type 'FontFaceDescriptors'.",
+    })
+    t.false(GlobalFonts.has(name))
+  }
+})
+
 function svgPixels(family: string, text: string) {
   const img = new Image()
   img.src = Buffer.from(

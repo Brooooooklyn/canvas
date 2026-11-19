@@ -215,18 +215,34 @@ pub mod global_fonts {
 
   /// `descriptors`: the face's @font-face descriptors (super::face_descriptors);
   /// an invalid one registers nothing and gives null. Without them, `auto`.
+  /// A value that is not an object is a TypeError, as the FontFace
+  /// constructor throws for its FontFaceDescriptors dictionary.
   #[napi]
   pub fn register(
+    env: &Env,
     font_data: &[u8],
     name_alias: Option<String>,
-    descriptors: Option<FontFaceDescriptors>,
+    descriptors: Option<Unknown>,
   ) -> Result<Option<FontKey>> {
     let maybe_name_alias = name_alias.filter(|s| !s.is_empty());
     let descriptors = match descriptors {
-      Some(d) => match super::face_descriptors(d.weight, d.style.as_deref()) {
-        Some(descriptors) => Some(descriptors),
-        None => return Ok(None),
-      },
+      Some(d) => {
+        let (env, value) = (env.raw(), d.raw());
+        if !matches!(
+          super::webidl::type_of(env, value)?,
+          ValueType::Object | ValueType::Function
+        ) {
+          return Err(super::webidl::type_error(
+            env,
+            "The provided value is not of type 'FontFaceDescriptors'.",
+          ));
+        }
+        let d = unsafe { FontFaceDescriptors::from_napi_value(env, value)? };
+        match super::face_descriptors(d.weight, d.style.as_deref()) {
+          Some(descriptors) => Some(descriptors),
+          None => return Ok(None),
+        }
+      }
       None => None,
     };
     let font = get_font().map_err(into_napi_error)?;
