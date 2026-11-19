@@ -1164,15 +1164,18 @@ test('the same path declared again with other descriptors is a face of its own',
 // A child process per renderer (the spec lists Lato and Oswald): the same
 // path is not read again, so registerFromPath of a file replaced on disk
 // with no alias is the registration it has, under the family of the face it
-// keeps; the replaced file's family gets no face.
+// keeps; the replaced file's family gets no face, so a family list moves on
+// to the next family (an unknown family alone draws a host fallback).
 const REPLACED_PATH_PROBE = `
   const { copyFileSync, renameSync } = require('fs')
   const { createCanvas, GlobalFonts, setTextRenderer } = require(process.env.PROBE_INDEX)
   const { RENDERER, PROBE_FONTS, PROBE_FILE } = process.env
   setTextRenderer(RENDERER)
+  // Roboto Mono: no tie to Lato or Oswald.
+  GlobalFonts.register(require('fs').readFileSync(PROBE_FONTS + '/RobotoMono-VariableFont_wght.ttf'), 'Probe Ref')
   const ctx = createCanvas(10, 10).getContext('2d')
-  const width = (family) => {
-    ctx.font = '40px "' + family + '"'
+  const width = (families) => {
+    ctx.font = '40px ' + families
     return ctx.measureText('Hamburg').width
   }
   const listed = () => GlobalFonts.families.filter((f) => f.family === 'Lato' || f.family === 'Oswald').map((f) => f.family)
@@ -1184,7 +1187,7 @@ const REPLACED_PATH_PROBE = `
   out.sameKey = GlobalFonts.registerFromPath(PROBE_FILE).typefaceId === first.typefaceId
   out.has = [GlobalFonts.has('Oswald')]
   out.listed = listed()
-  out.oswaldIsLato = width('Oswald') === width('Lato')
+  out.oswaldIsSkipped = width('"Oswald", "Probe Ref"') === width('"Probe Ref"')
   out.declared = GlobalFonts.registerFromPath(PROBE_FILE, undefined, { weight: '700' }) !== null
   out.has.push(GlobalFonts.has('Oswald'))
   out.listed.push(...listed())
@@ -1210,7 +1213,7 @@ for (const renderer of ['portable', 'system'] as const) {
       sameKey: true,
       has: [false, false],
       listed: ['Lato', 'Lato'],
-      oswaldIsLato: false,
+      oswaldIsSkipped: true,
       declared: true,
     })
   })
