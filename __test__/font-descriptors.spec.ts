@@ -863,6 +863,30 @@ for (const renderer of ['portable', 'system'] as const) {
   })
 }
 
+// Chrome 159: each setAlias is a FontFace of the alias name with its
+// target's face and descriptors, so an alias of an auto name newer than an
+// alias of a {400} name of the same face is the newest face of their
+// segment: auto (bold is wght 700).
+test('an alias of an auto name newer than an alias of a declared name is auto', (t) => {
+  const bold400 = draw('bold 32px "Descriptors 400"').pixels
+  const bold700 = draw('bold 32px "Descriptors Auto"').pixels
+  t.notDeepEqual(bold400, bold700)
+  t.true(GlobalFonts.setAlias('Descriptors 400', 'Alias Newer Auto'))
+  t.deepEqual(draw('bold 32px "Alias Newer Auto"').pixels, bold400)
+  t.true(GlobalFonts.setAlias('Descriptors Auto', 'Alias Newer Auto'))
+  t.deepEqual(draw('bold 32px "Alias Newer Auto"').pixels, bold700)
+  // The other order: the {400} alias is the newest.
+  t.true(GlobalFonts.setAlias('Descriptors Auto', 'Alias Newer 400'))
+  t.deepEqual(draw('bold 32px "Alias Newer 400"').pixels, bold700)
+  t.true(GlobalFonts.setAlias('Descriptors 400', 'Alias Newer 400'))
+  t.deepEqual(draw('bold 32px "Alias Newer 400"').pixels, bold400)
+  // Through a chain: an alias of an alias of the auto name.
+  t.true(GlobalFonts.setAlias('Descriptors Auto', 'Alias Newer Link'))
+  t.true(GlobalFonts.setAlias('Descriptors 400', 'Alias Newer Chain'))
+  t.true(GlobalFonts.setAlias('Alias Newer Link', 'Alias Newer Chain'))
+  t.deepEqual(draw('bold 32px "Alias Newer Chain"').pixels, bold700)
+})
+
 test('SVG text: an alias takes its target descriptors', (t) => {
   t.true(GlobalFonts.setAlias('Descriptors 400', 'Alias SVG 400'))
   const declared = svgPixels("'Descriptors 400'", 'Ham')

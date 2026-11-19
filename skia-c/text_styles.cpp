@@ -125,15 +125,18 @@ bool Seen(const std::vector<const std::string*>& seen,
 
 }  // namespace
 
-// The alias is the target name drawn (a FontFace of the same face and
-// descriptors), so it follows a target declared again; newest call first.
-// A direct `auto` declaration of the name newer than the alias is the
-// newest FontFace of their segment (css_segmented_font_face.cc
-// ForEachReverse): auto.
-FaceDescriptors DescriptorsUnder(skiac_font_collection* c_collection,
-                                 SkTypefaceID id,
-                                 const std::string& folded,
-                                 std::vector<const std::string*>& seen) {
+namespace {
+
+// DescriptorsUnder, telling apart a name that lists the face with no
+// descriptors (auto: an empty FaceDescriptors) from one that does not
+// resolve (nullopt: each alias it has goes round a loop of aliases back to
+// a name looked up already, and it lists the face itself under no call).
+// The newest alias whose target resolves gives that target's, auto too.
+std::optional<FaceDescriptors> ResolveDescriptors(
+    skiac_font_collection* c_collection,
+    SkTypefaceID id,
+    const std::string& folded,
+    std::vector<const std::string*>& seen) {
   const auto& assets = c_collection->assets;
   if (assets->describes(folded)) {
     ++c_collection->descriptor_lookups;
@@ -142,15 +145,20 @@ FaceDescriptors DescriptorsUnder(skiac_font_collection* c_collection,
           assets->getRegisteredFonts().at(key).descriptors;
       if (const auto found = descriptors.find(folded);
           found != descriptors.end()) {
-        return found->second;
+        return FaceDescriptors(found->second);
       }
     }
   }
   const auto& aliases = c_collection->set_aliases;
   std::optional<uint64_t> declared;
+  bool looped = false;
   for (auto it = aliases.rbegin(); it != aliases.rend(); ++it) {
     if (!it->active || it->face_id != id || it->folded_alias != folded ||
-        it->folded_family == folded || Seen(seen, it->folded_family)) {
+        it->folded_family == folded) {
+      continue;
+    }
+    if (Seen(seen, it->folded_family)) {
+      looped = true;
       continue;
     }
     if (!declared) {
@@ -162,12 +170,32 @@ FaceDescriptors DescriptorsUnder(skiac_font_collection* c_collection,
     if (!Seen(seen, folded)) {
       seen.push_back(&folded);
     }
-    if (FaceDescriptors found =
-            DescriptorsUnder(c_collection, id, it->folded_family, seen)) {
+    if (std::optional<FaceDescriptors> found =
+            ResolveDescriptors(c_collection, id, it->folded_family, seen)) {
       return found;
     }
   }
+  // The name lists the face itself (a call declared it, or it is a name
+  // the face is listed under with no alias of it going round a loop): auto.
+  if (!looped || assets->latestDeclarationOrder(id, folded) > 0) {
+    return FaceDescriptors();
+  }
   return std::nullopt;
+}
+
+}  // namespace
+
+// The alias is the target name drawn (a FontFace of the same face and
+// descriptors), so it follows a target declared again; newest call first,
+// an alias of an auto name too. A direct `auto` declaration of the name
+// newer than the alias is the newest FontFace of their segment
+// (css_segmented_font_face.cc ForEachReverse): auto.
+FaceDescriptors DescriptorsUnder(skiac_font_collection* c_collection,
+                                 SkTypefaceID id,
+                                 const std::string& folded,
+                                 std::vector<const std::string*>& seen) {
+  return ResolveDescriptors(c_collection, id, folded, seen)
+      .value_or(std::nullopt);
 }
 
 bool DescribesName(skiac_font_collection* c_collection,
