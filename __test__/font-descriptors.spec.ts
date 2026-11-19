@@ -1247,3 +1247,124 @@ for (const renderer of ['portable', 'system'] as const) {
     })
   })
 }
+
+// FontVariableItalicAxis (ResolveVariations, font_custom_platform_data.cc):
+// on a registered face with an ital axis, the `italic` keyword draws ital 1,
+// slnt at the axis default and no synthetic italic, before the declared
+// slope; any other style draws ital 0, not the axis default; the request's
+// variations win. FontStyleTest-ital: ital 0..1; FontStyleTest-slnt_ital:
+// slnt -15..0, ital 0..1 (default 0.5). Chrome 159 draws each pair alike
+// (one FontFace per draw: its CacheKey has no StyleSyntax).
+const italFont = font('FontStyleTest-ital-VF.woff2')
+const slntItalFont = font('FontStyleTest-slnt_ital-VF.woff2')
+GlobalFonts.register(italFont, 'Ital Auto')
+GlobalFonts.register(italFont, 'Ital 700', { weight: 700 })
+GlobalFonts.register(slntItalFont, 'Slnt Ital Auto')
+GlobalFonts.register(slntItalFont, 'Slnt Ital Normal', { style: 'normal' })
+GlobalFonts.register(slntItalFont, 'Slnt Ital Italic', { style: 'italic' })
+
+const ITAL_TEXT = 'varfont Hamb'
+type ItalDraw = [font: string, variations?: string]
+const ITAL_1: ItalDraw = ['40px "Ital Auto"', '"ital" 1']
+const SLNT_ITAL_0_SLANTED: ItalDraw = ['40px "Slnt Ital Auto"', '"ital" 0, "slnt" -14']
+const SLNT_ITAL_1: ItalDraw = ['40px "Slnt Ital Auto"', '"ital" 1, "slnt" 0']
+// [title, drawn, reference]: equal pixels and widths.
+const ITAL_CASES: [string, ItalDraw, ItalDraw][] = [
+  ['italic is ital 1, unskewed', ['italic 40px "Ital Auto"'], ITAL_1],
+  ['the request variations set ital last', ['italic 40px "Ital Auto"', '"ital" 0'], ['40px "Ital Auto"']],
+  ['oblique is ital 0 (not the default) at the slnt', ['oblique 40px "Slnt Ital Auto"'], SLNT_ITAL_0_SLANTED],
+  ['italic sets slnt to the axis default', ['italic 40px "Slnt Ital Auto"'], SLNT_ITAL_1],
+  ['declared normal: italic is still ital 1, unskewed', ['italic 40px "Slnt Ital Normal"'], SLNT_ITAL_1],
+  ['declared italic: a normal request is ital 0 at the slope', ['40px "Slnt Ital Italic"'], SLNT_ITAL_0_SLANTED],
+  ['declared 700: bold italic is ital 1, not emboldened', ['bold italic 40px "Ital 700"'], ITAL_1],
+]
+
+function drawItal([font, variations]: ItalDraw) {
+  const { pixels } = draw(font, ITAL_TEXT, variations)
+  const ctx = createCanvas(10, 10).getContext('2d')
+  ctx.font = font
+  ctx.fontVariationSettings = variations || 'normal'
+  return { pixels, width: ctx.measureText(ITAL_TEXT).width }
+}
+
+for (const [title, drawn, reference] of ITAL_CASES) {
+  test(`ital axis: ${title}`, (t) => {
+    const ref = drawItal(reference)
+    const got = drawItal(drawn)
+    t.deepEqual(got.pixels, ref.pixels)
+    t.is(got.width, ref.width)
+  })
+}
+
+test('ital axis: italic and oblique differ', (t) => {
+  t.notDeepEqual(drawItal(['italic 40px "Ital Auto"']).pixels, drawItal(['oblique 40px "Ital Auto"']).pixels)
+})
+
+// A child process per renderer: the cases above, and an installed face with
+// an ital axis (loadFontsFromDir) that gets no ital coordinate (FontCache
+// sets none): italic stays the skewed default instance, as oblique.
+const ITAL_PROBE = `
+  const { readFileSync } = require('fs')
+  const { createCanvas, GlobalFonts, setTextRenderer } = require(process.env.PROBE_INDEX)
+  const { RENDERER, PROBE_DIR, PROBE_FONTS, ITAL_CASES, ITAL_TEXT } = process.env
+  setTextRenderer(RENDERER)
+  const font = (name) => readFileSync(PROBE_FONTS + '/' + name)
+  const pixels = ([font, variations]) => {
+    const ctx = createCanvas(420, 60).getContext('2d')
+    ctx.font = font
+    ctx.fontVariationSettings = variations || 'normal'
+    ctx.fillText(ITAL_TEXT, 10, 42)
+    return Buffer.from(ctx.getImageData(0, 0, 420, 60).data).toString('base64')
+  }
+  const out = { loaded: GlobalFonts.loadFontsFromDir(PROBE_DIR) }
+  const installedItalic = pixels(['italic 40px FontStyleTest'])
+  out.installed = [
+    installedItalic === pixels(['oblique 40px FontStyleTest']),
+    installedItalic !== pixels(['40px FontStyleTest']),
+  ]
+  const ital = font('FontStyleTest-ital-VF.woff2')
+  const keys = [GlobalFonts.register(ital, 'Ital Auto'), GlobalFonts.register(ital, 'Ital 700', { weight: 700 })]
+  // The same file registered: its name draws ital 1, the installed family
+  // keeps the installed face. (Before the slnt_ital file, whose family is
+  // also FontStyleTest.)
+  out.registered = pixels(['italic 40px "Ital Auto"']) !== installedItalic
+  out.installedAfter = pixels(['italic 40px FontStyleTest']) === installedItalic
+  const slntItal = font('FontStyleTest-slnt_ital-VF.woff2')
+  keys.push(
+    GlobalFonts.register(slntItal, 'Slnt Ital Auto'),
+    GlobalFonts.register(slntItal, 'Slnt Ital Normal', { style: 'normal' }),
+    GlobalFonts.register(slntItal, 'Slnt Ital Italic', { style: 'italic' }),
+  )
+  out.keys = keys.every((key) => key !== null)
+  out.cases = JSON.parse(ITAL_CASES).map(([, drawn, reference]) => pixels(drawn) === pixels(reference))
+  console.log(JSON.stringify(out))`
+
+for (const renderer of ['portable', 'system'] as const) {
+  test(`ital axis: registered faces only (${renderer})`, (t) => {
+    const dir = mkdtempSync(join(tmpdir(), 'canvas-ital-'))
+    t.teardown(() => rmSync(dir, { recursive: true, force: true }))
+    copyFileSync(join(__dirname, 'fonts', 'FontStyleTest-ital-VF.woff2'), join(dir, 'FontStyleTest-ital-VF.woff2'))
+    const child = spawnSync(process.execPath, ['-e', ITAL_PROBE], {
+      encoding: 'utf8',
+      timeout: 60_000,
+      env: {
+        ...process.env,
+        RENDERER: renderer,
+        PROBE_DIR: dir,
+        PROBE_FONTS: join(__dirname, 'fonts'),
+        PROBE_INDEX: join(__dirname, '..', 'index.js'),
+        ITAL_CASES: JSON.stringify(ITAL_CASES),
+        ITAL_TEXT,
+      },
+    })
+    t.is(child.status, 0, child.stderr)
+    t.deepEqual(JSON.parse(child.stdout), {
+      loaded: 1,
+      installed: [true, true],
+      keys: true,
+      cases: ITAL_CASES.map(() => true),
+      registered: true,
+      installedAfter: true,
+    })
+  })
+}

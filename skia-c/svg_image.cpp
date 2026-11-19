@@ -418,12 +418,13 @@ class SvgRunShaper final : public SkShaper {
       // The list's first font is the family's face (findTypefaces with no
       // font arguments, or MatchNamedFamily), so it is its own base.
       const skiac_text_request request = SvgStyleRequest(mgr_->request());
-      SetSynthetic(&primary,
-                   Allowed(SynthesizeStyle(c_collection_, primary.getTypeface(),
-                                           primary.getTypeface(), request,
-                                           mgr_->request().DeclaredOf(
-                                               primary.getTypeface())),
-                           mgr_->request().allowed));
+      SetSynthetic(
+          &primary,
+          Allowed(SynthesizeStyle(
+                      c_collection_, primary.getTypeface(),
+                      primary.getTypeface(), request,
+                      mgr_->request().DeclaredOf(primary.getTypeface()), false),
+                  mgr_->request().allowed));
     }
     std::vector<Run> runs;
     if (ours && !utf8.empty() && primary.getTypeface() &&
@@ -596,10 +597,10 @@ class SvgRunShaper final : public SkShaper {
       // Each list face is its family's face, so its own base.
       allowed_ = slot.allowed;
       for (const sk_sp<SkTypeface>& face : list_) {
-        list_synthetic_.push_back(
-            Allowed(SynthesizeStyle(c_collection, face.get(), face.get(),
-                                    request_, slot.DeclaredOf(face.get())),
-                    allowed_));
+        list_synthetic_.push_back(Allowed(
+            SynthesizeStyle(c_collection, face.get(), face.get(), request_,
+                            slot.DeclaredOf(face.get()), false),
+            allowed_));
       }
       SkTypeface* first = list_.front().get();
       query_.request = &request_;
@@ -666,9 +667,10 @@ class SvgRunShaper final : public SkShaper {
             c_collection_, request_, style, query_.coretext, std::nullopt);
         if (font.face) {
           last_resort_ = {
-              font.face, Allowed(SynthesizeStyle(c_collection_, font.face.get(),
-                                                 font.base.get(), request_, {}),
-                                 allowed_)};
+              font.face,
+              Allowed(SynthesizeStyle(c_collection_, font.face.get(),
+                                      font.base.get(), request_, {}, false),
+                      allowed_)};
         }
       }
       if (last_resort_.face && covers(last_resort_.face.get())) {

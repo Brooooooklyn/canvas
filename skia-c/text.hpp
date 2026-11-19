@@ -218,12 +218,22 @@ sk_sp<SkTypeface> FaceInstance(skiac_font_collection* c_collection,
 // every face of `faces`), the request's variations, then, for
 // font-optical-sizing: auto and no opsz of the request's own, opsz at
 // `opsz_size` (UsedSizes::opsz), and for none with the system renderer on Apple
-// the axis default of the first of `faces` with the axis (text_styles.cpp).
+// the axis default of the first of `faces` with the axis. `web_face`: the
+// one face of `faces` is a registered font's (FontCustomPlatformData's
+// ResolveVariations): its ital axis, when it has one, is 1 for the `italic`
+// keyword (and slnt the axis default) and 0 for any other style; an
+// installed or fallback face gets no ital (FontCache) (text_styles.cpp).
 std::vector<SkFontArguments::VariationPosition::Coordinate> FontVariations(
     const std::vector<sk_sp<SkTypeface>>& faces,
     const skiac_text_request& request,
     float opsz_size,
-    const FaceDescriptors& declared);
+    const FaceDescriptors& declared,
+    bool web_face);
+
+// Whether `base` is a registered face with an ital axis: its instance is its
+// own, as FontVariations with web_face sets the axis for every style
+// (text_styles.cpp).
+bool HasWebItalAxis(skiac_font_collection* c_collection, SkTypeface* base);
 
 // The font sizes font-size-adjust gives (FontBuilder::UpdateAdjustedSize,
 // FontDescription::EffectiveFontSize, CSSFontFace::GetFontData and
@@ -266,12 +276,16 @@ struct SyntheticStyle {
 
 // The synthetic styles of `face` drawing `request`: `base` is the family's
 // face before font arguments, null for a fallback font; `declared` its
-// descriptors (FamilyDescriptors).
+// descriptors (FamilyDescriptors). `web_face`: `face` is FontVariations'
+// instance of `base` alone with web_face, so the `italic` keyword on an ital
+// axis is never skewed; false for a face with no ital coordinate (the last
+// resort font, SVG text's base faces) (text_styles.cpp).
 SyntheticStyle SynthesizeStyle(skiac_font_collection* c_collection,
                                SkTypeface* face,
                                SkTypeface* base,
                                const skiac_text_request& request,
-                               const FaceDescriptors& declared);
+                               const FaceDescriptors& declared,
+                               bool web_face);
 
 // font-variant-caps per font, for the Blink shaper (text_caps.cpp): Blink's
 // OpenTypeCapsSupport of one font for request.variant_caps and a script.

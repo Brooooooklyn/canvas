@@ -24,6 +24,7 @@ constexpr SkFourByteTag kWght = SkSetFourByteTag('w', 'g', 'h', 't');
 constexpr SkFourByteTag kWdth = SkSetFourByteTag('w', 'd', 't', 'h');
 constexpr SkFourByteTag kSlnt = SkSetFourByteTag('s', 'l', 'n', 't');
 constexpr SkFourByteTag kOpsz = SkSetFourByteTag('o', 'p', 's', 'z');
+constexpr SkFourByteTag kItal = SkSetFourByteTag('i', 't', 'a', 'l');
 
 // font_selection_types.h.
 constexpr float kBoldThreshold = 600;
@@ -61,6 +62,14 @@ std::optional<SkFontParameters::Variation::Axis> FindAxis(
     }
   }
   return std::nullopt;
+}
+
+// ResolveVariations' use_ital_axis: the `italic` keyword (StyleSyntax::
+// kItalicKeyword) on a web face whose ital axis covers 1.
+bool UsesItalAxis(const std::optional<SkFontParameters::Variation::Axis>& ital,
+                  const skiac_text_request& request) {
+  return request.style == SkFontStyle::kItalic_Slant && ital &&
+         ital->min <= 1 && ital->max >= 1;
 }
 
 // font-optical-sizing none without an opsz of the request's own, with the
@@ -256,14 +265,21 @@ std::vector<SkFontArguments::VariationPosition::Coordinate> FontVariations(
     const std::vector<sk_sp<SkTypeface>>& faces,
     const skiac_text_request& request,
     float opsz_size,
-    const FaceDescriptors& declared) {
+    const FaceDescriptors& declared,
+    bool web_face) {
   bool variable = false;
   std::optional<SkFontParameters::Variation::Axis> opsz_axis;
+  std::optional<SkFontParameters::Variation::Axis> ital_axis;
+  std::optional<SkFontParameters::Variation::Axis> slnt_axis;
   for (const auto& face : faces) {
     const auto axes = Axes(face.get());
     variable = variable || !axes.empty();
     if (!opsz_axis) {
       opsz_axis = FindAxis(axes, kOpsz);
+    }
+    if (web_face && !ital_axis) {
+      ital_axis = FindAxis(axes, kItal);
+      slnt_axis = FindAxis(axes, kSlnt);
     }
   }
   const bool has_opsz = opsz_axis.has_value();
@@ -284,7 +300,17 @@ std::vector<SkFontArguments::VariationPosition::Coordinate> FontVariations(
                             : request.slope;
     coords.push_back({kWght, weight});
     coords.push_back({kWdth, request.stretch_pct});
-    coords.push_back({kSlnt, slope == 0 ? 0 : -slope});
+    // FontVariableItalicAxis: a web face's ital axis is 1 for the `italic`
+    // keyword, else 0 (not the axis default); then slnt is the axis default.
+    const bool use_ital = UsesItalAxis(ital_axis, request);
+    if (ital_axis) {
+      coords.push_back({kItal, use_ital ? 1.0f : 0.0f});
+    }
+    if (use_ital && slnt_axis) {
+      coords.push_back({kSlnt, slnt_axis->def});
+    } else {
+      coords.push_back({kSlnt, slope == 0 ? 0 : -slope});
+    }
   }
   bool explicit_opsz = false;
   for (int i = 0; request.variations && i < request.variations_count; ++i) {
@@ -309,6 +335,11 @@ std::vector<SkFontArguments::VariationPosition::Coordinate> FontVariations(
     }
   }
   return coords;
+}
+
+bool HasWebItalAxis(skiac_font_collection* c_collection, SkTypeface* base) {
+  return !IsSystemTypeface(c_collection, base) &&
+         FindAxis(Axes(base), kItal).has_value();
 }
 
 namespace {
@@ -374,19 +405,21 @@ float AdvanceHeight(skiac_font_collection* c_collection,
 
 // FontSizeFunctions AspectValue: the metric of `face` (an instance of
 // `base` at the request's axes) at `size` px over the size, 1 when the face
-// has no such metric. `declared`: `base`'s descriptors.
+// has no such metric. `declared`: `base`'s descriptors; `web_face`: `face`
+// is FontVariations' instance of `base` alone with web_face.
 float AspectValue(skiac_font_collection* c_collection,
                   const sk_sp<SkTypeface>& face,
                   SkTypeface* base,
                   float size,
                   int metric,
                   const skiac_text_request& request,
-                  const FaceDescriptors& declared) {
+                  const FaceDescriptors& declared,
+                  bool web_face) {
   SkFont font = MetricsFont(face, size);
   // FontPlatformData::SetupSkFont: the font Blink measures has the face's
   // synthetic bold and italic, which move the top of the 'x' outline.
-  const SyntheticStyle synthetic =
-      SynthesizeStyle(c_collection, face.get(), base, request, declared);
+  const SyntheticStyle synthetic = SynthesizeStyle(
+      c_collection, face.get(), base, request, declared, web_face);
   font.setEmbolden(synthetic.bold);
   font.setSkewX(synthetic.italic ? -SK_Scalar1 / 4 : 0);
   SkFontMetrics metrics;
@@ -472,11 +505,14 @@ UsedSizes ComputeUsedSizes(skiac_font_collection* c_collection,
   const int metric = request.size_adjust_metric;
   // The face Blink measures: the instance at the request's axes, opsz at the
   // computed size (UpdateAdjustedSize sets the adjusted size to it first),
-  // made at its effective size (the computed size floored).
+  // made at its effective size (the computed size floored); a registered
+  // face's with its ital axis (FontCustomPlatformData).
   auto aspect_of = [&](const sk_sp<SkTypeface>& base,
                        const FaceDescriptors& descriptors) {
     sk_sp<SkTypeface> face = base;
-    const auto coords = FontVariations({base}, request, computed, descriptors);
+    const bool web_face = !IsSystemTypeface(c_collection, base.get());
+    const auto coords =
+        FontVariations({base}, request, computed, descriptors, web_face);
     if (!coords.empty()) {
       SkFontArguments args;
       args.setVariationDesignPosition(
@@ -486,7 +522,7 @@ UsedSizes ComputeUsedSizes(skiac_font_collection* c_collection,
       }
     }
     return AspectValue(c_collection, face, base.get(), measured, metric,
-                       request, descriptors);
+                       request, descriptors, web_face);
   };
   const float primary_aspect =
       adjust ? aspect_of(base_faces.front(),
@@ -674,7 +710,8 @@ SyntheticStyle SynthesizeStyle(skiac_font_collection* c_collection,
                                SkTypeface* face,
                                SkTypeface* base,
                                const skiac_text_request& request,
-                               const FaceDescriptors& declared) {
+                               const FaceDescriptors& declared,
+                               bool web_face) {
   const float weight = request.weight;
   const float slope = request.slope;
   if (!base) {
@@ -710,6 +747,11 @@ SyntheticStyle SynthesizeStyle(skiac_font_collection* c_collection,
   bool italic = slope >= kItalicSlope &&
                 (declared_slope ? declared_slope->max : 0) < kItalicSlope;
   const auto axes = Axes(base);
+  // ResolveVariations: the ital axis draws the italic, never skewed, before
+  // the declared and auto slope rules.
+  if (web_face && UsesItalAxis(FindAxis(axes, kItal), request)) {
+    italic = false;
+  }
   if (const auto wght = FindAxis(axes, kWght);
       (!declared_weight || declared_weight->from_auto) && wght &&
       wght->min <= wght->max) {

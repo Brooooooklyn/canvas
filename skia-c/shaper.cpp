@@ -305,7 +305,7 @@ class LineFonts {
     entry.size = size;
     entry.opsz = opsz;
     entry.synthetic = SynthesizeStyle(c_collection_, entry.face.get(), base,
-                                      request_, declared);
+                                      request_, declared, true);
     if (!Finish(&entry)) {
       return false;
     }
@@ -372,8 +372,9 @@ class LineFonts {
         entry.base = last_resort_base_;
         entry.size = sizes_.effective;
         entry.opsz = sizes_.opsz;
-        entry.synthetic = SynthesizeStyle(c_collection_, entry.face.get(),
-                                          last_resort_base_, request_, {});
+        entry.synthetic =
+            SynthesizeStyle(c_collection_, entry.face.get(), last_resort_base_,
+                            request_, {}, false);
         if (Finish(&entry)) {
           others_.push_back(std::move(entry));
           last_resort_ = &others_.back();
@@ -1184,9 +1185,10 @@ struct FamilyFace {
 // (an index into `base_faces`, not into `families`), the size and opsz
 // ComputeUsedSizes gives its family and its descriptors (`declared`,
 // FamilyDescriptors). A face with another opsz or descriptors than the
-// primary's has its own instance (FontVariations of the face alone); the
-// others take the request's (`font_args`), as Blink makes one
-// FontPlatformData per face (FontCustomPlatformData::GetFontPlatformData).
+// primary's, or a registered face with an ital axis (HasWebItalAxis), has
+// its own instance (FontVariations of the face alone); the others take the
+// request's (`font_args`, no ital), as Blink makes one FontPlatformData per
+// face (FontCustomPlatformData::GetFontPlatformData).
 // A face of no family in `sizes.faces` takes the primary's size and opsz.
 // `faces` gets the entries' faces. When no face has its own instance, they
 // are findTypefaces of all of `families` at `font_args`, as before; else
@@ -1213,6 +1215,11 @@ std::vector<FamilyFace> FamilyFaces(
   // with its base.
   std::vector<FamilyFace> out;
   out.reserve(base_faces.size());
+  // Without font arguments no face varies, so none has an ital axis.
+  auto own_of = [&](const FamilyFace& family) {
+    return family.opsz != sizes.opsz || family.declared ||
+           (font_args && HasWebItalAxis(c_collection, family.base));
+  };
   bool own_any = false;
   for (size_t k = 0; k < base_faces.size(); ++k) {
     std::optional<size_t> index;
@@ -1229,7 +1236,7 @@ std::vector<FamilyFace> FamilyFaces(
                       index ? sizes.face_sizes[*index] : sizes.effective,
                       index ? sizes.face_opsz[*index] : sizes.opsz,
                       k < declared.size() ? declared[k] : std::nullopt};
-    own_any = own_any || family.opsz != sizes.opsz || family.declared;
+    own_any = own_any || own_of(family);
     out.push_back(std::move(family));
   }
   if (!own_any) {
@@ -1263,11 +1270,12 @@ std::vector<FamilyFace> FamilyFaces(
   faces->clear();
   for (size_t k = 0; k < out.size(); ++k) {
     FamilyFace& family = out[k];
-    const bool own = family.opsz != sizes.opsz || family.declared;
+    const bool own = own_of(family);
     std::optional<FontArguments> own_args;
     if (own) {
-      const Coords coords = FontVariations({base_faces[k]}, request,
-                                           family.opsz, family.declared);
+      const Coords coords =
+          FontVariations({base_faces[k]}, request, family.opsz, family.declared,
+                         !IsSystemTypeface(c_collection, base_faces[k].get()));
       if (!coords.empty()) {
         SkFontArguments args;
         args.setVariationDesignPosition(
@@ -1595,9 +1603,11 @@ LineFaces ResolveLineFaces(skiac_font_collection* c_collection,
   out.sizes = ComputeUsedSizes(c_collection, out.base_faces, out.declared,
                                request, resolution.locale());
   // The request's own axes, for every face with `auto` descriptors and the
-  // last resort font; a face with descriptors gets its own (FamilyFaces).
+  // last resort font; a face with descriptors or a registered one with an
+  // ital axis gets its own (FamilyFaces).
   const std::vector<SkFontArguments::VariationPosition::Coordinate> coords =
-      FontVariations(out.base_faces, request, out.sizes.opsz, std::nullopt);
+      FontVariations(out.base_faces, request, out.sizes.opsz, std::nullopt,
+                     false);
   if (!coords.empty()) {
     SkFontArguments args;
     args.setVariationDesignPosition(
@@ -1790,8 +1800,9 @@ bool skiac_font_collection_primary_font_units(
   units->cap_height = metrics.cap_height;
   SkFont font(family.face, family.size);
   TextRasterPolicy(*request).ApplyShapingFlags(&font);
-  const SyntheticStyle synthetic = SynthesizeStyle(
-      c_collection, family.face.get(), family.base, *request, family.declared);
+  const SyntheticStyle synthetic =
+      SynthesizeStyle(c_collection, family.face.get(), family.base, *request,
+                      family.declared, true);
   font.setEmbolden(synthetic.bold);
   font.setSkewX(synthetic.italic ? -SK_Scalar1 / 4 : 0);
   // SimpleFontData::GlyphForCharacter: HarfBuzz's cmap.
