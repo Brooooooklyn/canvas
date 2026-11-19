@@ -103,12 +103,10 @@ bool Seen(const std::vector<const std::string*>& seen,
                      [&](const std::string* name) { return *name == folded; });
 }
 
-// The descriptors the face `id` has under the case-folded `folded`: those
-// its registration declares for the name, else, when the name is a setAlias
-// alias of that face, those of the name the alias names (a chain too),
-// newest call first. The alias is the target name drawn (a FontFace of the
-// same face and descriptors), so it follows a target declared again.
-// `seen`: the names looked up already, so a loop of aliases ends.
+}  // namespace
+
+// The alias is the target name drawn (a FontFace of the same face and
+// descriptors), so it follows a target declared again; newest call first.
 FaceDescriptors DescriptorsUnder(skiac_font_collection* c_collection,
                                  SkTypefaceID id,
                                  const std::string& folded,
@@ -142,8 +140,6 @@ FaceDescriptors DescriptorsUnder(skiac_font_collection* c_collection,
   return std::nullopt;
 }
 
-// Whether a face may have descriptors under the case-folded `folded`
-// (DescriptorsUnder), so a list of names without any looks nothing up.
 bool DescribesName(skiac_font_collection* c_collection,
                    const std::string& folded,
                    std::vector<const std::string*>& seen) {
@@ -164,8 +160,6 @@ bool DescribesName(skiac_font_collection* c_collection,
   }
   return false;
 }
-
-}  // namespace
 
 FaceDescriptors DeclaredDescriptors(skiac_font_collection* c_collection,
                                     SkTypeface* base,

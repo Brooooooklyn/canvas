@@ -31,6 +31,7 @@
 #include <CoreText/CoreText.h>
 #endif
 
+#include "font_selection.hpp"
 #include "icu_api.h"
 #include "shaper.hpp"
 #include "text.hpp"
@@ -1284,6 +1285,143 @@ class SegmentStyleSet : public SkFontStyleSet {
   int rank_;
 };
 
+// A web family that declares descriptors (UseCapabilities), as Blink's
+// FontFaceCache keeps it: a face's capabilities come from its descriptors
+// only, faces with equal ones are one CSSSegmentedFontFace, newest face
+// first (css_segmented_font_face.cc ForEachReverse), and a request takes
+// the best segment (FontFaceCache::CapabilitiesSet::Get,
+// FontSelectionAlgorithm::IsBetterMatchForRequest). A tie keeps the
+// segment of the newer face (Chrome's is hash order). `rank` k: face k of
+// that segment, or none, as SegmentStyleSet for "\x01s\x01" k.
+class FontFaceStyleSet : public SkFontStyleSet {
+ public:
+  FontFaceStyleSet(SkString family,
+                   std::vector<sk_sp<SkTypeface>> faces,
+                   std::vector<font_selection::Capabilities> capabilities,
+                   size_t rank)
+      : family_(std::move(family)),
+        faces_(std::move(faces)),
+        capabilities_(std::move(capabilities)),
+        rank_(rank) {
+    for (size_t i = 0; i < faces_.size(); ++i) {
+      if (i == 0) {
+        bounds_ = capabilities_[0];
+      } else {
+        bounds_.Expand(capabilities_[i]);
+      }
+      auto it = std::find_if(
+          segments_.begin(), segments_.end(), [&](const auto& segment) {
+            return capabilities_[segment.front()] == capabilities_[i];
+          });
+      if (it == segments_.end()) {
+        segments_.emplace_back();
+        it = segments_.end() - 1;
+      }
+      it->push_back(i);
+    }
+  }
+  int count() override { return static_cast<int>(faces_.size()); }
+  // One style per capabilities, so SameStyleDepth counts a segment's faces
+  // together.
+  void getStyle(int index, SkFontStyle* style, SkString* name) override {
+    if (style) {
+      const font_selection::Capabilities& caps = capabilities_[index];
+      const bool upright = caps.slope.minimum == font_selection::Value() &&
+                           caps.slope.maximum == font_selection::Value();
+      const bool italic = caps.slope.minimum == font_selection::Value(14) &&
+                          caps.slope.maximum == font_selection::Value(14);
+      *style =
+          SkFontStyle(static_cast<int>(lroundf(caps.weight.minimum.ToFloat())),
+                      SkFontStyle::kNormal_Width,
+                      upright  ? SkFontStyle::kUpright_Slant
+                      : italic ? SkFontStyle::kItalic_Slant
+                               : SkFontStyle::kOblique_Slant);
+    }
+    if (name) {
+      *name = family_;
+    }
+  }
+  sk_sp<SkTypeface> createTypeface(int index) override { return faces_[index]; }
+  sk_sp<SkTypeface> matchStyle(const SkFontStyle& pattern) override {
+    if (segments_.empty()) {
+      return nullptr;
+    }
+    // FontSelectionRequest of the font description: the width keyword's
+    // percentage (FontSelectionValue for each font-stretch keyword);
+    // italic and oblique as 14deg (an oblique angle is not in the style).
+    static constexpr float kWidths[] = {50,     62.5f, 75,  87.5f, 100,
+                                        112.5f, 125,   150, 200};
+    const int width = std::clamp(pattern.width(), 1, 9);
+    const font_selection::Request request{
+        font_selection::Value(static_cast<float>(pattern.weight())),
+        font_selection::Value(kWidths[width - 1]),
+        font_selection::Value(
+            pattern.slant() == SkFontStyle::kUpright_Slant ? 0.0f : 14.0f)};
+    const font_selection::Algorithm algorithm(request, bounds_);
+    size_t best = 0;
+    for (size_t s = 1; s < segments_.size(); ++s) {
+      if (algorithm.IsBetterMatchForRequest(
+              capabilities_[segments_[s].front()],
+              capabilities_[segments_[best].front()])) {
+        best = s;
+      }
+    }
+    const std::vector<size_t>& segment = segments_[best];
+    return rank_ < segment.size() ? faces_[segment[rank_]] : nullptr;
+  }
+
+ private:
+  SkString family_;
+  std::vector<sk_sp<SkTypeface>> faces_;
+  std::vector<font_selection::Capabilities> capabilities_;
+  // The faces of each capabilities, in the order of their newest face.
+  std::vector<std::vector<size_t>> segments_;
+  font_selection::Capabilities bounds_;
+  size_t rank_;
+};
+
+// Whether the web family `name` matches its faces by capabilities: a face
+// of it declares descriptors (DescribesName). A family with none keeps the
+// files' styles (TypefaceFontStyleSet).
+bool UseCapabilities(skiac_font_collection* c_collection,
+                     std::string_view name) {
+  if (!c_collection->assets->describesAny()) {
+    return false;
+  }
+  const std::string folded = Fold(name);
+  std::vector<const std::string*> seen;
+  return DescribesName(c_collection, folded, seen);
+}
+
+// FontFaceStyleSet over `faces` (newest first) of the family `name`, each
+// with FontFace::GetFontSelectionCapabilities of its descriptors under the
+// name (DescriptorsUnder): an `auto` field is the normal value, the width
+// (no descriptor) 100%.
+sk_sp<SkFontStyleSet> MakeFontFaceSet(skiac_font_collection* c_collection,
+                                      std::string_view name,
+                                      std::vector<sk_sp<SkTypeface>> faces,
+                                      size_t rank) {
+  const std::string folded = Fold(name);
+  std::vector<font_selection::Capabilities> capabilities;
+  capabilities.reserve(faces.size());
+  for (const auto& face : faces) {
+    std::vector<const std::string*> seen;
+    const FaceDescriptors declared =
+        DescriptorsUnder(c_collection, face->uniqueID(), folded, seen);
+    font_selection::Capabilities caps;
+    caps.width = {font_selection::Value(100), font_selection::Value(100)};
+    caps.weight = {
+        font_selection::Value(declared ? declared->weight.min : 400),
+        font_selection::Value(declared ? declared->weight.max : 400)};
+    caps.slope = {font_selection::Value(declared ? declared->slope.min : 0),
+                  font_selection::Value(declared ? declared->slope.max : 0)};
+    capabilities.push_back(caps);
+  }
+  return sk_make_sp<FontFaceStyleSet>(SkString(name.data(), name.size()),
+                                      std::move(faces), std::move(capabilities),
+                                      rank);
+}
+
 constexpr char kSiblingTag[] = "\x01s\x01";
 
 // The most faces of one style in `set`.
@@ -1697,6 +1835,17 @@ sk_sp<SkFontStyleSet> MakeSplitFamily(skiac_font_collection* c_collection,
     if (base.empty() || base.front() != '\x01') {
       return nullptr;
     }
+    // A capabilities family's siblings are its segment's older faces.
+    if ((base[1] == 'a' || base[1] == 'w') &&
+        UseCapabilities(c_collection, std::string_view(base).substr(3))) {
+      FamilyResolver resolver(c_collection);
+      const std::string_view name = std::string_view(base).substr(3);
+      return MakeFontFaceSet(
+          c_collection, name,
+          resolver.Faces(name, base[1] == 'w' ? FaceKind::kWeb : FaceKind::kAll,
+                         nullptr),
+          rank);
+    }
     sk_sp<SkFontStyleSet> set = c_collection->assets->matchFamily(base.c_str());
     if (!set) {
       return nullptr;
@@ -1714,6 +1863,9 @@ sk_sp<SkFontStyleSet> MakeSplitFamily(skiac_font_collection* c_collection,
                      &elsewhere);
   if (faces.empty()) {
     return elsewhere;
+  }
+  if (tagged[1] != 'i' && UseCapabilities(c_collection, name)) {
+    return MakeFontFaceSet(c_collection, name, std::move(faces), 0);
   }
   auto set =
       sk_make_sp<TypefaceFontStyleSet>(SkString(name.data(), name.size()));

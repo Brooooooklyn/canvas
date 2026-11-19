@@ -1087,3 +1087,161 @@ for (const renderer of ['portable', 'system'] as const) {
     })
   })
 }
+
+// A family that declares descriptors chooses its faces by them, as Blink's
+// FontFaceCache does: a face's capabilities are its descriptors (`auto` the
+// normal value, never the file's style), faces with the same ones are one
+// CSSSegmentedFontFace (newest first), and the request takes the nearest
+// (FontSelectionAlgorithm). RMStatic: the static wght 400 / 700 instances of
+// Roboto Mono.
+const rmRegular = font('RMStatic-Regular.ttf')
+const rmBold = font('RMStatic-Bold.ttf')
+GlobalFonts.register(rmRegular, 'Cap Ref Regular')
+GlobalFonts.register(rmRegular, 'Cap Ref R700', { weight: 700 })
+GlobalFonts.register(rmBold, 'Cap Ref Bold')
+
+test('declared weights choose the face, not the file', (t) => {
+  declare(t, rmRegular, 'Cap Swapped', { weight: 700 })
+  declare(t, rmBold, 'Cap Swapped', { weight: 400 })
+  const regular = draw('32px "Cap Ref Regular"').pixels
+  t.notDeepEqual(regular, draw('bold 32px "Cap Ref Regular"').pixels)
+  t.deepEqual(draw('32px "Cap Swapped"').pixels, draw('32px "Cap Ref Bold"').pixels)
+  // Declared 700: not emboldened.
+  t.deepEqual(draw('bold 32px "Cap Swapped"').pixels, regular)
+})
+
+test('auto and 400 are one segment, newest face first', (t) => {
+  declare(t, rmRegular, 'Cap 400 Auto', { weight: 400 })
+  t.truthy(GlobalFonts.register(rmBold, 'Cap 400 Auto'))
+  const boldFile = draw('32px "Cap Ref Bold"').pixels
+  t.deepEqual(draw('32px "Cap 400 Auto"').pixels, boldFile)
+  t.deepEqual(draw('bold 32px "Cap 400 Auto"').pixels, boldFile)
+  t.truthy(GlobalFonts.register(rmBold, 'Cap Auto 400'))
+  declare(t, rmRegular, 'Cap Auto 400', { weight: 400 })
+  // The Regular face, emboldened: the segment's maximum is under 600.
+  t.deepEqual(draw('bold 32px "Cap Auto 400"').pixels, draw('bold 32px "Cap Ref Regular"').pixels)
+})
+
+test('one buffer declared twice draws each declaration for its weight', (t) => {
+  const v400 = draw('32px "Descriptors 400"').pixels
+  const v700 = draw('32px "Descriptors 700"').pixels
+  const first = Buffer.concat([robotoMono, Buffer.alloc(256)])
+  declare(t, first, 'Cap Twin', { weight: 400 })
+  declare(t, first, 'Cap Twin', { weight: 700 })
+  const second = Buffer.concat([robotoMono, Buffer.alloc(320)])
+  declare(t, second, 'Cap Twin Reversed', { weight: 700 })
+  declare(t, second, 'Cap Twin Reversed', { weight: 400 })
+  for (const name of ['Cap Twin', 'Cap Twin Reversed']) {
+    t.deepEqual(draw(`32px "${name}"`).pixels, v400, name)
+    t.deepEqual(draw(`bold 32px "${name}"`).pixels, v700, name)
+  }
+})
+
+test('a character the matched segment lacks comes from the next family', (t) => {
+  // The {700} face has the Greek, the {400} one not: Blink's fallback walks
+  // the matched segment's faces only, then the next family.
+  declare(t, robotoMono, 'Cap Segment', { weight: 700 })
+  declare(t, font('Lato-Regular.ttf'), 'Cap Segment', { weight: 400 })
+  t.deepEqual(
+    draw('32px "Cap Segment", "Descriptors Auto"', GREEK).pixels,
+    draw('32px "Descriptors Auto"', GREEK).pixels,
+  )
+  t.deepEqual(draw('32px "Cap Segment"').pixels, draw('32px "Descriptors Lato"').pixels)
+})
+
+test('an older face of the matched segment draws what the newest lacks', (t) => {
+  // Both declared 400: one segment, whatever the files' weights.
+  declare(t, rmBold, 'Cap Older', { weight: 400 })
+  declare(t, font('Lato-Regular.ttf'), 'Cap Older', { weight: 400 })
+  t.deepEqual(draw('32px "Cap Older"', GREEK).pixels, draw('32px "Cap Ref Bold"', GREEK).pixels)
+  t.deepEqual(draw('32px "Cap Older"').pixels, draw('32px "Descriptors Lato"').pixels)
+})
+
+test('SVG text: a declared family chooses its faces like canvas text', (t) => {
+  // svgPixels draws font-weight bold: the face declared 700.
+  t.deepEqual(svgPixels("'Cap Swapped'", 'Ham'), svgPixels("'Cap Ref R700'", 'Ham'))
+  t.notDeepEqual(svgPixels("'Cap Swapped'", 'Ham'), svgPixels("'Cap Ref Bold'", 'Ham'))
+})
+
+test('measureText follows the face the descriptors choose', (t) => {
+  declare(t, font('Oswald.ttf'), 'Cap Width', { weight: 400 })
+  declare(t, font('Lato-Regular.ttf'), 'Cap Width', { weight: 700 })
+  const ctx = createCanvas(10, 10).getContext('2d')
+  const width = (font: string) => {
+    ctx.font = font
+    return ctx.measureText('Hamburgefonts').width
+  }
+  t.not(width('32px "Descriptors Oswald"'), width('32px "Descriptors Lato"'))
+  t.is(width('32px "Cap Width"'), width('32px "Descriptors Oswald"'))
+  t.is(width('bold 32px "Cap Width"'), width('32px "Descriptors Lato"'))
+})
+
+// A child process: two declared faces under the name of a family
+// loadFontsFromDir loaded are FontFaces of that name ("\x01w\x01"): they
+// choose by their descriptors, across a rebuild and a renderer switch; after
+// remove the installed face draws again.
+const INSTALLED_NAME_PROBE = `
+  const { readFileSync } = require('fs')
+  const { createCanvas, GlobalFonts, setTextRenderer } = require(process.env.PROBE_INDEX)
+  const { RENDERER, PROBE_DIR, PROBE_FONTS } = process.env
+  setTextRenderer(RENDERER)
+  const font = (name) => readFileSync(PROBE_FONTS + '/' + name)
+  const pixels = (font) => {
+    const ctx = createCanvas(420, 60).getContext('2d')
+    ctx.font = font
+    ctx.fillText('Hamburgefonts', 10, 42)
+    return Buffer.from(ctx.getImageData(0, 0, 420, 60).data).toString('base64')
+  }
+  const out = { loaded: GlobalFonts.loadFontsFromDir(PROBE_DIR) }
+  const installed = pixels('40px RMStatic')
+  const regular = font('RMStatic-Regular.ttf')
+  const bold = font('RMStatic-Bold.ttf')
+  const keys = [
+    GlobalFonts.register(regular, 'RMStatic', { weight: 700 }),
+    GlobalFonts.register(bold, 'RMStatic', { weight: 400 }),
+  ]
+  const states = [[pixels('40px RMStatic'), pixels('bold 40px RMStatic')]]
+  GlobalFonts.remove(GlobalFonts.register(font('Lato-Regular.ttf'), 'Unrelated'))
+  setTextRenderer(RENDERER === 'system' ? 'portable' : 'system')
+  setTextRenderer(RENDERER)
+  states.push([pixels('40px RMStatic'), pixels('bold 40px RMStatic')])
+  out.removed = keys.map((key) => GlobalFonts.remove(key))
+  out.after = pixels('40px RMStatic') === installed
+  // References under names no installed font has.
+  GlobalFonts.register(regular, 'Ref Regular')
+  GlobalFonts.register(bold, 'Ref Bold')
+  const refs = [pixels('40px "Ref Bold"'), pixels('40px "Ref Regular"')]
+  out.refs = refs[0] !== installed && refs[1] === installed
+  out.states = states.map(([normal, boldText]) => [normal === refs[0], boldText === refs[1]])
+  console.log(JSON.stringify(out))`
+
+for (const renderer of ['portable', 'system'] as const) {
+  test(`declared faces under an installed family name choose by their descriptors (${renderer})`, (t) => {
+    const dir = mkdtempSync(join(tmpdir(), 'canvas-installed-name-'))
+    t.teardown(() => rmSync(dir, { recursive: true, force: true }))
+    copyFileSync(join(__dirname, 'fonts', 'RMStatic-Regular.ttf'), join(dir, 'RMStatic-Regular.ttf'))
+    const child = spawnSync(process.execPath, ['-e', INSTALLED_NAME_PROBE], {
+      encoding: 'utf8',
+      timeout: 60_000,
+      env: {
+        ...process.env,
+        RENDERER: renderer,
+        PROBE_DIR: dir,
+        PROBE_FONTS: join(__dirname, 'fonts'),
+        PROBE_INDEX: join(__dirname, '..', 'index.js'),
+      },
+    })
+    t.is(child.status, 0, child.stderr)
+    t.deepEqual(JSON.parse(child.stdout), {
+      loaded: 1,
+      removed: [true, true],
+      after: true,
+      refs: true,
+      // normal: the Bold file declared 400; bold: the Regular file declared 700.
+      states: [
+        [true, true],
+        [true, true],
+      ],
+    })
+  })
+}

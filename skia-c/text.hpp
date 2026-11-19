@@ -160,6 +160,23 @@ FaceDescriptors DeclaredDescriptors(skiac_font_collection* c_collection,
                                     SkTypeface* base,
                                     std::string_view family);
 
+// The descriptors the face `id` has under the case-folded `folded`: those
+// its registration declares for the name, else, when the name is a setAlias
+// alias of that face, those of the name the alias names (a chain too).
+// `seen` (empty at first): the names looked up already, so a loop of
+// aliases ends (text_styles.cpp).
+FaceDescriptors DescriptorsUnder(skiac_font_collection* c_collection,
+                                 SkTypefaceID id,
+                                 const std::string& folded,
+                                 std::vector<const std::string*>& seen);
+
+// Whether a face may have descriptors under the case-folded `folded`
+// (DescriptorsUnder), so a list of names without any looks nothing up.
+// `seen` as for DescriptorsUnder (text_styles.cpp).
+bool DescribesName(skiac_font_collection* c_collection,
+                   const std::string& folded,
+                   std::vector<const std::string*>& seen);
+
 // For each of `base_faces` (findTypefaces of `families` at `style`), the
 // descriptors of the family that matched it, as Blink's CSSFontSelector
 // takes the FontFace of one family at a time; none for a generic family
