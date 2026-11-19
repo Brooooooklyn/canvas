@@ -294,7 +294,8 @@ struct RegisteredFont {
   // or a face that a later switch makes.
   bool no_web_twin = false;
   // A declaration twin's TwinSignature (empty for every other registration):
-  // its key is retired with it on remove (retired_twins).
+  // its key is retired with it on remove and removeAll
+  // (retired_twins).
   std::string twin_signature;
 
   // Whether name `i` is a FontFace name of a preloaded font: the alias
@@ -1052,10 +1053,16 @@ class TypefaceFontProviderCustom : public TypefaceFontProvider {
     retired_twins = old.retired_twins;
   }
 
-  // Remove all typefaces from tracking
+  // Remove all typefaces from tracking; the twin keys are retired as
+  // removeTypeface retires them.
   // Note: caller must also clear set_aliases in skiac_font_collection
   size_t removeAllTypefaces() {
     size_t count = registered_fonts.size();
+    for (const auto& [id, font] : registered_fonts) {
+      if (!font.twin_signature.empty()) {
+        retired_twins[id] = font.twin_signature;
+      }
+    }
     registered_fonts.clear();
     content_hash_index.clear();
     described_names.clear();

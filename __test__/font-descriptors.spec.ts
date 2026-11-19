@@ -1258,6 +1258,92 @@ test('a removed twin key does not go to a twin whose declaration hashes alike', 
   }
 })
 
+// A child process (removeAll drops every font): the twin keys removeAll
+// removed are retired as a remove retires them, so a declaration that
+// hashes alike gets another key and the old one removes nothing.
+const REMOVE_ALL_TWIN_PROBE = `
+  const { readFileSync } = require('fs')
+  const { GlobalFonts } = require(process.env.PROBE_INDEX)
+  const { PROBE_FONTS, PROBE_PATH, PROBE_MODE } = process.env
+  const name = 'Remove All Twin'
+  const data = Buffer.concat([readFileSync(PROBE_FONTS + '/RobotoMono-VariableFont_wght.ttf'), Buffer.alloc(480)])
+  const declareAs = (descriptors) =>
+    PROBE_MODE === 'path'
+      ? GlobalFonts.registerFromPath(PROBE_PATH, name, descriptors)
+      : GlobalFonts.register(data, name, descriptors)
+  const fnv = (text) => {
+    let hash = 2166136261
+    for (const byte of Buffer.from(text, 'latin1')) hash = Math.imul(hash ^ byte, 16777619) >>> 0
+    return hash || 1
+  }
+  const range = (min, max) => ':' + min.toFixed(6) + ',' + max.toFixed(6)
+  const seed = (contentHash, weight, angle) =>
+    fnv('\\x01twin:' + contentHash + ':' + name.toLowerCase() + range(weight, weight) + range(angle, angle))
+  const styles = () => GlobalFonts.families.find((f) => f.family === name)?.styles.length ?? 0
+  const out = {}
+  const first = declareAs()
+  const contentHash = first.typefaceId
+  const probe = declareAs({ weight: 300, style: 'oblique 10deg' })
+  out.seed = probe.typefaceId === seed(contentHash, 300, 10)
+  GlobalFonts.remove(probe)
+  const seen = new Map()
+  let pair
+  for (let weight = 1; weight <= 1000 && !pair; ++weight) {
+    for (let quarter = -360; quarter <= 360; ++quarter) {
+      const key = seed(contentHash, weight, quarter / 4)
+      const other = seen.get(key)
+      if (other) {
+        pair = [other, [weight, quarter / 4]]
+        break
+      }
+      seen.set(key, [weight, quarter / 4])
+    }
+  }
+  const [[weightA, angleA], [weightB, angleB]] = pair
+  const declarationA = { weight: weightA, style: 'oblique ' + angleA + 'deg' }
+  const keyA = declareAs(declarationA)
+  GlobalFonts.removeAll()
+  out.firstAgain = declareAs().typefaceId === contentHash
+  const keyB = declareAs({ weight: weightB, style: 'oblique ' + angleB + 'deg' })
+  out.keysDiffer = keyB.typefaceId !== keyA.typefaceId
+  out.styles = [styles()]
+  out.removed = GlobalFonts.remove(keyA)
+  out.removedBatch = GlobalFonts.removeBatch([keyA])
+  out.styles.push(styles())
+  // The same declaration again names the same face: its old key.
+  out.sameAgain = declareAs(declarationA).typefaceId === keyA.typefaceId
+  console.log(JSON.stringify(out))`
+
+for (const mode of ['buffer', 'path'] as const) {
+  test(`a twin key removeAll removed does not go to a twin whose declaration hashes alike (${mode})`, (t) => {
+    const dir = mkdtempSync(join(tmpdir(), 'canvas-remove-all-twin-'))
+    t.teardown(() => rmSync(dir, { recursive: true, force: true }))
+    const path = join(dir, 'RemoveAllTwin.ttf')
+    copyFileSync(join(__dirname, 'fonts', 'RobotoMono-VariableFont_wght.ttf'), path)
+    const child = spawnSync(process.execPath, ['-e', REMOVE_ALL_TWIN_PROBE], {
+      encoding: 'utf8',
+      timeout: 60_000,
+      env: {
+        ...process.env,
+        PROBE_MODE: mode,
+        PROBE_PATH: path,
+        PROBE_FONTS: join(__dirname, 'fonts'),
+        PROBE_INDEX: join(__dirname, '..', 'index.js'),
+      },
+    })
+    t.is(child.status, 0, child.stderr)
+    t.deepEqual(JSON.parse(child.stdout), {
+      seed: true,
+      firstAgain: true,
+      keysDiffer: true,
+      styles: [2, 2],
+      removed: false,
+      removedBatch: 0,
+      sameAgain: true,
+    })
+  })
+}
+
 // A child process: a file loadFontsFromDir loaded is an installed font and
 // takes no descriptors, so registerFromPath of it with descriptors makes a
 // twin (one more face of its family); without them it is the installed
