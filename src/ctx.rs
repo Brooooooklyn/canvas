@@ -9156,7 +9156,7 @@ mod tests {
   fn fill_text_dedups_the_typeface_charge() {
     {
       let fonts = get_font().unwrap();
-      fonts.register_from_path::<String>("__test__/fonts/Lato-Regular.ttf", None);
+      fonts.register_from_path::<String>("__test__/fonts/Lato-Regular.ttf", None, None);
     }
     let mut ctx = raster_ctx(64, 64);
     ctx.set_font("16px Lato").unwrap();
@@ -9193,7 +9193,7 @@ mod tests {
   fn text_bounds_are_the_measured_ink() {
     {
       let fonts = get_font().unwrap();
-      fonts.register_from_path::<String>("__test__/fonts/Lato-Regular.ttf", None);
+      fonts.register_from_path::<String>("__test__/fonts/Lato-Regular.ttf", None, None);
     }
     let mut ctx = raster_ctx(64, 64);
     ctx.set_font("16px Lato").unwrap();
@@ -9210,7 +9210,7 @@ mod tests {
   fn singular_transform_draws_charge_nothing() {
     {
       let fonts = get_font().unwrap();
-      fonts.register_from_path::<String>("__test__/fonts/Lato-Regular.ttf", None);
+      fonts.register_from_path::<String>("__test__/fonts/Lato-Regular.ttf", None, None);
     }
     let mut src = raster_ctx(8, 8);
     src.fill_rect(0.0, 0.0, 8.0, 8.0).unwrap();
@@ -9575,7 +9575,7 @@ mod tests {
   fn spacing_font_units_read_the_font_when_set() {
     {
       let fonts = get_font().unwrap();
-      fonts.register_from_path::<String>("__test__/fonts/Lato-Regular.ttf", None);
+      fonts.register_from_path::<String>("__test__/fonts/Lato-Regular.ttf", None, None);
     }
     // Lato at 40px: x-height 1013/2000 em, "0" 0.58 em, no U+6C34 (ic = em).
     let mut ctx = spacing_ctx("40px Lato");

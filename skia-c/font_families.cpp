@@ -1751,8 +1751,7 @@ uint32_t skiac_font_collection_register_system_font(
   const size_t registered = c_collection->assets->getRegisteredFonts().size();
   const SkTypefaceID typeface_id = typeface->uniqueID();
   const uint32_t id =
-      c_collection->assets->registerTypefaceFromPathWithTracking(path,
-                                                                 typeface);
+      c_collection->assets->registerDirTypefaceWithTracking(path, typeface);
   if (!id) {
     return 0;
   }

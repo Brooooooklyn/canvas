@@ -4664,7 +4664,8 @@ uint32_t skiac_font_collection_register(
 uint32_t skiac_font_collection_register_from_path(
     skiac_font_collection* c_font_collection,
     const char* font_path,
-    const char* name_alias) {
+    const char* name_alias,
+    const skiac_face_descriptors* descriptors) {
   // Installed fonts register first, as loadSystemFonts does elsewhere.
   c_font_collection->prepareLookup();
   // Use lazy loading - don't load entire file into memory
@@ -4674,21 +4675,13 @@ uint32_t skiac_font_collection_register_from_path(
   if (!typeface) {
     return 0;
   }
-
-  std::string path_str(font_path);
   const size_t registered =
       c_font_collection->assets->getRegisteredFonts().size();
-  uint32_t typeface_id;
-  if (name_alias) {
-    auto alias = SkString(name_alias);
-    typeface_id =
-        c_font_collection->assets->registerTypefaceFromPathWithTracking(
-            path_str, typeface, alias);
-  } else {
-    typeface_id =
-        c_font_collection->assets->registerTypefaceFromPathWithTracking(
-            path_str, typeface);
-  }
+  // As register: the call declares the name with `descriptors` (a twin of
+  // another declaration of the same path gets a FontKey of its own).
+  const uint32_t typeface_id =
+      c_font_collection->assets->registerTypefaceFromPathWithTracking(
+          font_path, typeface, name_alias, descriptors);
   if (typeface_id) {
     RelistRegistered(c_font_collection, typeface_id, registered, typeface,
                      name_alias);

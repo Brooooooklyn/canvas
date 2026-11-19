@@ -1170,8 +1170,12 @@ interface IGlobalFonts {
    * and style ranges.
    */
   register(font: Buffer, nameAlias?: string, descriptors?: FontFaceDescriptors): FontKey | null
-  // absolute path - returns FontKey if succeeded, null if failed
-  registerFromPath(path: string, nameAlias?: string): FontKey | null
+  /**
+   * Absolute path. The FontKey, or null if it failed. `descriptors`: as
+   * `register`'s; a file `loadFontsFromDir` loaded is an installed font and
+   * takes none, so a call with them registers the file again.
+   */
+  registerFromPath(path: string, nameAlias?: string, descriptors?: FontFaceDescriptors): FontKey | null
   has(name: string): boolean
   loadFontsFromDir(path: string): number
   /**

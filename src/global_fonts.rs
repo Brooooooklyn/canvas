@@ -298,6 +298,8 @@ pub mod global_fonts {
   /// Fonts registered via path are deduplicated by the path string itself, not by file contents.
   /// This means:
   /// - Registering the same path multiple times returns the existing registration
+  ///   (a call declaring a name it already has with other descriptors makes a
+  ///   twin with a FontKey of its own, as register does for the same bytes)
   /// - If the font file is modified on disk and `registerFromPath` is called again,
   ///   the new contents will NOT be loaded - it returns the existing registration
   ///
@@ -311,18 +313,31 @@ pub mod global_fonts {
   ///
   /// Note: The `register()` function (buffer-based) deduplicates by content hash,
   /// so it will detect when font data has changed.
+  ///
+  /// `descriptors`: as register's. A file loadFontsFromDir loaded takes
+  /// none (an installed font): with them, the call registers the file again.
   // TODO: Do file extensions in font_path need to be converted to lowercase?
   // Windows and macOS are case-insensitive, Linux is not.
   // See: https://github.com/Brooooooklyn/canvas/actions/runs/5893418006/job/15985737723
   #[napi]
   pub fn register_from_path(
+    env: &Env,
     font_path: String,
     name_alias: Option<String>,
+    descriptors: Option<Unknown>,
   ) -> Result<Option<FontKey>> {
     let maybe_name_alias = name_alias.filter(|s| !s.is_empty());
+    let descriptors = match descriptors {
+      Some(d) => match super::read_face_descriptors(env.raw(), d.raw())? {
+        super::Declared::Invalid => return Ok(None),
+        super::Declared::Auto => None,
+        super::Declared::Explicit(descriptors) => Some(descriptors),
+      },
+      None => None,
+    };
     let font = get_font().map_err(into_napi_error)?;
     let result = font
-      .register_from_path(font_path.as_str(), maybe_name_alias)
+      .register_from_path(font_path.as_str(), maybe_name_alias, descriptors.as_ref())
       .map(|typeface_id| FontKey { typeface_id });
     if result.is_some() {
       super::note_font_collection_mutation();

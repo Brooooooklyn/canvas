@@ -742,7 +742,8 @@ class TypefaceFontProviderCustom : public TypefaceFontProvider {
   }
 
   /**
-   * Register a typeface from a file path.
+   * Register a typeface from a file path (loadFontsFromDir; registerFromPath
+   * is registerTypefaceFromPathWithTracking below).
    *
    * Fonts are deduplicated by path string: if the same path is registered
    * multiple times, subsequent calls return the existing ID without re-reading
@@ -761,8 +762,8 @@ class TypefaceFontProviderCustom : public TypefaceFontProvider {
    * @param typeface The typeface created from the font file
    * @return The font ID (content hash), or 0 on failure
    */
-  uint32_t registerTypefaceFromPathWithTracking(const std::string& path,
-                                                sk_sp<SkTypeface> typeface) {
+  uint32_t registerDirTypefaceWithTracking(const std::string& path,
+                                           sk_sp<SkTypeface> typeface) {
     if (!typeface) {
       return 0;
     }
@@ -811,62 +812,77 @@ class TypefaceFontProviderCustom : public TypefaceFontProvider {
     return id;
   }
 
-  uint32_t registerTypefaceFromPathWithTracking(const std::string& path,
-                                                sk_sp<SkTypeface> typeface,
-                                                const SkString& alias) {
+  // registerFromPath(): the font file `path` (its face `typeface`, read
+  // now) under `alias` (null: the face's own family), declared with
+  // `descriptors` (null: auto). The registerTypefaceWithTracking rule over
+  // the registrations of the same path (paths are not compared by bytes),
+  // except that a file loadFontsFromDir loaded never takes descriptors: it
+  // is an installed font (FontCache), which has none, so a declared call
+  // makes a twin. A twin's face is made from the data of the first
+  // registration's face, as a rebuild makes it (a file replaced since then
+  // gives no other bytes); from this call's read only when that face gives
+  // no data. Returns the FontKey (a path hash), 0 on failure.
+  uint32_t registerTypefaceFromPathWithTracking(
+      const std::string& path,
+      sk_sp<SkTypeface> typeface,
+      const char* alias,
+      const skiac_face_descriptors* descriptors) {
     if (!typeface) {
       return 0;
     }
-    // Use path-based hash instead of uniqueID for stable deduplication
     uint32_t content_hash = computePathHash(path);
-    std::string aliasStr = std::string(alias.c_str());
-
-    // Get original family name from typeface
     SkString familyName;
     typeface->getFamilyName(&familyName);
     std::string originalName = std::string(familyName.c_str());
+    // The name the call declares; an alias argument unless the own family.
+    std::string name = alias ? std::string(alias) : originalName;
+    const bool alias_arg = name != originalName;
+    const std::string folded = FoldFamilyName(name);
 
-    // First, check the secondary index for existing registration with same path
-    // This handles the case where the probe chain was broken by a removal
+    // The registrations of the same path, through the secondary index (the
+    // probe chain may be broken by a removal).
+    std::vector<uint32_t> same;
     auto index_it = content_hash_index.find(content_hash);
     if (index_it != content_hash_index.end()) {
       for (uint32_t existing_id : index_it->second) {
         auto font_it = registered_fonts.find(existing_id);
         if (font_it != registered_fonts.end() &&
             !font_it->second.path.empty() && font_it->second.path == path) {
-          // Found matching path via index - true duplicate, add alias if new
-          RegisteredFont& font = font_it->second;
-          auto& aliases = font.aliases;
-          auto listed = std::find(aliases.begin(), aliases.end(), aliasStr);
-          if (listed != aliases.end()) {
-            font.call_names[listed - aliases.begin()] = true;
-          } else {
-            font.AddName(aliasStr, true, true, ++registrations);
-            // A FontFace name of a file loadFontsFromDir loaded gets its web
-            // twin (one per font, shared by its FontFace names), made from
-            // the data of the font's face as a rebuild makes it: the same
-            // path is not read again, so a file replaced since then does
-            // not give the name other bytes in one renderer mode only. When
-            // this mode cannot read that data, the font gets no twin
-            // (no_web_twin). The face this call made only when the font's
-            // face gives no data.
-            if (font.WebName(aliases.size() - 1) && !font.web_typeface) {
-              int index = 0;
-              std::unique_ptr<SkStreamAsset> stream =
-                  font.typeface ? font.typeface->openStream(&index) : nullptr;
-              if (stream) {
-                font.web_typeface = MakeCanvasTypeface(std::move(stream));
-                font.no_web_twin = !font.web_typeface;
-              } else {
-                font.web_typeface = typeface;
-              }
-            }
-            // The font's own face (or its twin), so the alias name is that
-            // registration (registrationOf finds it) as after a rebuild.
-            this->registerTypeface(font.NameFace(aliases.size() - 1), alias);
-          }
+          same.push_back(existing_id);
+        }
+      }
+    }
+    if (!same.empty()) {
+      for (uint32_t existing_id : same) {
+        const RegisteredFont& font = registered_fonts.at(existing_id);
+        if (font.Declares(folded) &&
+            SameDescriptors(font.descriptors, folded, descriptors)) {
+          addPathName(existing_id, name, alias_arg, alias, typeface);
           return existing_id;
         }
+      }
+      uint32_t free_id = 0;
+      for (uint32_t existing_id : same) {
+        const RegisteredFont& font = registered_fonts.at(existing_id);
+        if (!font.Declares(folded) && !(descriptors && font.preloaded) &&
+            (!free_id || font.orders.front() <
+                             registered_fonts.at(free_id).orders.front())) {
+          free_id = existing_id;
+        }
+      }
+      if (free_id) {
+        addPathName(free_id, name, alias_arg, alias, typeface);
+        setDescriptors(free_id, name, descriptors);
+        return free_id;
+      }
+      int index = 0;
+      const sk_sp<SkTypeface>& first =
+          registered_fonts.at(same.front()).typeface;
+      std::unique_ptr<SkStreamAsset> stream =
+          first ? first->openStream(&index) : nullptr;
+      if (sk_sp<SkTypeface> twin =
+              stream ? MakeCanvasTypeface(std::move(stream)) : nullptr) {
+        typeface = std::move(twin);
       }
     }
 
@@ -879,29 +895,28 @@ class TypefaceFontProviderCustom : public TypefaceFontProvider {
       }
     }
 
-    // Store path (not data) - avoid duplicates if alias equals original name
+    // Store path (not data) for rebuild
     RegisteredFont font_info;
     font_info.path = path;
     font_info.typeface = typeface;
-    font_info.AddName(originalName, false, aliasStr == originalName,
-                      ++registrations);
-
-    // Only add alias if different from original name
-    if (aliasStr != originalName) {
-      font_info.AddName(aliasStr, true, true, ++registrations);
+    if (same.empty()) {
+      // The own family first, then the alias (when not the same name).
+      font_info.AddName(originalName, false, !alias_arg, ++registrations);
+      if (alias_arg) {
+        font_info.AddName(name, true, true, ++registrations);
+      }
+    } else {
+      // A twin is a FontFace of its name only.
+      font_info.AddName(name, alias_arg, true, ++registrations);
+    }
+    for (const std::string& listed : font_info.aliases) {
+      this->registerTypeface(typeface, SkString(listed.c_str()));
     }
     registered_fonts[id] = std::move(font_info);
 
     // Update secondary index
     content_hash_index[content_hash].insert(id);
-
-    // Register under original name
-    this->registerTypeface(typeface);
-
-    // Only register under alias if different from original
-    if (aliasStr != originalName) {
-      this->registerTypeface(std::move(typeface), alias);
-    }
+    setDescriptors(id, name, descriptors);
     return id;
   }
 
@@ -974,6 +989,49 @@ class TypefaceFontProviderCustom : public TypefaceFontProvider {
     // The font's own face, so the alias name is that registration
     // (registrationOf finds it) as after a rebuild.
     this->registerTypeface(font_info.typeface, SkString(name.c_str()));
+  }
+
+  // registerFromPath: the path font `id` declares `name` (call_names). A
+  // new spelling lists its face; for a FontFace name of a file
+  // loadFontsFromDir loaded, its web twin (one per font, shared by its
+  // FontFace names), made from the data of the font's face as a rebuild
+  // makes it: the same path is not read again, so a file replaced since
+  // then does not give the name other bytes in one renderer mode only. When
+  // this mode cannot read that data, the font gets no twin (no_web_twin).
+  // `typeface` (the face this call made) only when the font's face gives no
+  // data. A call with no alias leaves such a file's own family undeclared:
+  // it stays an installed font (RelistRegistered).
+  void addPathName(uint32_t id,
+                   const std::string& name,
+                   bool alias_arg,
+                   const char* alias,
+                   const sk_sp<SkTypeface>& typeface) {
+    RegisteredFont& font = registered_fonts.at(id);
+    if (!alias && font.preloaded) {
+      return;
+    }
+    auto& aliases = font.aliases;
+    auto listed = std::find(aliases.begin(), aliases.end(), name);
+    if (listed != aliases.end()) {
+      font.call_names[listed - aliases.begin()] = true;
+      return;
+    }
+    font.AddName(name, alias_arg, true, ++registrations);
+    if (font.WebName(aliases.size() - 1) && !font.web_typeface) {
+      int index = 0;
+      std::unique_ptr<SkStreamAsset> stream =
+          font.typeface ? font.typeface->openStream(&index) : nullptr;
+      if (stream) {
+        font.web_typeface = MakeCanvasTypeface(std::move(stream));
+        font.no_web_twin = !font.web_typeface;
+      } else {
+        font.web_typeface = typeface;
+      }
+    }
+    // The font's own face (or its twin), so the alias name is that
+    // registration (registrationOf finds it) as after a rebuild.
+    this->registerTypeface(font.NameFace(aliases.size() - 1),
+                           SkString(name.c_str()));
   }
 
   // Whether `map` holds `descriptors` for the folded name (null: none).
@@ -2675,7 +2733,8 @@ uint32_t skiac_font_collection_register(
 uint32_t skiac_font_collection_register_from_path(
     skiac_font_collection* c_font_collection,
     const char* font_path,
-    const char* name_alias);
+    const char* name_alias,
+    const skiac_face_descriptors* descriptors);
 size_t skiac_font_collection_unregister(
     skiac_font_collection* c_font_collection,
     uint32_t typeface_id);

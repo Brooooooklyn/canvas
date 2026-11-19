@@ -856,3 +856,132 @@ test('a declaration twin made and removed 200 times does not grow RSS', (t) => {
   const { rss } = JSON.parse(child.stdout)
   t.true(rss[1] - rss[0] < 20, `RSS MB after 20, then 200 more: ${rss.map((v: number) => v.toFixed(1)).join(', ')}`)
 })
+
+// registerFromPath takes the same descriptors as register; a declaration of
+// the same path under the same name with other descriptors is a face of its
+// own (FontFaceCache::Add keeps every FontFace of a family).
+test('registerFromPath declares the face with its descriptors', (t) => {
+  const path = join(__dirname, 'fonts', 'RobotoMono-VariableFont_wght.ttf')
+  const key = GlobalFonts.registerFromPath(path, 'Path 400', { weight: 400 })
+  t.truthy(key)
+  const bold400 = draw('bold 32px "Descriptors 400"').pixels
+  t.deepEqual(draw('bold 32px "Path 400"').pixels, bold400)
+  t.notDeepEqual(bold400, draw('bold 32px "Descriptors Auto"').pixels)
+  t.is(GlobalFonts.registerFromPath(path, 'Path Bad', { weight: 'bolder' }), null)
+  t.false(GlobalFonts.has('Path Bad'))
+  for (const [i, descriptors] of [1, 'italic'].entries()) {
+    const name = `Path Primitive ${i}`
+    t.throws(() => GlobalFonts.registerFromPath(path, name, descriptors as unknown as FontFaceDescriptors), {
+      instanceOf: TypeError,
+      message: "The provided value is not of type 'FontFaceDescriptors'.",
+    })
+    t.false(GlobalFonts.has(name))
+  }
+})
+
+test('the same path declared again with other descriptors is a face of its own', (t) => {
+  // Its own path: no other name shares the registrations.
+  const dir = mkdtempSync(join(tmpdir(), 'canvas-path-twin-'))
+  t.teardown(() => rmSync(dir, { recursive: true, force: true }))
+  const path = join(dir, 'PathTwin.ttf')
+  copyFileSync(join(__dirname, 'fonts', 'RobotoMono-VariableFont_wght.ttf'), path)
+  const key400 = GlobalFonts.registerFromPath(path, 'Path Twin', { weight: 400 })
+  const key700 = GlobalFonts.registerFromPath(path, 'Path Twin', { weight: '700' })
+  t.truthy(key400)
+  t.truthy(key700)
+  t.not(key700!.typefaceId, key400!.typefaceId)
+  t.is(GlobalFonts.registerFromPath(path, 'Path Twin', { weight: 700 })?.typefaceId, key700!.typefaceId)
+  t.is(GlobalFonts.registerFromPath(path, 'path twin', { weight: 400 })?.typefaceId, key400!.typefaceId)
+  t.is(GlobalFonts.registerFromPath(path, 'Path Twin Other')?.typefaceId, key400!.typefaceId)
+  t.true(GlobalFonts.remove(key700!))
+  t.true(GlobalFonts.has('Path Twin'))
+  t.deepEqual(draw('32px "Path Twin"').pixels, draw('32px "Descriptors 400"').pixels)
+  t.deepEqual(draw('bold 32px "Path Twin"').pixels, draw('bold 32px "Descriptors 400"').pixels)
+  t.true(GlobalFonts.remove(key400!))
+  t.false(GlobalFonts.has('Path Twin'))
+  t.false(GlobalFonts.has('Path Twin Other'))
+})
+
+// A child process: a file loadFontsFromDir loaded is an installed font and
+// takes no descriptors, so registerFromPath of it with descriptors makes a
+// twin (one more face of its family); without them it is the installed
+// registration, as before. Path twins keep their FontKeys across a rebuild
+// (an unrelated remove) and a renderer switch.
+const PATH_TWIN_PROBE = `
+  const { GlobalFonts, setTextRenderer } = require(process.env.PROBE_INDEX)
+  const { RENDERER, PROBE_DIR, PROBE_TWIN, PROBE_FONTS } = process.env
+  setTextRenderer(RENDERER)
+  const styles = (name) => {
+    const family = JSON.parse(GlobalFonts.getFamilies().toString()).find((f) => f.family === name)
+    return family ? family.styles.length : 0
+  }
+  const out = {}
+  const preloaded = PROBE_DIR + '/RobotoMono-VariableFont_wght.ttf'
+  out.loaded = GlobalFonts.loadFontsFromDir(PROBE_DIR)
+  const before = styles('Roboto Mono')
+  const plain = GlobalFonts.registerFromPath(preloaded)
+  out.plainStyles = styles('Roboto Mono') - before
+  const twin = GlobalFonts.registerFromPath(preloaded, undefined, { weight: 400 })
+  out.twinStyles = styles('Roboto Mono') - before
+  out.twinKey = twin !== null && twin.typefaceId !== plain.typefaceId
+  out.twinAgain = GlobalFonts.registerFromPath(preloaded, undefined, { weight: 400 }).typefaceId === twin.typefaceId
+  out.plainAgain = GlobalFonts.registerFromPath(preloaded).typefaceId === plain.typefaceId
+  const path = PROBE_TWIN
+  const key400 = GlobalFonts.registerFromPath(path, 'PT', { weight: 400 })
+  const key700 = GlobalFonts.registerFromPath(path, 'PT', { weight: 700 })
+  out.keysDiffer = key400.typefaceId !== key700.typefaceId
+  out.styles = [styles('PT')]
+  GlobalFonts.remove(GlobalFonts.registerFromPath(PROBE_FONTS + '/Lato-Regular.ttf', 'Unrelated'))
+  out.styles.push(styles('PT'))
+  setTextRenderer(RENDERER === 'system' ? 'portable' : 'system')
+  setTextRenderer(RENDERER)
+  out.styles.push(styles('PT'))
+  out.sameAgain = [
+    GlobalFonts.registerFromPath(path, 'PT', { weight: 400 }).typefaceId === key400.typefaceId,
+    GlobalFonts.registerFromPath(path, 'PT', { weight: 700 }).typefaceId === key700.typefaceId,
+    GlobalFonts.registerFromPath(preloaded, undefined, { weight: 400 }).typefaceId === twin.typefaceId,
+  ]
+  out.removedTwin = GlobalFonts.remove(twin)
+  out.afterRemove = styles('Roboto Mono') - before
+  console.log(JSON.stringify(out))`
+
+for (const renderer of ['portable', 'system'] as const) {
+  test(`registerFromPath of a preloaded file with descriptors makes a twin (${renderer})`, (t) => {
+    const dir = mkdtempSync(join(tmpdir(), 'canvas-path-descriptors-'))
+    const twinDir = mkdtempSync(join(tmpdir(), 'canvas-path-twin-'))
+    t.teardown(() => {
+      rmSync(dir, { recursive: true, force: true })
+      rmSync(twinDir, { recursive: true, force: true })
+    })
+    const mono = join(__dirname, 'fonts', 'RobotoMono-VariableFont_wght.ttf')
+    copyFileSync(mono, join(dir, 'RobotoMono-VariableFont_wght.ttf'))
+    // Another family: the twin's count stays its own.
+    copyFileSync(join(__dirname, 'fonts', 'Oswald.ttf'), join(twinDir, 'PathTwin.ttf'))
+    const child = spawnSync(process.execPath, ['-e', PATH_TWIN_PROBE], {
+      encoding: 'utf8',
+      timeout: 60_000,
+      env: {
+        ...process.env,
+        RENDERER: renderer,
+        PROBE_DIR: dir,
+        PROBE_TWIN: join(twinDir, 'PathTwin.ttf'),
+        PROBE_FONTS: join(__dirname, 'fonts'),
+        PROBE_INDEX: join(__dirname, '..', 'index.js'),
+      },
+    })
+    t.is(child.status, 0, child.stderr)
+    t.deepEqual(JSON.parse(child.stdout), {
+      loaded: 1,
+      plainStyles: 0,
+      twinStyles: 1,
+      twinKey: true,
+      twinAgain: true,
+      plainAgain: true,
+      keysDiffer: true,
+      styles: [2, 2, 2],
+      sameAgain: [true, true, true],
+      removedTwin: true,
+      afterRemove: 0,
+    })
+  })
+}
