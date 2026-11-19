@@ -36,7 +36,7 @@ pub mod ffi {
   #[derive(Copy, Clone, Debug)]
   pub struct skiac_face_descriptors {
     pub weight: f32,
-    pub italic: bool,
+    pub slope: f32,
   }
 
   #[repr(C)]

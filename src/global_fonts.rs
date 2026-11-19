@@ -198,7 +198,11 @@ pub mod global_fonts {
     let maybe_name_alias = name_alias.filter(|s| !s.is_empty());
     let descriptors = descriptors.map(|d| crate::sk::ffi::skiac_face_descriptors {
       weight: d.weight.unwrap_or(400.0) as f32,
-      italic: matches!(d.style.as_deref(), Some("italic" | "oblique")),
+      slope: if matches!(d.style.as_deref(), Some("italic" | "oblique")) {
+        14.0
+      } else {
+        0.0
+      },
     });
     let font = get_font().map_err(into_napi_error)?;
     let result = font

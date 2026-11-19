@@ -25,13 +25,19 @@ GlobalFonts.register(robotoMono, 'Descriptors Italic', { style: 'italic' })
 GlobalFonts.register(font('Oswald.ttf'), 'Descriptors Oswald')
 // Lato: static, no Greek.
 GlobalFonts.register(font('Lato-Regular.ttf'), 'Descriptors Lato')
+// Science Gothic: variable, slnt -10..0 (right-slanted), wght 100-900.
+const scienceGothic = font('ScienceGothic-VariableFont.ttf')
+GlobalFonts.register(scienceGothic, 'Slant Auto')
+GlobalFonts.register(scienceGothic, 'Slant Normal', { weight: 400 })
+GlobalFonts.register(scienceGothic, 'Slant Italic', { style: 'italic' })
 
 const GREEK = 'ΑΒΓΔΕΘΛΞ'
 const DIGRAPHS = 'ǅǄǆǇǈ'
 
-function draw(font: string, text = 'Hamburgefonts') {
+function draw(font: string, text = 'Hamburgefonts', variations = '') {
   const ctx = createCanvas(420, 60).getContext('2d')
   ctx.font = font
+  ctx.fontVariationSettings = variations || 'normal'
   ctx.fillText(text, 10, 42)
   const { data } = ctx.getImageData(0, 0, 420, 60)
   let ink = 0
@@ -89,6 +95,22 @@ test('each family face has its own descriptors and coordinates', (t) => {
     draw('bold 32px "Descriptors 400", "Descriptors Oswald"', DIGRAPHS).pixels,
     draw('bold 32px "Descriptors Oswald"', DIGRAPHS).pixels,
   )
+})
+
+test('declared normal, italic is the slnt 0 instance skewed', (t) => {
+  // ResolveVariations: slnt is the declared slope (clamped to the single
+  // value range), then CSSSegmentedFontFace skews it.
+  const italic = draw('italic 32px "Slant Normal"').pixels
+  t.deepEqual(italic, draw('italic 32px "Slant Normal"', undefined, '"slnt" 0').pixels)
+  t.notDeepEqual(italic, draw('32px "Slant Normal"').pixels)
+})
+
+test('declared italic draws slanted for any request', (t) => {
+  // slnt -14, clamped to the axis' -10: the `auto` face's italic, unskewed.
+  const slanted = draw('italic 32px "Slant Auto"').pixels
+  t.deepEqual(draw('32px "Slant Italic"').pixels, slanted)
+  t.deepEqual(draw('italic 32px "Slant Italic"').pixels, slanted)
+  t.notDeepEqual(slanted, draw('32px "Slant Auto"').pixels)
 })
 
 function svgPixels(family: string, text: string) {

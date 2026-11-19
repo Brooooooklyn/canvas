@@ -210,10 +210,12 @@ inline uint32_t computePathHash(const std::string& path) {
 // font_families.cpp: a family name case-folded as FontFaceCache keys it.
 std::string FoldFamilyName(std::string_view name);
 
-// The @font-face descriptors GlobalFonts.register declares a name with.
+// The @font-face descriptors GlobalFonts.register declares a name with:
+// font-weight, and font-style as Blink's slope (normal 0, italic and
+// oblique 14, `oblique <angle>` the angle).
 struct skiac_face_descriptors {
   float weight;
-  bool italic;
+  float slope;
 };
 
 // Stores font data needed to recreate a typeface after rebuild

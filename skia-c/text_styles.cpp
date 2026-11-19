@@ -159,10 +159,12 @@ std::vector<SkFontArguments::VariationPosition::Coordinate> FontVariations(
   // Skia clamps each coordinate to the face's axis, as Blink does for a
   // range set from `auto`. CSS slants clockwise, OpenType counter-clockwise.
   if (variable) {
-    // An explicit weight is the face's wght (ClampAxisValue).
+    // An explicit weight or style is the face's wght or slnt
+    // (ClampAxisValue, ResolveVariations' negate_slope).
+    const float slope = declared ? declared->slope : request.slope;
     coords.push_back({kWght, declared ? declared->weight : request.weight});
     coords.push_back({kWdth, request.stretch_pct});
-    coords.push_back({kSlnt, -request.slope});
+    coords.push_back({kSlnt, slope == 0 ? 0 : -slope});
   }
   bool explicit_opsz = false;
   for (int i = 0; request.variations && i < request.variations_count; ++i) {
@@ -578,7 +580,8 @@ SyntheticStyle SynthesizeStyle(skiac_font_collection* c_collection,
     // CSSSegmentedFontFace with explicit descriptors, whatever the axes span.
     return {weight >= kBoldThreshold && declared->weight < kBoldThreshold &&
                 !base->isBold(),
-            slope >= kItalicSlope && !declared->italic && !base->isItalic()};
+            slope >= kItalicSlope && declared->slope < kItalicSlope &&
+                !base->isItalic()};
   }
   // CSSSegmentedFontFace: `auto` descriptors are weight 400 and slope 0.
   bool bold = weight >= kBoldThreshold;
