@@ -176,76 +176,26 @@ fn set_system_font_renderer(enabled: bool) -> napi::Result<()> {
 
 /// The descriptors `register` declares, checked as Chrome's FontFace parses
 /// them (an invalid one makes the face's status "error", never used): a
-/// weight in [1, 1000], a style `normal`, `italic`, `oblique` or
-/// `oblique <angle>deg` (-90 to 90), ASCII case-insensitive. A missing field
-/// is the FontFace default, 400 or normal.
+/// weight in [1, 1000], a style `normal`, `italic` or `oblique [<angle>]`
+/// (font::parse_font_face_style). A missing field is the FontFace default,
+/// 400 or normal. GetFontSelectionCapabilities checks the float, then keeps
+/// FontSelectionValues (quarter steps).
 fn face_descriptors(
   weight: Option<f64>,
   style: Option<&str>,
 ) -> Option<crate::sk::ffi::skiac_face_descriptors> {
-  let weight = weight.unwrap_or(400.0);
+  let weight = weight.unwrap_or(400.0) as f32;
   if !(1.0..=1000.0).contains(&weight) {
     return None;
   }
   let slope = match style {
-    Some(style) => style_slope(style)?,
+    Some(style) => crate::font::parse_font_face_style(style)?,
     None => 0.0,
   };
   Some(crate::sk::ffi::skiac_face_descriptors {
-    weight: weight as f32,
-    slope: slope as f32,
+    weight: crate::font::font_selection_value(weight.into()),
+    slope,
   })
-}
-
-/// Blink's slope of a font-style descriptor: normal 0, italic and oblique 14
-/// (kItalicSlopeValue), `oblique <angle>deg` the angle.
-fn style_slope(style: &str) -> Option<f64> {
-  let style = style.to_ascii_lowercase();
-  let mut words = style
-    .split([' ', '\t', '\n', '\r', '\x0c'])
-    .filter(|word| !word.is_empty());
-  let slope = match (words.next()?, words.next()) {
-    ("normal", None) => 0.0,
-    ("italic", None) | ("oblique", None) => 14.0,
-    ("oblique", Some(angle)) => {
-      let angle = css_number(angle.strip_suffix("deg")?)?;
-      if !(-90.0..=90.0).contains(&angle) {
-        return None;
-      }
-      angle
-    }
-    _ => return None,
-  };
-  words.next().is_none().then_some(slope)
-}
-
-/// A CSS <number> token: a sign, digits with an optional fraction (at least
-/// one digit), an optional exponent.
-fn css_number(text: &str) -> Option<f64> {
-  let digits = |s: &str| s.bytes().take_while(u8::is_ascii_digit).count();
-  let unsigned = text.strip_prefix(['+', '-']).unwrap_or(text);
-  let int = digits(unsigned);
-  let mut rest = &unsigned[int..];
-  let mut frac = 0;
-  if let Some(after) = rest.strip_prefix('.') {
-    frac = digits(after);
-    if frac == 0 {
-      return None;
-    }
-    rest = &after[frac..];
-  }
-  if int + frac == 0 {
-    return None;
-  }
-  if let Some(after) = rest.strip_prefix('e') {
-    let exponent = after.strip_prefix(['+', '-']).unwrap_or(after);
-    if digits(exponent) == 0 || digits(exponent) != exponent.len() {
-      return None;
-    }
-  } else if !rest.is_empty() {
-    return None;
-  }
-  text.parse().ok()
 }
 
 #[napi(js_name = "GlobalFonts")]

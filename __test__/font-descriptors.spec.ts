@@ -162,6 +162,36 @@ test('invalid descriptors register nothing and give null', (t) => {
   t.truthy(GlobalFonts.register(garamond, 'Descriptors Edges 1', { weight: 1, style: 'oblique .5deg' }))
 })
 
+test('declared values are kept in quarter steps', (t) => {
+  // FontSelectionValue truncates the declared weight and angle, which are
+  // then the wght and slnt coordinates.
+  const oswald = font('Oswald.ttf')
+  t.truthy(GlobalFonts.register(oswald, 'Quarter 300.5', { weight: 300.5 }))
+  t.truthy(GlobalFonts.register(oswald, 'Quarter 300.7', { weight: 300.7 }))
+  t.deepEqual(draw('32px "Quarter 300.7"').pixels, draw('32px "Quarter 300.5"').pixels)
+  t.notDeepEqual(draw('32px "Quarter 300.7"').pixels, draw('32px "Descriptors Oswald"').pixels)
+  t.truthy(GlobalFonts.register(scienceGothic, 'Quarter 5.7deg', { style: 'oblique 5.7deg' }))
+  t.deepEqual(draw('32px "Quarter 5.7deg"').pixels, draw('32px "Slant Normal"', undefined, '"slnt" -5.5').pixels)
+})
+
+test('style takes any CSS angle, math functions and comments', (t) => {
+  // ConsumeFontStyle with ConsumeAngle: the written number of a literal is
+  // limited to [-90, 90], a math function is not.
+  const styles: [string, string][] = [
+    ['oblique calc(5deg)', 'Slant Oblique 5'],
+    ['oblique /**/ 5deg', 'Slant Oblique 5'],
+    ['oblique 1rad', 'Slant Italic'],
+    ['oblique 2rad', 'Slant Italic'],
+    ['oblique calc(100deg)', 'Slant Italic'],
+    ['italic /**/', 'Slant Italic'],
+  ]
+  for (const [i, [style, same]] of styles.entries()) {
+    const name = `Slant Angle ${i}`
+    t.truthy(GlobalFonts.register(scienceGothic, name, { style: style as FontFaceDescriptors['style'] }), style)
+    t.deepEqual(draw(`32px "${name}"`).pixels, draw(`32px "${same}"`).pixels, style)
+  }
+})
+
 function svgPixels(family: string, text: string) {
   const img = new Image()
   img.src = Buffer.from(

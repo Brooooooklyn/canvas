@@ -187,9 +187,28 @@ enum SpecifiedSize {
 }
 
 /// FontSelectionValue(double): truncated to a quarter, saturating to int16.
-fn font_selection_value(v: f64) -> f32 {
+pub(crate) fn font_selection_value(v: f64) -> f32 {
   let raw = (v * FONT_SELECTION_STEP).clamp(i16::MIN as f64, i16::MAX as f64);
   (raw.trunc() / FONT_SELECTION_STEP) as f32
+}
+
+/// The slope of a `@font-face` style descriptor
+/// (FontFace::GetFontSelectionCapabilities): `normal` 0, else ConsumeFontStyle
+/// (italic and oblique 14, `oblique <angle>` that angle). None when it is
+/// invalid; `auto` and a range (`oblique <angle> <angle>`) are not taken.
+pub(crate) fn parse_font_face_style(input: &str) -> Option<f32> {
+  let mut p = Parser::new(input);
+  p.set_nested_block_limit(u8::MAX);
+  let p = &mut p;
+  let normal = p.try_parse(|p| match next_ident(p).as_deref() {
+    Some("normal") => Ok(()),
+    _ => Err(()),
+  });
+  let slope = match normal {
+    Ok(()) => 0.0,
+    Err(()) => consume_font_style(p, &Lengths::default())?.0,
+  };
+  p.is_exhausted().then_some(slope)
 }
 
 fn next_ident<'i>(p: &mut Parser<'i>) -> Option<String> {
