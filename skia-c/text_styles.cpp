@@ -30,6 +30,16 @@ constexpr float kBoldThreshold = 600;
 constexpr float kNormalWeight = 400;
 constexpr float kItalicSlope = 14;
 
+// ClampAxisValue (font_custom_platform_data.cc): an explicit descriptor
+// range clamps the request; one from `auto` leaves it to the face's axis.
+float ClampAxisValue(float requested, const skiac_face_range& range) {
+  if (range.from_auto) {
+    return requested;
+  }
+  return range.min <= range.max ? std::clamp(requested, range.min, range.max)
+                                : requested;
+}
+
 std::vector<SkFontParameters::Variation::Axis> Axes(SkTypeface* typeface) {
   const int count = typeface->getVariationDesignParameters({});
   if (count <= 0) {
@@ -194,10 +204,15 @@ std::vector<SkFontArguments::VariationPosition::Coordinate> FontVariations(
   // Skia clamps each coordinate to the face's axis, as Blink does for a
   // range set from `auto`. CSS slants clockwise, OpenType counter-clockwise.
   if (variable) {
-    // An explicit weight or style is the face's wght or slnt
-    // (ClampAxisValue, ResolveVariations' negate_slope).
-    const float slope = declared ? declared->slope : request.slope;
-    coords.push_back({kWght, declared ? declared->weight : request.weight});
+    // ResolveVariations: an explicit range clamps the request
+    // (ClampAxisValue); `auto` leaves it to the axis, which Skia clamps.
+    const float weight = declared
+                             ? ClampAxisValue(request.weight, declared->weight)
+                             : request.weight;
+    const float slope = declared
+                            ? ClampAxisValue(request.slope, declared->slope)
+                            : request.slope;
+    coords.push_back({kWght, weight});
     coords.push_back({kWdth, request.stretch_pct});
     coords.push_back({kSlnt, slope == 0 ? 0 : -slope});
   }
@@ -611,21 +626,28 @@ SyntheticStyle SynthesizeStyle(skiac_font_collection* c_collection,
         weight > 200 + style.weight(),
         slope == kItalicSlope && style.slant() == SkFontStyle::kUpright_Slant};
   }
-  if (declared) {
-    // CSSSegmentedFontFace with explicit descriptors, whatever the axes span.
-    return {weight >= kBoldThreshold && declared->weight < kBoldThreshold &&
-                !base->isBold(),
-            slope >= kItalicSlope && declared->slope < kItalicSlope &&
-                !base->isItalic()};
-  }
-  // CSSSegmentedFontFace: `auto` descriptors are weight 400 and slope 0.
-  bool bold = weight >= kBoldThreshold;
-  bool italic = slope >= kItalicSlope;
+  // CSSSegmentedFontFace::GetFontData: synthetic when the range's maximum
+  // is under the threshold (`auto` is weight 400 and slope 0), whatever
+  // the axes span; then ResolveVariations, for a field from `auto` only,
+  // drops it when the face's axis reaches the style.
+  const skiac_face_range* declared_weight =
+      declared ? &declared->weight : nullptr;
+  const skiac_face_range* declared_slope =
+      declared ? &declared->slope : nullptr;
+  bool bold =
+      weight >= kBoldThreshold &&
+      (declared_weight ? declared_weight->max : kNormalWeight) < kBoldThreshold;
+  bool italic = slope >= kItalicSlope &&
+                (declared_slope ? declared_slope->max : 0) < kItalicSlope;
   const auto axes = Axes(base);
-  if (const auto wght = FindAxis(axes, kWght); wght && wght->min <= wght->max) {
+  if (const auto wght = FindAxis(axes, kWght);
+      (!declared_weight || declared_weight->from_auto) && wght &&
+      wght->min <= wght->max) {
     bold = bold && !(wght->max > kNormalWeight);
   }
-  if (const auto slnt = FindAxis(axes, kSlnt); slnt && slnt->min <= slnt->max) {
+  if (const auto slnt = FindAxis(axes, kSlnt);
+      (!declared_slope || declared_slope->from_auto) && slnt &&
+      slnt->min <= slnt->max) {
     italic = italic && !(slnt->min < 0);
   }
   return {bold && !base->isBold(), italic && !base->isItalic()};

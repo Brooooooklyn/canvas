@@ -163,8 +163,34 @@ test('invalid descriptors register nothing and give null', (t) => {
     { style: 'oblique 5.deg' },
     { style: 'italic italic' },
     { weight: 400, style: 'Italics' },
-    // Not parsed yet (Chrome takes a string weight).
-    { weight: '700' },
+    // ConsumeFontWeight in font-face mode: no `bolder` / `lighter`, a
+    // literal in [1, 1000], at most two values, no CSS-wide keywords.
+    { weight: 'bolder' },
+    { weight: 'lighter' },
+    { weight: '0' },
+    { weight: '1001' },
+    { weight: '700 1001' },
+    { weight: '700px' },
+    { weight: '' },
+    { weight: 'inherit' },
+    { weight: 'initial' },
+    { weight: 'var(--x)' },
+    { weight: '100 900 500' },
+    { weight: 'auto 700' },
+    { weight: '700 auto' },
+    { weight: 'bold 900' },
+    // ToString: "1e+21", out of range.
+    { weight: 1e21 },
+    // ConsumeFontStyle in font-face mode.
+    { style: 'italic 10deg' },
+    { style: 'normal 10deg' },
+    { style: 'oblique 91deg 10deg' },
+    { style: 'oblique 10deg 91deg' },
+    { style: 'oblique 10deg 20deg 30deg' },
+    { style: 'oblique 10deg auto' },
+    { style: 'oblique 10 20deg' },
+    { style: 'oblique 0 20deg' },
+    { style: 'auto auto' },
   ]
   for (const [i, descriptors] of invalid.entries()) {
     const name = `Descriptors Invalid ${i}`
@@ -212,6 +238,149 @@ test('style takes any CSS angle, math functions and comments', (t) => {
     t.truthy(GlobalFonts.register(scienceGothic, name, { style: style as FontFaceDescriptors['style'] }), style)
     t.deepEqual(draw(`32px "${name}"`).pixels, draw(`32px "${same}"`).pixels, style)
   }
+})
+
+// Registers `data` under `name` with `descriptors` and checks it took them.
+function declare(t: import('ava').ExecutionContext, data: Buffer, name: string, descriptors: FontFaceDescriptors) {
+  t.truthy(GlobalFonts.register(data, name, descriptors), `${name} ${JSON.stringify(descriptors)}`)
+}
+
+test('weight ranges clamp the wght and synthesize from their maximum', (t) => {
+  // ClampAxisValue clamps the request to an explicit range;
+  // CSSSegmentedFontFace emboldens when the range's maximum is under 600.
+  declare(t, robotoMono, 'Range 100 900', { weight: '100 900' })
+  declare(t, robotoMono, 'Range 900 100', { weight: '900 100' })
+  declare(t, robotoMono, 'Range 100 500', { weight: '100 500' })
+  declare(t, robotoMono, 'Range 500 700', { weight: '500 700' })
+  declare(t, robotoMono, 'Range 300 300', { weight: '300 300' })
+  declare(t, robotoMono, 'Range 500', { weight: 500 })
+  declare(t, robotoMono, 'Range 300', { weight: 300 })
+  const px = (font: string) => draw(font).pixels
+  t.deepEqual(px('bold 32px "Range 100 900"'), px('bold 32px "Descriptors Auto"'))
+  t.deepEqual(px('bold 32px "Range 900 100"'), px('bold 32px "Range 100 900"'))
+  t.deepEqual(px('200 32px "Range 100 900"'), px('200 32px "Descriptors Auto"'))
+  t.deepEqual(px('1 32px "Range 100 900"'), px('100 32px "Descriptors Auto"'))
+  // 500 emboldened.
+  const bold500 = px('bold 32px "Range 500"')
+  t.deepEqual(px('bold 32px "Range 100 500"'), bold500)
+  t.deepEqual(px('800 32px "Range 100 500"'), bold500)
+  t.notDeepEqual(bold500, px('500 32px "Descriptors Auto"'))
+  t.deepEqual(px('32px "Range 100 500"'), px('32px "Descriptors Auto"'))
+  t.deepEqual(px('300 32px "Range 500 700"'), px('32px "Range 500"'))
+  t.deepEqual(px('900 32px "Range 500 700"'), px('32px "Descriptors 700"'))
+  t.deepEqual(px('600 32px "Range 500 700"'), px('600 32px "Descriptors Auto"'))
+  t.deepEqual(px('32px "Range 300 300"'), px('32px "Range 300"'))
+  t.deepEqual(px('32px "Range 300"'), px('300 32px "Descriptors Auto"'))
+})
+
+test('a static face is emboldened only when its range stays under 600', (t) => {
+  const lato = font('Lato-Regular.ttf')
+  declare(t, lato, 'Lato 100 900', { weight: '100 900' })
+  declare(t, lato, 'Lato 100 500', { weight: '100 500' })
+  declare(t, lato, 'Lato 400', { weight: 400 })
+  const px = (font: string) => draw(font).pixels
+  t.deepEqual(px('bold 32px "Lato 100 900"'), px('32px "Descriptors Lato"'))
+  t.notDeepEqual(px('bold 32px "Lato 100 900"'), px('bold 32px "Descriptors Lato"'))
+  t.deepEqual(px('bold 32px "Lato 100 500"'), px('bold 32px "Lato 400"'))
+})
+
+test('style ranges clamp the slnt and skew from their maximum', (t) => {
+  declare(t, scienceGothic, 'Slant 0 20', { style: 'oblique 0deg 20deg' })
+  declare(t, scienceGothic, 'Slant 20 0', { style: 'oblique 20deg 0deg' })
+  declare(t, scienceGothic, 'Slant 0 10', { style: 'oblique 0deg 10deg' })
+  declare(t, scienceGothic, 'Slant 10', { style: 'oblique 10deg' })
+  declare(t, scienceGothic, 'Slant 5 8', { style: 'oblique 5deg 8deg' })
+  declare(t, scienceGothic, 'Slant 7', { style: 'oblique 7deg' })
+  declare(t, scienceGothic, 'Slant 8', { style: 'oblique 8deg' })
+  declare(t, scienceGothic, 'Slant -10 10', { style: 'oblique -10deg 10deg' })
+  declare(t, scienceGothic, 'Slant 0 0', { style: 'oblique 0deg 0deg' })
+  declare(t, scienceGothic, 'Slant calc 8', { style: 'oblique calc(5deg + 2deg) 8deg' })
+  declare(t, scienceGothic, 'Slant 7 8', { style: 'OBLIQUE 7DEG 8DEG' as FontFaceDescriptors['style'] })
+  const px = (font: string) => draw(font).pixels
+  // slnt -14, clamped to the axis' -10; a maximum of 14 or more: no skew.
+  const slanted = px('32px "Slant Italic"')
+  t.deepEqual(px('italic 32px "Slant 0 20"'), slanted)
+  t.deepEqual(px('italic 32px "Slant Auto"'), slanted)
+  t.deepEqual(px('italic 32px "Slant 20 0"'), slanted)
+  t.deepEqual(px('32px "Slant 0 20"'), px('32px "Slant Normal"'))
+  // A maximum under 14: slnt -10 and skewed.
+  t.deepEqual(px('italic 32px "Slant 0 10"'), px('italic 32px "Slant 10"'))
+  t.notDeepEqual(px('italic 32px "Slant 0 10"'), px('32px "Slant 10"'))
+  t.deepEqual(px('oblique 7deg 32px "Slant 5 8"'), px('32px "Slant 7"'))
+  t.deepEqual(px('italic 32px "Slant 5 8"'), px('italic 32px "Slant 8"'))
+  t.deepEqual(px('32px "Slant 5 8"'), px('32px "Slant Oblique 5"'))
+  t.deepEqual(px('32px "Slant -10 10"'), px('32px "Slant Normal"'))
+  t.deepEqual(px('oblique 5deg 32px "Slant -10 10"'), px('32px "Slant Oblique 5"'))
+  t.deepEqual(px('italic 32px "Slant 0 0"'), px('italic 32px "Slant Normal"'))
+  t.deepEqual(px('32px "Slant calc 8"'), px('32px "Slant 7"'))
+  t.deepEqual(px('italic 32px "Slant calc 8"'), px('italic 32px "Slant 7 8"'))
+})
+
+test('a calc() weight outside [1, 1000] makes every descriptor auto', (t) => {
+  // GetFontSelectionCapabilities returns normal_capabilities: the style is
+  // dropped too.
+  declare(t, scienceGothic, 'Reset Italic', { weight: 'calc(2000)', style: 'italic' })
+  declare(t, robotoMono, 'Reset Range', { weight: 'calc(-5) 700' })
+  declare(t, robotoMono, 'Reset Small', { weight: 'calc(0.5)' })
+  const px = (font: string) => draw(font).pixels
+  t.deepEqual(px('32px "Reset Italic"'), px('32px "Slant Auto"'))
+  t.notDeepEqual(px('32px "Reset Italic"'), px('32px "Slant Italic"'))
+  t.deepEqual(px('italic 32px "Reset Italic"'), px('italic 32px "Slant Auto"'))
+  for (const name of ['Reset Range', 'Reset Small']) {
+    t.deepEqual(px(`32px "${name}"`), px('32px "Descriptors Auto"'), name)
+    t.deepEqual(px(`bold 32px "${name}"`), px('bold 32px "Descriptors Auto"'), name)
+  }
+  // Only `from < 1` and `to > 1000` reset a range: [500, 2000].
+  declare(t, robotoMono, 'Range calc 500', { weight: 'calc(2000) 500' })
+  t.deepEqual(px('300 32px "Range calc 500"'), px('500 32px "Descriptors Auto"'))
+  t.deepEqual(px('bold 32px "Range calc 500"'), px('32px "Descriptors 700"'))
+})
+
+test('auto per descriptor: that field follows the axes, the other is declared', (t) => {
+  declare(t, robotoMono, 'Weight Auto', { weight: 'auto' })
+  declare(t, scienceGothic, 'Slant Weight Auto', { weight: 'auto' })
+  declare(t, scienceGothic, 'Slant Style Auto', { style: 'auto' })
+  declare(t, scienceGothic, 'Slant Style AUTO', { style: 'AUTO' as 'auto' })
+  const px = (font: string) => draw(font).pixels
+  t.deepEqual(px('bold 32px "Weight Auto"'), px('bold 32px "Descriptors Auto"'))
+  // The default style is `normal`: italic is the slnt 0 instance skewed.
+  t.deepEqual(px('bold 32px "Slant Weight Auto"'), px('bold 32px "Slant Auto"'))
+  t.deepEqual(px('italic 32px "Slant Weight Auto"'), px('italic 32px "Slant Normal"'))
+  // The default weight is `normal`: bold is the 400 instance emboldened.
+  for (const name of ['Slant Style Auto', 'Slant Style AUTO']) {
+    t.deepEqual(px(`italic 32px "${name}"`), px('italic 32px "Slant Auto"'), name)
+    t.deepEqual(px(`bold 32px "${name}"`), px('bold 32px "Slant Normal"'), name)
+    t.notDeepEqual(px(`bold 32px "${name}"`), px('bold 32px "Slant Auto"'), name)
+  }
+})
+
+test('weight strings are CSS: keywords, numbers, calc(); numbers are ToString-ed', (t) => {
+  const px = (font: string) => draw(font).pixels
+  const weights: [unknown, string][] = [
+    ['700', '32px "Descriptors 700"'],
+    ['bold', '32px "Descriptors 700"'],
+    ['BOLD', '32px "Descriptors 700"'],
+    [' 700 ', '32px "Descriptors 700"'],
+    ['+700', '32px "Descriptors 700"'],
+    ['700.0', '32px "Descriptors 700"'],
+    ['calc(350 + 350)', '32px "Descriptors 700"'],
+    ['/**/700', '32px "Descriptors 700"'],
+    ['normal', 'bold 32px "Descriptors 400"'],
+    ['400', 'bold 32px "Descriptors 400"'],
+    ['1e3', '1000 32px "Descriptors Auto"'],
+    [1000, '1000 32px "Descriptors Auto"'],
+    // An object's toString: the range.
+    [{ toString: () => '100 900' }, 'bold 32px "Descriptors Auto"'],
+  ]
+  for (const [i, [weight, same]] of weights.entries()) {
+    const name = `Weight String ${i}`
+    declare(t, robotoMono, name, { weight } as FontFaceDescriptors)
+    const request = same.startsWith('32px') ? '32px' : same.split(' 32px')[0] + ' 32px'
+    t.deepEqual(px(`${request} "${name}"`), px(same), String(weight))
+  }
+  // An all-auto object is no descriptors.
+  declare(t, robotoMono, 'Weight All Auto', { weight: 'auto', style: 'auto' })
+  t.deepEqual(px('bold 32px "Weight All Auto"'), px('bold 32px "Descriptors Auto"'))
 })
 
 test('descriptors that are not an object throw a TypeError and register nothing', (t) => {

@@ -183,12 +183,12 @@ std::vector<std::optional<size_t>> FaceFamilies(
 
 // The variation coordinates for `request` when `faces` (the request's
 // families' faces before font arguments) vary or the request has its own
-// variations, else none: wght, wdth and slnt from the weight (`declared`'s,
-// the descriptors of every face of `faces`), stretch and slope, the
-// request's variations, then, for font-optical-sizing: auto and
-// no opsz of the request's own, opsz at `opsz_size` (UsedSizes::opsz), and
-// for none with the system renderer on Apple the axis default of the first
-// of `faces` with the axis (text_styles.cpp).
+// variations, else none: wght, wdth and slnt from the weight, stretch and
+// slope (each clamped to `declared`'s explicit range: the descriptors of
+// every face of `faces`), the request's variations, then, for
+// font-optical-sizing: auto and no opsz of the request's own, opsz at
+// `opsz_size` (UsedSizes::opsz), and for none with the system renderer on Apple
+// the axis default of the first of `faces` with the axis (text_styles.cpp).
 std::vector<SkFontArguments::VariationPosition::Coordinate> FontVariations(
     const std::vector<sk_sp<SkTypeface>>& faces,
     const skiac_text_request& request,

@@ -34,9 +34,17 @@ pub mod ffi {
 
   #[repr(C)]
   #[derive(Copy, Clone, Debug)]
+  pub struct skiac_face_range {
+    pub min: f32,
+    pub max: f32,
+    pub from_auto: bool,
+  }
+
+  #[repr(C)]
+  #[derive(Copy, Clone, Debug)]
   pub struct skiac_face_descriptors {
-    pub weight: f32,
-    pub slope: f32,
+    pub weight: skiac_face_range,
+    pub slope: skiac_face_range,
   }
 
   #[repr(C)]

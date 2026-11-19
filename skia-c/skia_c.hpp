@@ -210,12 +210,24 @@ inline uint32_t computePathHash(const std::string& path) {
 // font_families.cpp: a family name case-folded as FontFaceCache keys it.
 std::string FoldFamilyName(std::string_view name);
 
+// One @font-face range descriptor as FontFace::GetFontSelectionCapabilities
+// keeps it (FontSelectionRange): [min, max] in FontSelectionValue quarter
+// steps. `from_auto` is kSetFromAuto (`auto`): min = max = the normal value
+// for selection, and the face's own axes clamp the request
+// (ClampAxisValue).
+struct skiac_face_range {
+  float min;
+  float max;
+  bool from_auto;
+};
+
 // The @font-face descriptors GlobalFonts.register declares a name with:
-// font-weight, and font-style as Blink's slope (normal 0, italic and
-// oblique 14, `oblique <angle>` the angle).
+// font-weight (normal {400, 400}), and font-style as Blink's slope (normal
+// {0, 0}, italic and oblique {14, 14}, `oblique <a> <b>` the angles). Never
+// both fields from auto: that is no descriptors.
 struct skiac_face_descriptors {
-  float weight;
-  float slope;
+  skiac_face_range weight;
+  skiac_face_range slope;
 };
 
 // Stores font data needed to recreate a typeface after rebuild

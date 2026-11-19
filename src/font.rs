@@ -208,23 +208,148 @@ fn font_face_lengths() -> Lengths {
   }
 }
 
-/// The slope of a `@font-face` style descriptor
-/// (FontFace::GetFontSelectionCapabilities): `normal` 0, else ConsumeFontStyle
-/// (italic and oblique 14, `oblique <angle>` that angle). None when it is
-/// invalid; `auto` and a range (`oblique <angle> <angle>`) are not taken.
-pub(crate) fn parse_font_face_style(input: &str) -> Option<f32> {
+/// A `@font-face` range descriptor as FontFace::GetFontSelectionCapabilities
+/// keeps it (FontSelectionRange): [min, max] in FontSelectionValue steps.
+/// `from_auto`: kSetFromAuto (`auto`, min = max = the normal value).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub(crate) struct FaceRange {
+  pub min: f32,
+  pub max: f32,
+  pub from_auto: bool,
+}
+
+impl FaceRange {
+  fn explicit(min: f32, max: f32) -> Self {
+    FaceRange {
+      min,
+      max,
+      from_auto: false,
+    }
+  }
+
+  fn auto(normal: f32) -> Self {
+    FaceRange {
+      min: normal,
+      max: normal,
+      from_auto: true,
+    }
+  }
+
+  /// A two-value range: "User agents must swap the computed value of the
+  /// startpoint and endpoint of the range in order to forbid decreasing
+  /// ranges" (GetFontSelectionCapabilities compares the doubles).
+  fn swapped(start: f64, end: f64) -> Self {
+    let (min, max) = if start < end {
+      (start, end)
+    } else {
+      (end, start)
+    };
+    Self::explicit(font_selection_value(min), font_selection_value(max))
+  }
+}
+
+/// A `@font-face` weight descriptor's capabilities.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub(crate) enum FaceWeight {
+  Range(FaceRange),
+  /// A math function outside [1, 1000]: GetFontSelectionCapabilities
+  /// returns `normal_capabilities`, which drops the style too.
+  ResetAll,
+}
+
+/// The `@font-face` style descriptor (ConsumeFontStyle in
+/// kCSSFontFaceRuleMode, then GetFontSelectionCapabilities): `normal` {0, 0},
+/// `italic` and `oblique` {14, 14}, `auto` {0, 0} from auto, `oblique <a>`
+/// {a, a}, `oblique <a> <b>` the range. None when it is invalid.
+pub(crate) fn parse_font_face_style(input: &str) -> Option<FaceRange> {
   let mut p = Parser::new(input);
   p.set_nested_block_limit(u8::MAX);
   let p = &mut p;
-  let normal = p.try_parse(|p| match next_ident(p).as_deref() {
-    Some("normal") => Ok(()),
+  let keyword = p.try_parse(|p| match next_ident(p).as_deref() {
+    Some("normal") => Ok(FaceRange::explicit(0.0, 0.0)),
+    Some("auto") => Ok(FaceRange::auto(0.0)),
     _ => Err(()),
   });
-  let slope = match normal {
-    Ok(()) => 0.0,
-    Err(()) => consume_font_style(p, &font_face_lengths())?.0,
+  let range = match keyword {
+    Ok(range) => range,
+    Err(()) => {
+      let lengths = font_face_lengths();
+      match next_ident(p)?.as_str() {
+        "italic" => FaceRange::explicit(ITALIC_SLOPE, ITALIC_SLOPE),
+        "oblique" => match consume_oblique_angle(p, &lengths) {
+          Err(()) => FaceRange::explicit(ITALIC_SLOPE, ITALIC_SLOPE),
+          Ok(Err(())) => return None,
+          // One angle (0 is `normal`, {0, 0} too).
+          Ok(Ok(start)) if p.is_exhausted() => {
+            let slope = font_selection_value(start);
+            FaceRange::explicit(slope, slope)
+          }
+          Ok(Ok(start)) => match consume_oblique_angle(p, &lengths) {
+            Ok(Ok(end)) => FaceRange::swapped(start, end),
+            _ => return None,
+          },
+        },
+        _ => return None,
+      }
+    }
   };
-  p.is_exhausted().then_some(slope)
+  p.is_exhausted().then_some(range)
+}
+
+/// The `@font-face` weight descriptor (ConsumeFontWeight in
+/// kCSSFontFaceRuleMode, then GetFontSelectionCapabilities): `normal`,
+/// `bold`, `auto` (400 from auto), one number or a range. None when it is
+/// invalid (`bolder` and `lighter` included).
+pub(crate) fn parse_font_face_weight(input: &str) -> Option<FaceWeight> {
+  let mut p = Parser::new(input);
+  p.set_nested_block_limit(u8::MAX);
+  let p = &mut p;
+  let keyword = p.try_parse(|p| match next_ident(p).as_deref() {
+    Some("normal") => Ok(FaceRange::explicit(400.0, 400.0)),
+    Some("bold") => Ok(FaceRange::explicit(700.0, 700.0)),
+    Some("auto") => Ok(FaceRange::auto(400.0)),
+    _ => Err(()),
+  });
+  let weight = match keyword {
+    Ok(range) => FaceWeight::Range(range),
+    Err(()) => {
+      let lengths = font_face_lengths();
+      let start = consume_face_weight_value(p, &lengths)?;
+      if p.is_exhausted() {
+        // `float weight_value`, then the [1, 1000] check.
+        let value = start as f32;
+        if !(1.0..=1000.0).contains(&value) {
+          FaceWeight::ResetAll
+        } else {
+          let weight = font_selection_value(value.into());
+          FaceWeight::Range(FaceRange::explicit(weight, weight))
+        }
+      } else {
+        let end = consume_face_weight_value(p, &lengths)?;
+        // Only `from < 1` and `to > 1000`, before the swap.
+        if start < 1.0 || end > 1000.0 {
+          FaceWeight::ResetAll
+        } else {
+          FaceWeight::Range(FaceRange::swapped(start, end))
+        }
+      }
+    }
+  };
+  p.is_exhausted().then_some(weight)
+}
+
+/// ConsumeFontWeight's ConsumeNumber (kNonNegative): a number literal in
+/// [1, 1000], or a <number> math function, not range checked here
+/// (computed, NaN 0, then clamped to 0 and up).
+fn consume_face_weight_value<'i>(p: &mut Parser<'i>, lengths: &Lengths) -> Option<f64> {
+  if let Ok(node) = p.try_parse(|p| consume_math(p, true, |c| c == Category::Number)) {
+    return Some(compute(&node, lengths).max(0.0));
+  }
+  let t = next_token(p).ok()?;
+  match t.token {
+    Token::Number { .. } if (1.0..=1000.0).contains(&t.value) => Some(t.value),
+    _ => None,
+  }
 }
 
 fn next_ident<'i>(p: &mut Parser<'i>) -> Option<String> {
@@ -319,40 +444,42 @@ fn compute(node: &Node, lengths: &Lengths) -> f64 {
   if v.is_nan() { 0.0 } else { v }
 }
 
+/// ConsumeFontStyle's ConsumeAngle, in degrees: Err when there is no angle
+/// (nothing consumed), Ok(Err) for a literal outside [-90, 90] on its
+/// written number (IsAngleWithinLimits; a math function is not limited).
+fn consume_oblique_angle<'i>(p: &mut Parser<'i>, lengths: &Lengths) -> Result<Result<f64, ()>, ()> {
+  p.try_parse(|p| {
+    // ConsumeMathFunctionAngle parses without percentages.
+    if let Ok(node) = p.try_parse(|p| consume_math(p, false, |c| c == Category::Angle)) {
+      return Ok(Ok(compute(&node, lengths)));
+    }
+    let t = next_token(p)?;
+    match (t.token, t.unit) {
+      (Token::Dimension { .. }, Some(unit @ (Unit::Deg | Unit::Rad | Unit::Grad | Unit::Turn))) => {
+        if !(-90.0..=90.0).contains(&t.value) {
+          return Ok(Err(()));
+        }
+        Ok(Ok(
+          Literal {
+            value: t.value,
+            unit,
+          }
+          .degrees(),
+        ))
+      }
+      _ => Err(()),
+    }
+  })
+}
+
 /// ConsumeFontStyle after `italic` or `oblique`: the slope in degrees and the
 /// keyword, or None when the angle is invalid (which fails the shorthand).
 fn consume_font_style<'i>(p: &mut Parser<'i>, lengths: &Lengths) -> Option<(f32, StyleKeyword)> {
   match next_ident(p)?.as_str() {
     "italic" => Some((ITALIC_SLOPE, StyleKeyword::Italic)),
     "oblique" => {
-      // An optional <angle>: a literal one is limited to [-90, 90] on its
-      // written number (IsAngleWithinLimits), and 0 is `normal`.
-      let angle = p.try_parse(|p| -> Result<Result<f64, ()>, ()> {
-        // ConsumeMathFunctionAngle parses without percentages.
-        if let Ok(node) = p.try_parse(|p| consume_math(p, false, |c| c == Category::Angle)) {
-          return Ok(Ok(compute(&node, lengths)));
-        }
-        let t = next_token(p)?;
-        match (t.token, t.unit) {
-          (
-            Token::Dimension { .. },
-            Some(unit @ (Unit::Deg | Unit::Rad | Unit::Grad | Unit::Turn)),
-          ) => {
-            if !(-90.0..=90.0).contains(&t.value) {
-              return Ok(Err(()));
-            }
-            Ok(Ok(
-              Literal {
-                value: t.value,
-                unit,
-              }
-              .degrees(),
-            ))
-          }
-          _ => Err(()),
-        }
-      });
-      match angle {
+      // An optional <angle>; 0 is `normal`.
+      match consume_oblique_angle(p, lengths) {
         Err(()) => Some((ITALIC_SLOPE, StyleKeyword::Oblique)),
         Ok(Err(())) => None,
         Ok(Ok(0.0)) => Some((0.0, StyleKeyword::Normal)),
