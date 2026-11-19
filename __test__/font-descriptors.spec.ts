@@ -1599,6 +1599,54 @@ for (const renderer of ['portable', 'system'] as const) {
   })
 }
 
+// A computed oblique angle under -90deg (a literal is limited by its
+// written number, calc() not at all: IsAngleWithinLimits) is a request
+// slope too: Chrome 159 draws the declared {style: normal} face for each,
+// never the next family.
+const OBLIQUE_RANGE_PROBE = `
+  const { readFileSync } = require('fs')
+  const { createCanvas, GlobalFonts, setTextRenderer } = require(process.env.PROBE_INDEX)
+  const { RENDERER, PROBE_FONTS } = process.env
+  setTextRenderer(RENDERER)
+  const font = (name) => readFileSync(PROBE_FONTS + '/' + name)
+  GlobalFonts.register(font('Lato-Regular.ttf'), 'Angle Range', { style: 'normal' })
+  GlobalFonts.register(font('Oswald.ttf'), 'Angle Range Next')
+  const ctx = createCanvas(10, 10).getContext('2d')
+  const width = (font) => { ctx.font = font; return ctx.measureText('Hamburgefonts').width }
+  const refs = { declared: width('40px "Angle Range"'), next: width('40px "Angle Range Next"') }
+  const face = (font) => { const w = width(font); return Object.keys(refs).find((k) => refs[k] === w) || String(w) }
+  const STYLES = JSON.parse(process.env.STYLES)
+  console.log(JSON.stringify(Object.fromEntries(STYLES.map((s) => [s, face(s + ' 40px "Angle Range", "Angle Range Next"')]))))`
+
+const OBLIQUE_RANGE_STYLES = [
+  'oblique -2rad',
+  'oblique calc(-100deg)',
+  'oblique calc(-90.25deg)',
+  'oblique -1turn',
+  // FontSelectionValue saturates there (int16 quarters).
+  'oblique calc(-8192deg)',
+  'oblique -90deg',
+  'oblique 2rad',
+]
+
+for (const renderer of ['portable', 'system'] as const) {
+  test(`an oblique angle under -90deg keeps the declared family (${renderer})`, (t) => {
+    const child = spawnSync(process.execPath, ['-e', OBLIQUE_RANGE_PROBE], {
+      encoding: 'utf8',
+      timeout: 60_000,
+      env: {
+        ...process.env,
+        RENDERER: renderer,
+        PROBE_FONTS: join(__dirname, 'fonts'),
+        PROBE_INDEX: join(__dirname, '..', 'index.js'),
+        STYLES: JSON.stringify(OBLIQUE_RANGE_STYLES),
+      },
+    })
+    t.is(child.status, 0, child.stderr)
+    t.deepEqual(JSON.parse(child.stdout), Object.fromEntries(OBLIQUE_RANGE_STYLES.map((s) => [s, 'declared'])))
+  })
+}
+
 function svgWeightPixels(family: string, weight: string) {
   const img = new Image()
   img.src = Buffer.from(

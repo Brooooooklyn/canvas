@@ -1455,9 +1455,11 @@ std::shared_ptr<const FontFaceCore> MakeFontFaceCore(
 constexpr char kSiblingTag[] = "\x01s\x01";
 constexpr char kWeightTag[] = "\x01q\x01";
 constexpr char kSlopeTag[] = "\x01o\x01";
-// kSlopeTag's number: the slope in quarter steps plus this (TagNumber reads
-// digits only; a slope is -90deg to 90deg).
-constexpr int kSlopeTagOffset = 360;
+// kSlopeTag's number: the slope's FontSelectionValue in quarter steps plus
+// this. The value is int16 quarters, so the number is 0 to 65535, digits only
+// for TagNumber: a calc() angle is not limited to -90deg to 90deg, and
+// Chrome does not clamp the request slope (ConvertFontStyle).
+constexpr int kSlopeTagOffset = 1 << 15;
 
 // Whether a ResolveFontFamilies name is a FontFaceStyleSet whose segments
 // can differ in weight: "\x01a\x01" or "\x01w\x01" + a family of
