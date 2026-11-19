@@ -19,6 +19,7 @@
 #include <math.h>
 #include <string.h>
 #include <algorithm>
+#include <memory>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -1288,7 +1289,24 @@ class SegmentStyleSet : public SkFontStyleSet {
   int rank_;
 };
 
-// The FontFaces of a web family (FontFaces), as Blink's FontFaceCache
+}  // namespace
+
+// The FontFaces of a web family, newest first, with their capabilities
+// (MakeFontFaceCore), the faces of each capabilities (a
+// CSSSegmentedFontFace each, in the order of their newest face) and the
+// capabilities they span. Built once per family until the caches are
+// flushed, and shared by its sibling sets (fontFaceCore).
+struct FontFaceCore {
+  SkString family;
+  std::vector<sk_sp<SkTypeface>> faces;
+  std::vector<font_selection::Capabilities> capabilities;
+  std::vector<std::vector<size_t>> segments;
+  font_selection::Capabilities bounds;
+};
+
+namespace {
+
+// The FontFaces of a web family (FontFaceCore), as Blink's FontFaceCache
 // keeps them: a face's capabilities come from its descriptors only (none:
 // `auto`, the normal value, font_face.cc), faces with equal ones are one
 // CSSSegmentedFontFace, newest face first (css_segmented_font_face.cc
@@ -1299,39 +1317,16 @@ class SegmentStyleSet : public SkFontStyleSet {
 // that segment, or none, as SegmentStyleSet for "\x01s\x01" k.
 class FontFaceStyleSet : public SkFontStyleSet {
  public:
-  FontFaceStyleSet(SkString family,
-                   std::vector<sk_sp<SkTypeface>> faces,
-                   std::vector<font_selection::Capabilities> capabilities,
+  FontFaceStyleSet(std::shared_ptr<const FontFaceCore> core,
                    size_t rank,
                    std::optional<font_selection::Value> weight)
-      : family_(std::move(family)),
-        faces_(std::move(faces)),
-        capabilities_(std::move(capabilities)),
-        rank_(rank),
-        weight_(weight) {
-    for (size_t i = 0; i < faces_.size(); ++i) {
-      if (i == 0) {
-        bounds_ = capabilities_[0];
-      } else {
-        bounds_.Expand(capabilities_[i]);
-      }
-      auto it = std::find_if(
-          segments_.begin(), segments_.end(), [&](const auto& segment) {
-            return capabilities_[segment.front()] == capabilities_[i];
-          });
-      if (it == segments_.end()) {
-        segments_.emplace_back();
-        it = segments_.end() - 1;
-      }
-      it->push_back(i);
-    }
-  }
-  int count() override { return static_cast<int>(faces_.size()); }
+      : core_(std::move(core)), rank_(rank), weight_(weight) {}
+  int count() override { return static_cast<int>(core_->faces.size()); }
   // One style per capabilities, so SameStyleDepth counts a segment's faces
   // together.
   void getStyle(int index, SkFontStyle* style, SkString* name) override {
     if (style) {
-      const font_selection::Capabilities& caps = capabilities_[index];
+      const font_selection::Capabilities& caps = core_->capabilities[index];
       const bool upright = caps.slope.minimum == font_selection::Value() &&
                            caps.slope.maximum == font_selection::Value();
       const bool italic = caps.slope.minimum == font_selection::Value(14) &&
@@ -1344,12 +1339,15 @@ class FontFaceStyleSet : public SkFontStyleSet {
                                : SkFontStyle::kOblique_Slant);
     }
     if (name) {
-      *name = family_;
+      *name = core_->family;
     }
   }
-  sk_sp<SkTypeface> createTypeface(int index) override { return faces_[index]; }
+  sk_sp<SkTypeface> createTypeface(int index) override {
+    return core_->faces[index];
+  }
   sk_sp<SkTypeface> matchStyle(const SkFontStyle& pattern) override {
-    if (segments_.empty()) {
+    const std::vector<std::vector<size_t>>& segments = core_->segments;
+    if (segments.empty()) {
       return nullptr;
     }
     // FontSelectionRequest of the font description: the width keyword's
@@ -1368,26 +1366,21 @@ class FontFaceStyleSet : public SkFontStyleSet {
         weight, font_selection::Value(kWidths[width - 1]),
         font_selection::Value(
             pattern.slant() == SkFontStyle::kUpright_Slant ? 0.0f : 14.0f)};
-    const font_selection::Algorithm algorithm(request, bounds_);
+    const font_selection::Algorithm algorithm(request, core_->bounds);
     size_t best = 0;
-    for (size_t s = 1; s < segments_.size(); ++s) {
+    for (size_t s = 1; s < segments.size(); ++s) {
       if (algorithm.IsBetterMatchForRequest(
-              capabilities_[segments_[s].front()],
-              capabilities_[segments_[best].front()])) {
+              core_->capabilities[segments[s].front()],
+              core_->capabilities[segments[best].front()])) {
         best = s;
       }
     }
-    const std::vector<size_t>& segment = segments_[best];
-    return rank_ < segment.size() ? faces_[segment[rank_]] : nullptr;
+    const std::vector<size_t>& segment = segments[best];
+    return rank_ < segment.size() ? core_->faces[segment[rank_]] : nullptr;
   }
 
  private:
-  SkString family_;
-  std::vector<sk_sp<SkTypeface>> faces_;
-  std::vector<font_selection::Capabilities> capabilities_;
-  // The faces of each capabilities, in the order of their newest face.
-  std::vector<std::vector<size_t>> segments_;
-  font_selection::Capabilities bounds_;
+  std::shared_ptr<const FontFaceCore> core_;
   size_t rank_;
   // A quarter-step request weight ("\x01q\x01"), else the pattern's.
   std::optional<font_selection::Value> weight_;
@@ -1404,26 +1397,26 @@ bool DeclaresFaces(skiac_font_collection* c_collection, std::string_view name) {
   return DescribesName(c_collection, folded, seen);
 }
 
-// FontFaceStyleSet over `faces` (newest first) of the family `name`, each
+// The FontFaceCore of `faces` (newest first) of the family `name`, each
 // with FontFace::GetFontSelectionCapabilities of its descriptors under the
 // name (DescriptorsUnder): an `auto` field is the normal value, the width
 // (no descriptor) 100%. A family no face of which declares any is one
-// segment, with no lookup. `weight`: the request's, for "\x01q\x01".
-sk_sp<SkFontStyleSet> MakeFontFaceSet(
+// segment, with no lookup.
+std::shared_ptr<const FontFaceCore> MakeFontFaceCore(
     skiac_font_collection* c_collection,
     std::string_view name,
-    std::vector<sk_sp<SkTypeface>> faces,
-    size_t rank,
-    std::optional<font_selection::Value> weight) {
+    std::vector<sk_sp<SkTypeface>> faces) {
+  ++c_collection->font_face_cores;
   const std::string folded = Fold(name);
   const bool described = DeclaresFaces(c_collection, name);
-  std::vector<font_selection::Capabilities> capabilities;
-  capabilities.reserve(faces.size());
-  for (const auto& face : faces) {
+  auto core = std::make_shared<FontFaceCore>();
+  core->family = SkString(name.data(), name.size());
+  core->capabilities.reserve(faces.size());
+  for (size_t i = 0; i < faces.size(); ++i) {
     std::vector<const std::string*> seen;
     const FaceDescriptors declared =
         described
-            ? DescriptorsUnder(c_collection, face->uniqueID(), folded, seen)
+            ? DescriptorsUnder(c_collection, faces[i]->uniqueID(), folded, seen)
             : std::nullopt;
     font_selection::Capabilities caps;
     caps.width = {font_selection::Value(100), font_selection::Value(100)};
@@ -1432,11 +1425,24 @@ sk_sp<SkFontStyleSet> MakeFontFaceSet(
         font_selection::Value(declared ? declared->weight.max : 400)};
     caps.slope = {font_selection::Value(declared ? declared->slope.min : 0),
                   font_selection::Value(declared ? declared->slope.max : 0)};
-    capabilities.push_back(caps);
+    core->capabilities.push_back(caps);
+    if (i == 0) {
+      core->bounds = caps;
+    } else {
+      core->bounds.Expand(caps);
+    }
+    auto it = std::find_if(core->segments.begin(), core->segments.end(),
+                           [&](const auto& segment) {
+                             return core->capabilities[segment.front()] == caps;
+                           });
+    if (it == core->segments.end()) {
+      core->segments.emplace_back();
+      it = core->segments.end() - 1;
+    }
+    it->push_back(i);
   }
-  return sk_make_sp<FontFaceStyleSet>(SkString(name.data(), name.size()),
-                                      std::move(faces), std::move(capabilities),
-                                      rank, weight);
+  core->faces = std::move(faces);
+  return core;
 }
 
 constexpr char kSiblingTag[] = "\x01s\x01";
@@ -1925,19 +1931,15 @@ sk_sp<SkFontStyleSet> MakeSplitFamilyAt(
     if (base.empty() || base.front() != '\x01') {
       return nullptr;
     }
-    // A web family's siblings are its segment's older FontFaces.
-    if (base[1] == 'a' || base[1] == 'w') {
-      FamilyResolver resolver(c_collection);
-      const std::string_view name = std::string_view(base).substr(3);
-      std::vector<sk_sp<SkTypeface>> faces = FontFaces(resolver, name, base[1]);
-      if (!faces.empty()) {
-        return MakeFontFaceSet(c_collection, name, std::move(faces), rank,
-                               weight);
-      }
-    }
     sk_sp<SkFontStyleSet> set = c_collection->assets->matchFamily(base.c_str());
     if (!set) {
       return nullptr;
+    }
+    // A web family's siblings are its segment's older FontFaces, from the
+    // FontFaceCore the base set was made of.
+    if (std::shared_ptr<const FontFaceCore> core =
+            c_collection->assets->fontFaceCore(base)) {
+      return sk_make_sp<FontFaceStyleSet>(std::move(core), rank, weight);
     }
     return sk_make_sp<SegmentStyleSet>(std::move(set), rank);
   }
@@ -1948,8 +1950,12 @@ sk_sp<SkFontStyleSet> MakeSplitFamilyAt(
   // name with none keeps its files' styles.
   if (tagged[1] != 'i') {
     std::vector<sk_sp<SkTypeface>> faces = FontFaces(resolver, name, tagged[1]);
-    if (!faces.empty()) {
-      return MakeFontFaceSet(c_collection, name, std::move(faces), 0, weight);
+    std::shared_ptr<const FontFaceCore> core =
+        faces.empty() ? nullptr
+                      : MakeFontFaceCore(c_collection, name, std::move(faces));
+    c_collection->assets->setFontFaceCore(std::string(tagged), core);
+    if (core) {
+      return sk_make_sp<FontFaceStyleSet>(std::move(core), 0, weight);
     }
   }
   sk_sp<SkFontStyleSet> elsewhere;

@@ -593,6 +593,45 @@ for (const renderer of ['portable', 'system'] as const) {
   })
 }
 
+// A child process (its own counters): 100 files with no descriptors under
+// one name are one segment, so a line lists the newest and 99 older faces
+// (siblings). The family's FontFaces are gathered once per flush, not once
+// per sibling.
+const SIBLINGS_PROBE = `
+  const { readFileSync } = require('fs')
+  const { createCanvas, GlobalFonts } = require(process.env.PROBE_INDEX)
+  const base = readFileSync(process.env.PROBE_FONT)
+  const ctx = createCanvas(400, 60).getContext('2d')
+  const cores = (font, text) => { ctx.font = font; return JSON.parse(ctx.__debugTextLine(text)).fontFaceCores }
+  const register = (i) => GlobalFonts.register(Buffer.concat([base, Buffer.from('\\0\\0\\0\\0' + String(i).padStart(8, '0'))]), 'Guard Siblings')
+  for (let i = 0; i < 100; ++i) register(i)
+  const out = []
+  let last = cores('32px serif', 'Flushed')
+  for (const [font, text] of [['32px "Guard Siblings"', 'Cold'], ['bold 32px "Guard Siblings", serif', 'Other list']]) {
+    const now = cores(font, text)
+    out.push(now - last)
+    last = now
+  }
+  register(100)
+  last = cores('32px serif', 'Flushed again')
+  out.push(cores('32px "Guard Siblings"', 'Cold again') - last)
+  console.log(JSON.stringify(out))`
+
+test('the faces of an auto family are gathered once per flush, not once per sibling', (t) => {
+  const child = spawnSync(process.execPath, ['-e', SIBLINGS_PROBE], {
+    encoding: 'utf8',
+    timeout: 60_000,
+    env: {
+      ...process.env,
+      PROBE_FONT: join(__dirname, 'fonts', 'RMStatic-Regular.ttf'),
+      PROBE_INDEX: join(__dirname, '..', 'index.js'),
+    },
+  })
+  t.is(child.status, 0, child.stderr)
+  // Cold line: one; a second list of the family: none; after a register: one.
+  t.deepEqual(JSON.parse(child.stdout), [1, 0, 1])
+})
+
 test('descriptors stay with their name across a rebuild and go with a remove', (t) => {
   // RegisteredFontAssets counts the names with descriptors
   // (DeclaredDescriptors' check): a rebuild carries them, a remove drops them.

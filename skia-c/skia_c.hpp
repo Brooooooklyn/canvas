@@ -336,6 +336,8 @@ struct RegisteredFont {
 };
 
 struct skiac_font_collection;
+// font_families.cpp: the FontFaces of a web family and their segments.
+struct FontFaceCore;
 // font_families.cpp: the faces of a family name font_families.cpp tagged
 // ("\x01i\x01" + family: the installed faces; "\x01w\x01" + family: the
 // registered ones), null for no face.
@@ -384,7 +386,25 @@ class TypefaceFontProviderCustom : public TypefaceFontProvider {
   void setSplitFamilies(skiac_font_collection* c_collection) {
     split_owner = c_collection;
   }
-  void clearSplitFamilies() { split_families.clear(); }
+  void clearSplitFamilies() {
+    split_families.clear();
+    font_face_cores.clear();
+  }
+  // The FontFaceCore a tagged web family's set was made of, for its
+  // siblings ("\x01s\x01" k), kept as long as the sets.
+  std::shared_ptr<const FontFaceCore> fontFaceCore(
+      const std::string& tagged) const {
+    auto it = font_face_cores.find(tagged);
+    return it == font_face_cores.end() ? nullptr : it->second;
+  }
+  void setFontFaceCore(const std::string& tagged,
+                       std::shared_ptr<const FontFaceCore> core) const {
+    if (core) {
+      font_face_cores[tagged] = std::move(core);
+    } else {
+      font_face_cores.erase(tagged);
+    }
+  }
   sk_sp<SkFontStyleSet> onMatchFamily(const char name[]) const override {
     if (name && name[0] == '\x01') {
       if (!split_owner) {
@@ -1078,6 +1098,8 @@ class TypefaceFontProviderCustom : public TypefaceFontProvider {
   sk_sp<SkFontMgr> font_mgr;
   skiac_font_collection* split_owner = nullptr;
   mutable std::map<std::string, sk_sp<SkFontStyleSet>> split_families;
+  mutable std::map<std::string, std::shared_ptr<const FontFaceCore>>
+      font_face_cores;
   std::map<uint32_t, RegisteredFont> registered_fonts;
   // How many registrations declare descriptors for each folded name.
   std::map<std::string, size_t> described_names;
@@ -1272,6 +1294,9 @@ struct skiac_font_collection {
   // skiac_debug_text_line's descriptorLookups: none while no font declares
   // descriptors.
   uint64_t descriptor_lookups = 0;
+  // The FontFaceCores built (font_families.cpp MakeFontFaceCore), for
+  // skiac_debug_text_line's fontFaceCores: one per web family and flush.
+  uint64_t font_face_cores = 0;
 #if defined(__APPLE__)
   // loadSystemFonts turned the installed fonts on (kept across renderer
   // switches); they are registered the first time a font is looked up or

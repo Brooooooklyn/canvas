@@ -619,6 +619,8 @@ void skiac_debug_text_line(skiac_font_collection* c_collection,
   out += std::to_string(c_collection->request_instance_faces);
   out += ",\"descriptorLookups\":";
   out += std::to_string(c_collection->descriptor_lookups);
+  out += ",\"fontFaceCores\":";
+  out += std::to_string(c_collection->font_face_cores);
   out += ",\"runs\":[";
   for (size_t r = 0; r < line->blink.runs.size(); ++r) {
     const BlinkRun& run = line->blink.runs[r];
