@@ -249,6 +249,22 @@ test('members convert as DOMStrings, style then weight; a Symbol throws a TypeEr
   }
 })
 
+test('descriptors stay with their name across a rebuild and go with a remove', (t) => {
+  // RegisteredFontAssets counts the names with descriptors
+  // (DeclaredDescriptors' check): a rebuild carries them, a remove drops them.
+  const serif = font('SourceSerifPro-Regular.ttf')
+  const declared = draw('bold 32px "Descriptors 400"').pixels
+  const key = GlobalFonts.register(serif, 'Descriptors Removed', { weight: 700 })
+  t.truthy(key)
+  // Declared 700: bold is not emboldened.
+  const unemboldened = draw('bold 32px "Descriptors Removed"').pixels
+  t.deepEqual(unemboldened, draw('32px "Descriptors Removed"').pixels)
+  t.true(GlobalFonts.remove(key!))
+  t.deepEqual(draw('bold 32px "Descriptors 400"').pixels, declared)
+  t.truthy(GlobalFonts.register(serif, 'Descriptors Removed'))
+  t.notDeepEqual(draw('bold 32px "Descriptors Removed"').pixels, unemboldened)
+})
+
 function svgPixels(family: string, text: string) {
   const img = new Image()
   img.src = Buffer.from(

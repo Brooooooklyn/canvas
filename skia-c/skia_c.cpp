@@ -4664,7 +4664,6 @@ uint32_t skiac_font_collection_register(
     typeface->getFamilyName(&family);
     c_font_collection->assets->setDescriptors(
         typeface_id, name_alias ? name_alias : family.c_str(), descriptors);
-    c_font_collection->font_descriptors |= descriptors != nullptr;
     c_font_collection->markCachesDirty();
   }
   return typeface_id;

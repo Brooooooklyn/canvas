@@ -632,12 +632,22 @@ class TypefaceFontProviderCustom : public TypefaceFontProvider {
                       std::string_view name,
                       const skiac_face_descriptors* descriptors) {
     auto& map = registered_fonts.at(id).descriptors;
+    std::string folded = FoldFamilyName(name);
     if (descriptors) {
-      map[FoldFamilyName(name)] = *descriptors;
-    } else {
-      map.erase(FoldFamilyName(name));
+      if (map.insert_or_assign(folded, *descriptors).second) {
+        ++described_names[std::move(folded)];
+      }
+    } else if (map.erase(folded)) {
+      forgetDescribedName(folded);
     }
   }
+
+  // Whether a registration declares descriptors for the case-folded name,
+  // so DeclaredDescriptors walks no registration for a name without them.
+  bool describes(const std::string& folded) const {
+    return described_names.count(folded) != 0;
+  }
+  bool describesAny() const { return !described_names.empty(); }
 
   // The registration (FontKey) whose face is `typeface_id`, 0 when it is an
   // installed font (macOS loadSystemFonts) or no registered one. An alias
@@ -684,6 +694,9 @@ class TypefaceFontProviderCustom : public TypefaceFontProvider {
     font_info.preloaded = old.preloaded;
     font_info.folded_family = old.folded_family;
     font_info.descriptors = old.descriptors;
+    for (const auto& [name, unused] : old.descriptors) {
+      ++described_names[name];
+    }
     font_info.no_web_twin = old.no_web_twin;
     font_info.typeface = std::move(typeface);
     font_info.mode_typefaces[0] = mode_typefaces[0];
@@ -896,6 +909,9 @@ class TypefaceFontProviderCustom : public TypefaceFontProvider {
     if (it == registered_fonts.end()) {
       return false;
     }
+    for (const auto& [name, unused] : it->second.descriptors) {
+      forgetDescribedName(name);
+    }
 
     // Get the content hash to update the secondary index
     uint32_t content_hash;
@@ -935,14 +951,24 @@ class TypefaceFontProviderCustom : public TypefaceFontProvider {
     size_t count = registered_fonts.size();
     registered_fonts.clear();
     content_hash_index.clear();
+    described_names.clear();
     return count;
   }
 
  private:
+  void forgetDescribedName(const std::string& folded) {
+    auto it = described_names.find(folded);
+    if (it != described_names.end() && --it->second == 0) {
+      described_names.erase(it);
+    }
+  }
+
   sk_sp<SkFontMgr> font_mgr;
   skiac_font_collection* split_owner = nullptr;
   mutable std::map<std::string, sk_sp<SkFontStyleSet>> split_families;
   std::map<uint32_t, RegisteredFont> registered_fonts;
+  // How many registrations declare descriptors for each folded name.
+  std::map<std::string, size_t> described_names;
   uint64_t registrations = 0;
   // Secondary index: content hash -> set of registered IDs with that hash
   // This enables fast duplicate detection even after removals break the probe
@@ -1063,8 +1089,6 @@ struct skiac_font_collection {
   // memoizes findTypefaces() per {family list, weight, slant}, including
   // fallback misses, so any such change can invalidate an existing match.
   bool caches_dirty = false;
-  // A font was registered with descriptors (text_styles.cpp Declared).
-  bool font_descriptors = false;
   // font_families.cpp: every registered and system family name by its
   // case-folded spelling, rebuilt when families_generation moves.
   std::map<std::string, std::vector<std::string>> folded_families;

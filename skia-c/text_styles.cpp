@@ -72,16 +72,9 @@ bool SetsOpszDefault(const skiac_text_request& request) {
 #endif
 }
 
-}  // namespace
-
-FaceDescriptors DeclaredDescriptors(skiac_font_collection* c_collection,
-                                    SkTypeface* base,
-                                    std::string_view family) {
-  if (!c_collection->font_descriptors || !base) {
-    return std::nullopt;
-  }
-  // ResolveFontFamilies' tags: "\x01s\x01" k "\x01" before a tagged name,
-  // "\x01" kind "\x01" before a family.
+// `family` case-folded, without ResolveFontFamilies' tags: "\x01s\x01" k
+// "\x01" before a tagged name, "\x01" kind "\x01" before a family.
+std::string FoldedUntaggedFamily(std::string_view family) {
   if (family.substr(0, 3) == "\x01s\x01") {
     const size_t end = family.find('\x01', 3);
     family = end == std::string_view::npos ? std::string_view()
@@ -90,13 +83,28 @@ FaceDescriptors DeclaredDescriptors(skiac_font_collection* c_collection,
   if (family.size() >= 3 && family[0] == '\x01' && family[2] == '\x01') {
     family = family.substr(3);
   }
+  return FoldFamilyName(family);
+}
+
+}  // namespace
+
+FaceDescriptors DeclaredDescriptors(skiac_font_collection* c_collection,
+                                    SkTypeface* base,
+                                    std::string_view family) {
+  if (!base || !c_collection->assets->describesAny()) {
+    return std::nullopt;
+  }
+  const std::string folded = FoldedUntaggedFamily(family);
+  if (!c_collection->assets->describes(folded)) {
+    return std::nullopt;
+  }
   const uint32_t id = c_collection->assets->registrationOf(base->uniqueID());
   if (!id) {
     return std::nullopt;
   }
   const auto& descriptors =
       c_collection->assets->getRegisteredFonts().at(id).descriptors;
-  const auto found = descriptors.find(FoldFamilyName(family));
+  const auto found = descriptors.find(folded);
   if (found == descriptors.end()) {
     return std::nullopt;
   }
@@ -110,7 +118,18 @@ std::vector<FaceDescriptors> FamilyDescriptors(
     const SkFontStyle& style,
     const std::vector<sk_sp<SkTypeface>>& base_faces) {
   std::vector<FaceDescriptors> out;
-  if (!c_collection->font_descriptors) {
+  // No named family has descriptors: no lookup at all.
+  const auto& assets = c_collection->assets;
+  bool described = false;
+  for (size_t i = 0; assets->describesAny() && i < families.size(); ++i) {
+    if ((i >= generic.size() || !generic[i]) &&
+        assets->describes(
+            FoldedUntaggedFamily({families[i].c_str(), families[i].size()}))) {
+      described = true;
+      break;
+    }
+  }
+  if (!described) {
     return out;
   }
   out.resize(base_faces.size());
