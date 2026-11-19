@@ -4648,22 +4648,14 @@ uint32_t skiac_font_collection_register(
   }
   const size_t registered =
       c_font_collection->assets->getRegisteredFonts().size();
-  uint32_t typeface_id;
-  if (name_alias) {
-    auto alias = SkString(name_alias);
-    typeface_id = c_font_collection->assets->registerTypefaceWithTracking(
-        typeface_data, typeface, alias);
-  } else {
-    typeface_id = c_font_collection->assets->registerTypefaceWithTracking(
-        typeface_data, typeface);
-  }
+  // The registration declares the name with `descriptors` (a twin of
+  // another declaration of the same bytes gets a FontKey of its own).
+  const uint32_t typeface_id =
+      c_font_collection->assets->registerTypefaceWithTracking(
+          typeface_data, typeface, name_alias, descriptors);
   if (typeface_id) {
     RelistRegistered(c_font_collection, typeface_id, registered, typeface,
                      name_alias);
-    SkString family;
-    typeface->getFamilyName(&family);
-    c_font_collection->assets->setDescriptors(
-        typeface_id, name_alias ? name_alias : family.c_str(), descriptors);
     c_font_collection->markCachesDirty();
   }
   return typeface_id;

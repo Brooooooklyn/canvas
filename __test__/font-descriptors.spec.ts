@@ -665,14 +665,20 @@ test('setAlias of an alias takes the descriptors at the end of the chain', (t) =
   t.deepEqual(draw('bold 32px "Alias Chain 2"').pixels, declared)
 })
 
-test('an alias follows its target declared again', (t) => {
+test('an alias keeps the face it named when its target is declared again', (t) => {
   // Own bytes: no other name shares the registration.
   const data = Buffer.concat([robotoMono, Buffer.alloc(64)])
-  t.truthy(GlobalFonts.register(data, 'Redeclare', { weight: 400 }))
+  const key400 = GlobalFonts.register(data, 'Redeclare', { weight: 400 })
+  t.truthy(key400)
   t.true(GlobalFonts.setAlias('Redeclare', 'Redeclare Alias'))
-  t.deepEqual(draw('bold 32px "Redeclare Alias"').pixels, draw('bold 32px "Descriptors 400"').pixels)
-  t.truthy(GlobalFonts.register(data, 'Redeclare', { weight: 700 }))
-  t.deepEqual(draw('bold 32px "Redeclare Alias"').pixels, draw('32px "Descriptors 700"').pixels)
+  const declared400 = draw('bold 32px "Descriptors 400"').pixels
+  t.deepEqual(draw('bold 32px "Redeclare Alias"').pixels, declared400)
+  // A second declaration is a face of its own (a FontKey of its own); the
+  // alias lists the face it named, whose descriptors stay {400}.
+  const key700 = GlobalFonts.register(data, 'Redeclare', { weight: 700 })
+  t.truthy(key700)
+  t.not(key700!.typefaceId, key400!.typefaceId)
+  t.deepEqual(draw('bold 32px "Redeclare Alias"').pixels, declared400)
 })
 
 test('SVG text: an alias takes its target descriptors', (t) => {
@@ -691,4 +697,162 @@ test('SVG text: an alias takes its target descriptors', (t) => {
   t.truthy(declaredPaths)
   t.notDeepEqual(declaredPaths, paths('Descriptors Auto'))
   t.deepEqual(paths('Alias SVG 400'), declaredPaths)
+})
+
+// One FontKey per declaration: the same bytes registered again under a name
+// with other descriptors are a face of their own, as a second FontFace of
+// that family is (FontFaceCache::Add keeps both); the same declaration again
+// is the same face, and another name is the same registration.
+test('the same bytes declared again with other descriptors are a face of their own', (t) => {
+  // Own bytes: no other name shares the registrations.
+  const data = Buffer.concat([robotoMono, Buffer.alloc(128)])
+  const key400 = GlobalFonts.register(data, 'Twin', { weight: 400 })
+  const key700 = GlobalFonts.register(data, 'Twin', { weight: '700' })
+  t.truthy(key400)
+  t.truthy(key700)
+  t.not(key700!.typefaceId, key400!.typefaceId)
+  t.is(GlobalFonts.register(data, 'Twin', { weight: 700 })?.typefaceId, key700!.typefaceId)
+  t.is(GlobalFonts.register(data, 'twin', { weight: 400 })?.typefaceId, key400!.typefaceId)
+  // `auto` is a declaration too.
+  const keyAuto = GlobalFonts.register(data, 'Twin')
+  t.truthy(keyAuto)
+  t.not(keyAuto!.typefaceId, key400!.typefaceId)
+  t.not(keyAuto!.typefaceId, key700!.typefaceId)
+  t.is(GlobalFonts.register(data, 'Twin Other')?.typefaceId, key400!.typefaceId)
+  // Removing a declaration keeps the others.
+  t.true(GlobalFonts.remove(key700!))
+  t.true(GlobalFonts.remove(keyAuto!))
+  t.true(GlobalFonts.has('Twin'))
+  t.deepEqual(draw('32px "Twin"').pixels, draw('32px "Descriptors 400"').pixels)
+  t.deepEqual(draw('bold 32px "Twin"').pixels, draw('bold 32px "Descriptors 400"').pixels)
+  t.true(GlobalFonts.remove(key400!))
+  t.false(GlobalFonts.has('Twin'))
+  t.false(GlobalFonts.has('Twin Other'))
+})
+
+test('removing the first declaration keeps the face declared after it', (t) => {
+  const data = Buffer.concat([robotoMono, Buffer.alloc(192)])
+  const key400 = GlobalFonts.register(data, 'Twin Later', { weight: 400 })
+  const key700 = GlobalFonts.register(data, 'Twin Later', { weight: 700 })
+  t.truthy(key400)
+  t.truthy(key700)
+  t.true(GlobalFonts.remove(key400!))
+  t.true(GlobalFonts.has('Twin Later'))
+  const declared700 = draw('32px "Descriptors 700"').pixels
+  t.deepEqual(draw('32px "Twin Later"').pixels, declared700)
+  t.deepEqual(draw('bold 32px "Twin Later"').pixels, declared700)
+  t.true(GlobalFonts.remove(key700!))
+  t.false(GlobalFonts.has('Twin Later'))
+})
+
+// A child process: both declarations of one file stay faces of their own
+// across a rebuild (an unrelated remove) and a renderer switch; the face
+// listing that only names the file's own family is no declaration.
+const TWIN_PROBE = `
+  const { readFileSync } = require('fs')
+  const { createCanvas, GlobalFonts, setTextRenderer } = require(process.env.PROBE_INDEX)
+  const { RENDERER, PROBE_FONTS } = process.env
+  setTextRenderer(RENDERER)
+  const font = (name) => readFileSync(PROBE_FONTS + '/' + name)
+  const pixels = (font) => {
+    const ctx = createCanvas(420, 60).getContext('2d')
+    ctx.font = font
+    ctx.fillText('Hamburgefonts', 10, 42)
+    return Buffer.from(ctx.getImageData(0, 0, 420, 60).data).toString('base64')
+  }
+  const styles = (name) => {
+    const family = JSON.parse(GlobalFonts.getFamilies().toString()).find((f) => f.family === name)
+    return family ? family.styles.length : 0
+  }
+  const out = {}
+  // register(V, 'F') lists V under its own family too; a call with that
+  // family and descriptors is the first declaration of it.
+  const oswald = font('Oswald.ttf')
+  const guard = [GlobalFonts.register(oswald, 'Guard F'), GlobalFonts.register(oswald, undefined, { weight: 700 })]
+  out.guardSameKey = guard[0].typefaceId === guard[1].typefaceId
+  out.guardDraws700 = pixels('40px Oswald') === pixels('700 40px "Guard F"')
+  const mono = font('RobotoMono-VariableFont_wght.ttf')
+  // Own bytes: the V{700} reference.
+  GlobalFonts.register(Buffer.concat([mono, Buffer.alloc(64)]), 'Ref 700', { weight: 700 })
+  const key400 = GlobalFonts.register(mono, 'M', { weight: 400 })
+  const key700 = GlobalFonts.register(mono, 'M', { weight: 700 })
+  out.keysDiffer = key400.typefaceId !== key700.typefaceId
+  out.styles = [styles('M')]
+  GlobalFonts.remove(GlobalFonts.registerFromPath(PROBE_FONTS + '/Lato-Regular.ttf', 'Unrelated'))
+  out.styles.push(styles('M'))
+  setTextRenderer(RENDERER === 'system' ? 'portable' : 'system')
+  setTextRenderer(RENDERER)
+  out.styles.push(styles('M'))
+  // The rebuilds listed both registrations of the bytes again.
+  out.sameAgain = [
+    GlobalFonts.register(mono, 'M', { weight: 400 }).typefaceId === key400.typefaceId,
+    GlobalFonts.register(mono, 'M', { weight: 700 }).typefaceId === key700.typefaceId,
+  ]
+  out.removed400 = GlobalFonts.remove(key400)
+  out.has = [GlobalFonts.has('M')]
+  out.draws700 = pixels('40px M') === pixels('40px "Ref 700"') && pixels('bold 40px M') === pixels('40px "Ref 700"')
+  out.removed700 = GlobalFonts.remove(key700)
+  out.has.push(GlobalFonts.has('M'))
+  console.log(JSON.stringify(out))`
+
+for (const renderer of ['portable', 'system'] as const) {
+  test(`declarations of one file keep their FontKeys across a rebuild and a switch (${renderer})`, (t) => {
+    const child = spawnSync(process.execPath, ['-e', TWIN_PROBE], {
+      encoding: 'utf8',
+      timeout: 60_000,
+      env: {
+        ...process.env,
+        RENDERER: renderer,
+        PROBE_FONTS: join(__dirname, 'fonts'),
+        PROBE_INDEX: join(__dirname, '..', 'index.js'),
+      },
+    })
+    t.is(child.status, 0, child.stderr)
+    t.deepEqual(JSON.parse(child.stdout), {
+      guardSameKey: true,
+      guardDraws700: true,
+      keysDiffer: true,
+      styles: [2, 2, 2],
+      sameAgain: [true, true],
+      removed400: true,
+      has: [true, false],
+      draws700: true,
+      removed700: true,
+    })
+  })
+}
+
+// A child process: a declaration twin made and removed again and again
+// frees its face (it shares the bytes of the first declaration).
+const TWIN_MEMORY_PROBE = `
+  const { readFileSync } = require('fs')
+  const { createCanvas, GlobalFonts } = require(process.env.PROBE_INDEX)
+  const mono = readFileSync(process.env.PROBE_FONTS + '/RobotoMono-VariableFont_wght.ttf')
+  GlobalFonts.register(mono, 'Mem', { weight: 400 })
+  const ctx = createCanvas(200, 60).getContext('2d')
+  const round = async (n) => {
+    for (let i = 0; i < n; ++i) {
+      const key = GlobalFonts.register(mono, 'Mem', { weight: 700 })
+      ctx.font = 'bold 32px Mem'
+      ctx.fillText('Ham ' + i, 10, 40)
+      GlobalFonts.remove(key)
+      await new Promise(setImmediate)
+    }
+    gc()
+    return process.memoryUsage().rss / 1048576
+  }
+  ;(async () => {
+    const rss = [await round(20), await round(200)]
+    console.log(JSON.stringify({ rss, size: mono.length }))
+  })()`
+
+test('a declaration twin made and removed 200 times does not grow RSS', (t) => {
+  const child = spawnSync(process.execPath, ['--expose-gc', '-e', TWIN_MEMORY_PROBE], {
+    encoding: 'utf8',
+    timeout: 120_000,
+    env: { ...process.env, PROBE_FONTS: join(__dirname, 'fonts'), PROBE_INDEX: join(__dirname, '..', 'index.js') },
+  })
+  t.is(child.status, 0, child.stderr)
+  const { rss } = JSON.parse(child.stdout)
+  t.true(rss[1] - rss[0] < 20, `RSS MB after 20, then 200 more: ${rss.map((v: number) => v.toFixed(1)).join(', ')}`)
 })
