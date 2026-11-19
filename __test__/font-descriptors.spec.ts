@@ -1556,7 +1556,9 @@ const PATH_TWIN_PROBE = `
     return family ? family.styles.length : 0
   }
   const out = {}
-  const preloaded = PROBE_DIR + '/RobotoMono-VariableFont_wght.ttf'
+  // The separator loadFontsFromDir's walk gives (\\ on Windows): path
+  // registrations dedup by the path string.
+  const preloaded = require('path').join(PROBE_DIR, 'RobotoMono-VariableFont_wght.ttf')
   out.loaded = GlobalFonts.loadFontsFromDir(PROBE_DIR)
   const before = styles('Roboto Mono')
   const plain = GlobalFonts.registerFromPath(preloaded)
