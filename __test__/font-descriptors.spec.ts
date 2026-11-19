@@ -803,6 +803,66 @@ test('an auto declaration newer than an alias of the same face is auto', (t) => 
   t.deepEqual(draw('bold 32px "Older Dest"').pixels, bold400)
 })
 
+// A child process per renderer (a warm cache of its own): setAlias,
+// getVariationAxes and hasVariations look the family up after the faces
+// registered since its last lookup, as a text lookup does, so a registration
+// right before them is the newest face of the segment.
+const WARM_LOOKUP_PROBE = `
+  const { createCanvas, GlobalFonts, setTextRenderer } = require(process.env.PROBE_INDEX)
+  const { RENDERER, PROBE_FONTS } = process.env
+  setTextRenderer(RENDERER)
+  const path = (name) => PROBE_FONTS + '/' + name
+  const ctx = createCanvas(10, 10).getContext('2d')
+  const width = (font) => { ctx.font = font; return ctx.measureText('Hello World').width }
+  GlobalFonts.registerFromPath(path('Lato-Regular.ttf'), 'Warm Lato')
+  GlobalFonts.registerFromPath(path('Oswald.ttf'), 'Warm Oswald')
+  const refs = { lato: width('40px "Warm Lato"'), oswald: width('40px "Warm Oswald"') }
+  const face = (font) => { const w = width(font); return Object.keys(refs).find((k) => refs[k] === w) || String(w) }
+  const out = {}
+  GlobalFonts.registerFromPath(path('Lato-Regular.ttf'), 'Warm Brand')
+  out.warm = face('40px "Warm Brand"')
+  GlobalFonts.registerFromPath(path('Oswald.ttf'), 'Warm Brand')
+  out.alias = GlobalFonts.setAlias('Warm Brand', 'Warm Alias')
+  out.brand = face('40px "Warm Brand"')
+  out.aliased = face('40px "Warm Alias"')
+  // A rebuild (an unrelated remove) names the alias's face again.
+  out.removed = GlobalFonts.remove(GlobalFonts.registerFromPath(path('EBGaramond-Regular.ttf'), 'Warm Unrelated'))
+  out.rebuilt = face('40px "Warm Alias"')
+  GlobalFonts.registerFromPath(path('Lato-Regular.ttf'), 'Warm Variable')
+  out.static = width('40px "Warm Variable"') === refs.lato
+  GlobalFonts.registerFromPath(path('RobotoMono-VariableFont_wght.ttf'), 'Warm Variable')
+  out.hasVariations = GlobalFonts.hasVariations('Warm Variable', 400, 5, 0)
+  out.axes = GlobalFonts.getVariationAxes('Warm Variable', 400, 5, 0).map((a) => [a.tag, a.min, a.max])
+  console.log(JSON.stringify(out))`
+
+for (const renderer of ['portable', 'system'] as const) {
+  test(`setAlias and the variation queries see a registration right before them (${renderer})`, (t) => {
+    const child = spawnSync(process.execPath, ['-e', WARM_LOOKUP_PROBE], {
+      encoding: 'utf8',
+      timeout: 60_000,
+      env: {
+        ...process.env,
+        RENDERER: renderer,
+        PROBE_FONTS: join(__dirname, 'fonts'),
+        PROBE_INDEX: join(__dirname, '..', 'index.js'),
+      },
+    })
+    t.is(child.status, 0, child.stderr)
+    const wght = 0x77676874
+    t.deepEqual(JSON.parse(child.stdout), {
+      warm: 'lato',
+      alias: true,
+      brand: 'oswald',
+      aliased: 'oswald',
+      removed: true,
+      rebuilt: 'oswald',
+      static: true,
+      hasVariations: true,
+      axes: [[wght, 100, 700]],
+    })
+  })
+}
+
 test('SVG text: an alias takes its target descriptors', (t) => {
   t.true(GlobalFonts.setAlias('Descriptors 400', 'Alias SVG 400'))
   const declared = svgPixels("'Descriptors 400'", 'Ham')

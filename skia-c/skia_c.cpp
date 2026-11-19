@@ -4750,7 +4750,9 @@ bool skiac_font_collection_set_alias(skiac_font_collection* c_font_collection,
   if (family[0] == '\x01' || alias[0] == '\x01') {
     return false;
   }
-  c_font_collection->prepareLookup();
+  // The faces registered since the last lookup: MatchNamedFamily reuses the
+  // family's cached FontFaces (font_face_cores) until a flush.
+  c_font_collection->flushCachesIfDirty();
   auto style = SkFontStyle();
   // The face text naming `family` uses now: a name registered over an
   // installed family gives its registered face (font_families.cpp
@@ -4862,7 +4864,7 @@ int skiac_typeface_get_variation_design_position(
     return 0;
   }
 
-  c_font_collection->prepareLookup();
+  c_font_collection->flushCachesIfDirty();
   auto font_style = SkFontStyle(weight, width, (SkFontStyle::Slant)slant);
   // The face text naming the family draws (a name registered over an
   // installed family gives its registered faces).
@@ -4920,7 +4922,7 @@ bool skiac_font_has_variations(skiac_font_collection* c_font_collection,
     return false;
   }
 
-  c_font_collection->prepareLookup();
+  c_font_collection->flushCachesIfDirty();
   auto font_style = SkFontStyle(weight, width, (SkFontStyle::Slant)slant);
   // The face text naming the family draws (MatchNamedFamily).
   auto typeface = MatchNamedFamily(c_font_collection, family_name, font_style);
