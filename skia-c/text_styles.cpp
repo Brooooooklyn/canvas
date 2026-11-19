@@ -133,6 +133,24 @@ std::vector<FaceDescriptors> FamilyDescriptors(
     return out;
   }
   out.resize(base_faces.size());
+  const std::vector<std::optional<size_t>> family_of =
+      FaceFamilies(c_collection, families, style, base_faces);
+  for (size_t k = 0; k < base_faces.size(); ++k) {
+    const std::optional<size_t> i = family_of[k];
+    if (i && (*i >= generic.size() || !generic[*i])) {
+      out[k] = DeclaredDescriptors(c_collection, base_faces[k].get(),
+                                   {families[*i].c_str(), families[*i].size()});
+    }
+  }
+  return out;
+}
+
+std::vector<std::optional<size_t>> FaceFamilies(
+    skiac_font_collection* c_collection,
+    const std::vector<SkString>& families,
+    const SkFontStyle& style,
+    const std::vector<sk_sp<SkTypeface>>& base_faces) {
+  std::vector<std::optional<size_t>> out(base_faces.size());
   // findTypefaces keeps the faces of the families that match, in order: the
   // family of face k is the next one whose own match it is.
   size_t k = 0;
@@ -147,10 +165,7 @@ std::vector<FaceDescriptors> FamilyDescriptors(
         found.front()->uniqueID() != base_faces[k]->uniqueID()) {
       continue;
     }
-    if (i >= generic.size() || !generic[i]) {
-      out[k] = DeclaredDescriptors(c_collection, base_faces[k].get(),
-                                   {families[i].c_str(), families[i].size()});
-    }
+    out[k] = i;
     ++k;
   }
   return out;

@@ -1185,12 +1185,13 @@ struct FamilyFace {
 // ComputeUsedSizes gives its family, its descriptors (`declared`,
 // FamilyDescriptors), and, for another opsz or descriptors than the
 // primary's, its own instance (FontVariations of the face alone) from a
-// findTypefaces call of the same families and the cloneTypeface cache (so
-// two faces with the same coordinates share one SkTypeface). A face of no
-// family in `sizes.faces`, or one whose instance list has another count
-// than `base_faces`, takes the primary's size, opsz and instance. Every
-// font argument list is noted here, before the layout takes any reference
-// into the caches.
+// findTypefaces call of its family alone (FaceFamilies), so only that face
+// is cloned, by the cloneTypeface cache (the same SkTypeface for the same
+// face and coordinates). A face of no family in `sizes.faces` takes the
+// primary's size and opsz; one whose family is not found, the primary's
+// instance too unless findTypefaces of all of `families` gives one per
+// face. Every font argument list is noted here, before the layout takes any
+// reference into the caches.
 std::vector<FamilyFace> FamilyFaces(
     skiac_font_collection* c_collection,
     const std::vector<SkString>& families,
@@ -1204,14 +1205,8 @@ std::vector<FamilyFace> FamilyFaces(
   std::vector<FamilyFace> out;
   out.reserve(faces.size());
   const bool same_count = faces.size() == base_faces.size();
-  // The instances at each other coordinate list.
-  std::vector<std::pair<Coords, std::vector<sk_sp<SkTypeface>>>> instances;
-  auto same_coords = [](const Coords& a, const Coords& b) {
-    return std::equal(a.begin(), a.end(), b.begin(), b.end(),
-                      [](const auto& x, const auto& y) {
-                        return x.axis == y.axis && x.value == y.value;
-                      });
-  };
+  // The family of each face, found when a face needs its own instance.
+  std::optional<std::vector<std::optional<size_t>>> family_of;
   for (size_t k = 0; k < faces.size(); ++k) {
     FamilyFace family{
         faces[k], same_count ? base_faces[k].get() : faces[k].get(),
@@ -1236,32 +1231,32 @@ std::vector<FamilyFace> FamilyFaces(
     } else {
       const Coords own =
           FontVariations({base_faces[k]}, request, opsz, family.declared);
-      auto known = std::find_if(
-          instances.begin(), instances.end(),
-          [&](const auto& entry) { return same_coords(entry.first, own); });
-      if (known == instances.end()) {
-        std::vector<sk_sp<SkTypeface>> found;
-        if (!own.empty()) {
-          SkFontArguments args;
-          args.setVariationDesignPosition(
-              {own.data(), static_cast<int>(own.size())});
-          const std::optional<FontArguments> arguments(args);
-          c_collection->noteFontArguments(
-              std::hash<FontArguments>()(*arguments));
-          found = c_collection->collection->findTypefaces(families, font_style,
-                                                          arguments);
-        }
-        instances.emplace_back(own, std::move(found));
-        known = instances.end() - 1;
-      }
-      if (known->second.empty()) {
+      if (own.empty()) {
         // No variation to set: the face at the request's axes.
         family.size = size;
         family.opsz = opsz;
-      } else if (known->second.size() == base_faces.size()) {
-        family.face = known->second[k];
-        family.size = size;
-        family.opsz = opsz;
+      } else {
+        SkFontArguments args;
+        args.setVariationDesignPosition(
+            {own.data(), static_cast<int>(own.size())});
+        const std::optional<FontArguments> arguments(args);
+        c_collection->noteFontArguments(std::hash<FontArguments>()(*arguments));
+        if (!family_of) {
+          family_of =
+              FaceFamilies(c_collection, families, font_style, base_faces);
+        }
+        const std::optional<size_t> i = (*family_of)[k];
+        const std::vector<sk_sp<SkTypeface>> found =
+            c_collection->collection->findTypefaces(
+                i ? std::vector<SkString>{families[*i]} : families, font_style,
+                arguments);
+        c_collection->family_instance_faces += found.size();
+        const size_t at = i ? 0 : k;
+        if (found.size() == (i ? 1 : base_faces.size()) && found[at]) {
+          family.face = found[at];
+          family.size = size;
+          family.opsz = opsz;
+        }
       }
     }
     out.push_back(std::move(family));

@@ -171,6 +171,16 @@ std::vector<FaceDescriptors> FamilyDescriptors(
     const SkFontStyle& style,
     const std::vector<sk_sp<SkTypeface>>& base_faces);
 
+// For each of `base_faces` (findTypefaces of `families` at `style`), the
+// index in `families` of the family that matched it (findTypefaces of that
+// family alone finds the same face); none when no family is found to
+// (text_styles.cpp).
+std::vector<std::optional<size_t>> FaceFamilies(
+    skiac_font_collection* c_collection,
+    const std::vector<SkString>& families,
+    const SkFontStyle& style,
+    const std::vector<sk_sp<SkTypeface>>& base_faces);
+
 // The variation coordinates for `request` when `faces` (the request's
 // families' faces before font arguments) vary or the request has its own
 // variations, else none: wght, wdth and slnt from the weight (`declared`'s,

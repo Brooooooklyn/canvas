@@ -284,6 +284,27 @@ test('the font data is read after the descriptors convert', (t) => {
   t.false(GlobalFonts.has('Descriptors Shrunk'))
 })
 
+test('a face with its own descriptors is the only face cloned at its coordinates', (t) => {
+  // Six faces (one file padded apart), each declared with its own weight: a
+  // cold layout looks up one instance per face, not every matched face at
+  // each face's coordinates (36 and more).
+  const names = Array.from({ length: 6 }, (_, i) => {
+    const name = `Descriptors Own Instance ${i}`
+    const data = Buffer.concat([robotoMono, Buffer.alloc(4 * (i + 1))])
+    t.truthy(GlobalFonts.register(data, name, { weight: 100 + 100 * i }))
+    return `"${name}"`
+  })
+  const ctx = createCanvas(10, 10).getContext('2d')
+  const instanceFaces = (font: string) => {
+    ctx.font = font
+    const debug = ctx as unknown as { __debugTextLine(text: string): string }
+    return JSON.parse(debug.__debugTextLine('Own instances')).familyInstanceFaces
+  }
+  // The registrations dropped the caches: the layout of the list is cold.
+  const before = instanceFaces('32px "Descriptors Lato"')
+  t.is(instanceFaces(`32px ${names.join(', ')}`) - before, 6)
+})
+
 test('descriptors stay with their name across a rebuild and go with a remove', (t) => {
   // RegisteredFontAssets counts the names with descriptors
   // (DeclaredDescriptors' check): a rebuild carries them, a remove drops them.

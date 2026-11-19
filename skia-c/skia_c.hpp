@@ -1142,6 +1142,10 @@ struct skiac_font_collection {
   // The tables (cmap, identity) the installed-font fallback source read from
   // faces, for skiac_debug_text_line's fallbackReads.
   uint64_t installed_fallback_reads = 0;
+  // The faces the family entries' own instances were looked up for
+  // (shaper.cpp FamilyFaces; each one a clone unless cached), for
+  // skiac_debug_text_line's familyInstanceFaces.
+  uint64_t family_instance_faces = 0;
 #if defined(__APPLE__)
   // loadSystemFonts turned the installed fonts on (kept across renderer
   // switches); they are registered the first time a font is looked up or
