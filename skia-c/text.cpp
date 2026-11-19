@@ -37,7 +37,7 @@ TextCaches& GetTextCaches(skiac_font_collection* c_collection) {
   return *c_collection->text_caches;
 }
 
-const std::vector<SkString>& CachedFontFamilies(
+const TextCaches::Families& CachedFontFamilies(
     skiac_font_collection* c_collection,
     const skiac_text_request& request,
     const LocaleFamilies* locale) {
@@ -71,11 +71,10 @@ const std::vector<SkString>& CachedFontFamilies(
   }
   auto found = cache.find(key);
   if (found == cache.end()) {
-    found = cache
-                .emplace(
-                    std::move(key),
-                    ResolveFontFamilies(c_collection, request, nullptr, locale))
-                .first;
+    TextCaches::Families families;
+    families.names =
+        ResolveFontFamilies(c_collection, request, &families.generic, locale);
+    found = cache.emplace(std::move(key), std::move(families)).first;
   }
   return found->second;
 }
@@ -614,6 +613,8 @@ void skiac_debug_text_line(skiac_font_collection* c_collection,
   put_float(line->last_word_advance);
   out += ",\"fallbackReads\":";
   out += std::to_string(c_collection->installed_fallback_reads);
+  out += ",\"familyInstanceFaces\":";
+  out += std::to_string(c_collection->family_instance_faces);
   out += ",\"runs\":[";
   for (size_t r = 0; r < line->blink.runs.size(); ++r) {
     const BlinkRun& run = line->blink.runs[r];

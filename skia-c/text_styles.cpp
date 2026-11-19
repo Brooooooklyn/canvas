@@ -1,5 +1,6 @@
 // Variable font axes and synthetic bold and italic, like Blink. A registered
-// font is a web font with `auto` descriptors (FontCustomPlatformData::
+// font is a web font with the descriptors it was registered with under the
+// family that matched it, else `auto` ones (FontCustomPlatformData::
 // GetFontPlatformData), an installed font follows FontCache::
 // CreateFontPlatformData and a fallback font PlatformFallbackFontForCharacter
 // (Linux).
@@ -71,12 +72,110 @@ bool SetsOpszDefault(const skiac_text_request& request) {
 #endif
 }
 
+// `family` case-folded, without ResolveFontFamilies' tags: "\x01s\x01" k
+// "\x01" before a tagged name, "\x01" kind "\x01" before a family.
+std::string FoldedUntaggedFamily(std::string_view family) {
+  if (family.substr(0, 3) == "\x01s\x01") {
+    const size_t end = family.find('\x01', 3);
+    family = end == std::string_view::npos ? std::string_view()
+                                           : family.substr(end + 1);
+  }
+  if (family.size() >= 3 && family[0] == '\x01' && family[2] == '\x01') {
+    family = family.substr(3);
+  }
+  return FoldFamilyName(family);
+}
+
 }  // namespace
+
+FaceDescriptors DeclaredDescriptors(skiac_font_collection* c_collection,
+                                    SkTypeface* base,
+                                    std::string_view family) {
+  if (!base || !c_collection->assets->describesAny()) {
+    return std::nullopt;
+  }
+  const std::string folded = FoldedUntaggedFamily(family);
+  if (!c_collection->assets->describes(folded)) {
+    return std::nullopt;
+  }
+  const uint32_t id = c_collection->assets->registrationOf(base->uniqueID());
+  if (!id) {
+    return std::nullopt;
+  }
+  const auto& descriptors =
+      c_collection->assets->getRegisteredFonts().at(id).descriptors;
+  const auto found = descriptors.find(folded);
+  if (found == descriptors.end()) {
+    return std::nullopt;
+  }
+  return found->second;
+}
+
+std::vector<FaceDescriptors> FamilyDescriptors(
+    skiac_font_collection* c_collection,
+    const std::vector<SkString>& families,
+    const std::vector<bool>& generic,
+    const SkFontStyle& style,
+    const std::vector<sk_sp<SkTypeface>>& base_faces) {
+  std::vector<FaceDescriptors> out;
+  // No named family has descriptors: no lookup at all.
+  const auto& assets = c_collection->assets;
+  bool described = false;
+  for (size_t i = 0; assets->describesAny() && i < families.size(); ++i) {
+    if ((i >= generic.size() || !generic[i]) &&
+        assets->describes(
+            FoldedUntaggedFamily({families[i].c_str(), families[i].size()}))) {
+      described = true;
+      break;
+    }
+  }
+  if (!described) {
+    return out;
+  }
+  out.resize(base_faces.size());
+  const std::vector<std::optional<size_t>> family_of =
+      FaceFamilies(c_collection, families, style, base_faces);
+  for (size_t k = 0; k < base_faces.size(); ++k) {
+    const std::optional<size_t> i = family_of[k];
+    if (i && (*i >= generic.size() || !generic[*i])) {
+      out[k] = DeclaredDescriptors(c_collection, base_faces[k].get(),
+                                   {families[*i].c_str(), families[*i].size()});
+    }
+  }
+  return out;
+}
+
+std::vector<std::optional<size_t>> FaceFamilies(
+    skiac_font_collection* c_collection,
+    const std::vector<SkString>& families,
+    const SkFontStyle& style,
+    const std::vector<sk_sp<SkTypeface>>& base_faces) {
+  std::vector<std::optional<size_t>> out(base_faces.size());
+  // findTypefaces keeps the faces of the families that match, in order: the
+  // family of face k is the next one whose own match it is.
+  size_t k = 0;
+  for (size_t i = 0; i < families.size() && k < base_faces.size(); ++i) {
+    if (families[i].startsWith("\x01s\x01") &&
+        !c_collection->assets->matchFamilyStyle(families[i].c_str(), style)) {
+      continue;
+    }
+    const std::vector<sk_sp<SkTypeface>> found =
+        c_collection->collection->findTypefaces({families[i]}, style);
+    if (found.empty() || !found.front() || !base_faces[k] ||
+        found.front()->uniqueID() != base_faces[k]->uniqueID()) {
+      continue;
+    }
+    out[k] = i;
+    ++k;
+  }
+  return out;
+}
 
 std::vector<SkFontArguments::VariationPosition::Coordinate> FontVariations(
     const std::vector<sk_sp<SkTypeface>>& faces,
     const skiac_text_request& request,
-    float opsz_size) {
+    float opsz_size,
+    const FaceDescriptors& declared) {
   bool variable = false;
   std::optional<SkFontParameters::Variation::Axis> opsz_axis;
   for (const auto& face : faces) {
@@ -94,9 +193,12 @@ std::vector<SkFontArguments::VariationPosition::Coordinate> FontVariations(
   // Skia clamps each coordinate to the face's axis, as Blink does for a
   // range set from `auto`. CSS slants clockwise, OpenType counter-clockwise.
   if (variable) {
-    coords.push_back({kWght, request.weight});
+    // An explicit weight or style is the face's wght or slnt
+    // (ClampAxisValue, ResolveVariations' negate_slope).
+    const float slope = declared ? declared->slope : request.slope;
+    coords.push_back({kWght, declared ? declared->weight : request.weight});
     coords.push_back({kWdth, request.stretch_pct});
-    coords.push_back({kSlnt, -request.slope});
+    coords.push_back({kSlnt, slope == 0 ? 0 : -slope});
   }
   bool explicit_opsz = false;
   for (int i = 0; request.variations && i < request.variations_count; ++i) {
@@ -186,18 +288,19 @@ float AdvanceHeight(skiac_font_collection* c_collection,
 
 // FontSizeFunctions AspectValue: the metric of `face` (an instance of
 // `base` at the request's axes) at `size` px over the size, 1 when the face
-// has no such metric.
+// has no such metric. `declared`: `base`'s descriptors.
 float AspectValue(skiac_font_collection* c_collection,
                   const sk_sp<SkTypeface>& face,
                   SkTypeface* base,
                   float size,
                   int metric,
-                  const skiac_text_request& request) {
+                  const skiac_text_request& request,
+                  const FaceDescriptors& declared) {
   SkFont font = MetricsFont(face, size);
   // FontPlatformData::SetupSkFont: the font Blink measures has the face's
   // synthetic bold and italic, which move the top of the 'x' outline.
   const SyntheticStyle synthetic =
-      SynthesizeStyle(c_collection, face.get(), base, request);
+      SynthesizeStyle(c_collection, face.get(), base, request, declared);
   font.setEmbolden(synthetic.bold);
   font.setSkewX(synthetic.italic ? -SK_Scalar1 / 4 : 0);
   SkFontMetrics metrics;
@@ -253,6 +356,7 @@ float EffectiveSize(float size) {
 
 UsedSizes ComputeUsedSizes(skiac_font_collection* c_collection,
                            const std::vector<sk_sp<SkTypeface>>& base_faces,
+                           const std::vector<FaceDescriptors>& declared,
                            const skiac_text_request& request,
                            const LocaleFamilies* locale) {
   const float computed = request.size;
@@ -283,9 +387,10 @@ UsedSizes ComputeUsedSizes(skiac_font_collection* c_collection,
   // The face Blink measures: the instance at the request's axes, opsz at the
   // computed size (UpdateAdjustedSize sets the adjusted size to it first),
   // made at its effective size (the computed size floored).
-  auto aspect_of = [&](const sk_sp<SkTypeface>& base) {
+  auto aspect_of = [&](const sk_sp<SkTypeface>& base,
+                       const FaceDescriptors& descriptors) {
     sk_sp<SkTypeface> face = base;
-    const auto coords = FontVariations({base}, request, computed);
+    const auto coords = FontVariations({base}, request, computed, descriptors);
     if (!coords.empty()) {
       SkFontArguments args;
       args.setVariationDesignPosition(
@@ -295,9 +400,12 @@ UsedSizes ComputeUsedSizes(skiac_font_collection* c_collection,
       }
     }
     return AspectValue(c_collection, face, base.get(), measured, metric,
-                       request);
+                       request, descriptors);
   };
-  const float primary_aspect = adjust ? aspect_of(base_faces.front()) : 1;
+  const float primary_aspect =
+      adjust ? aspect_of(base_faces.front(),
+                         declared.empty() ? std::nullopt : declared.front())
+             : 1;
   // from-font: the primary font's own aspect (UpdateAdjustedSize).
   const float value = request.size_adjust_from_font ? primary_aspect
                                                     : request.size_adjust_value;
@@ -350,7 +458,11 @@ UsedSizes ComputeUsedSizes(skiac_font_collection* c_collection,
     float opsz = sizes.opsz;
     if (adjust && !sizes.faces.empty() &&
         (generic[i] || !IsSystemTypeface(c_collection, face.get()))) {
-      const float face_adjusted = adjusted_for(aspect_of(face));
+      const float face_adjusted = adjusted_for(aspect_of(
+          face, generic[i] ? std::nullopt
+                           : DeclaredDescriptors(
+                                 c_collection, face.get(),
+                                 {families[i].c_str(), families[i].size()})));
       size = EffectiveSize(face_adjusted);
       if (opsz_follows_size && FindAxis(Axes(face.get()), kOpsz)) {
         opsz = face_adjusted;
@@ -475,7 +587,8 @@ std::vector<hb_feature_t> BlinkFeatures(const skiac_text_request& request) {
 SyntheticStyle SynthesizeStyle(skiac_font_collection* c_collection,
                                SkTypeface* face,
                                SkTypeface* base,
-                               const skiac_text_request& request) {
+                               const skiac_text_request& request,
+                               const FaceDescriptors& declared) {
   const float weight = request.weight;
   const float slope = request.slope;
   if (!base) {
@@ -496,6 +609,13 @@ SyntheticStyle SynthesizeStyle(skiac_font_collection* c_collection,
     return {
         weight > 200 + style.weight(),
         slope == kItalicSlope && style.slant() == SkFontStyle::kUpright_Slant};
+  }
+  if (declared) {
+    // CSSSegmentedFontFace with explicit descriptors, whatever the axes span.
+    return {weight >= kBoldThreshold && declared->weight < kBoldThreshold &&
+                !base->isBold(),
+            slope >= kItalicSlope && declared->slope < kItalicSlope &&
+                !base->isItalic()};
   }
   // CSSSegmentedFontFace: `auto` descriptors are weight 400 and slope 0.
   bool bold = weight >= kBoldThreshold;

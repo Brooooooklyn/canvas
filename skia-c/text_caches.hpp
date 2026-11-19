@@ -78,7 +78,12 @@ struct TextCaches {
   };
 
   // ResolveFontFamilies by the request's family list.
-  std::unordered_map<std::string, std::vector<SkString>> families;
+  struct Families {
+    std::vector<SkString> names;
+    // ResolveFontFamilies' `generic`.
+    std::vector<bool> generic;
+  };
+  std::unordered_map<std::string, Families> families;
   // MeasurePrimaryFont by typeface, base typeface and the size's bits.
   std::map<std::tuple<SkTypefaceID, SkTypefaceID, uint32_t>, PrimaryFontMetrics>
       metrics;
@@ -101,7 +106,7 @@ TextCaches& GetTextCaches(skiac_font_collection* c_collection);
 // ResolveFontFamilies of the request's family list (with `locale`'s font
 // settings when given), cached: a reference into TextCaches::families, valid
 // until the next call (text.cpp).
-const std::vector<SkString>& CachedFontFamilies(
+const TextCaches::Families& CachedFontFamilies(
     skiac_font_collection* c_collection,
     const skiac_text_request& request,
     const LocaleFamilies* locale = nullptr);

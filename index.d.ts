@@ -1132,10 +1132,37 @@ export interface FontVariationAxis {
   hidden: boolean
 }
 
+/**
+ * A font's `@font-face` descriptors, as `new FontFace(name, data, descriptors)`
+ * takes them. An invalid value fails the registration (FontFace's status
+ * 'error'); unknown keys are ignored. Values are kept in quarter steps, as
+ * Chrome keeps them (300.7 is 300.5).
+ */
+export interface FontFaceDescriptors {
+  /**
+   * A number from 1 to 1000. Default 400. Any other value, `null` or a
+   * string included, is invalid.
+   */
+  weight?: number
+  /**
+   * `normal`, `italic`, `oblique` or `oblique <angle>` (a CSS angle such as
+   * `10deg`, `0.2rad` or `calc(5deg)`; a written number from -90 to 90), in
+   * any ASCII case. Default 'normal'. A value that is not a string is
+   * converted with `String()` first (`null` is 'null', invalid).
+   */
+  style?: 'normal' | 'italic' | 'oblique' | `oblique ${string}`
+}
+
 interface IGlobalFonts {
   readonly families: { family: string; styles: { weight: number; width: string; style: string }[] }[]
-  // return FontKey if succeeded, null if failed
-  register(font: Buffer, nameAlias?: string): FontKey | null
+  /**
+   * The FontKey, or null if it failed (also for invalid `descriptors`, which
+   * registers nothing; a `descriptors` that is not an object, or a Symbol
+   * value, throws a TypeError). `descriptors`: the font's descriptors under
+   * this name; a text font list uses them where this name matches the font.
+   * Without them, `auto`: the font's own weight and style ranges.
+   */
+  register(font: Buffer, nameAlias?: string, descriptors?: FontFaceDescriptors): FontKey | null
   // absolute path - returns FontKey if succeeded, null if failed
   registerFromPath(path: string, nameAlias?: string): FontKey | null
   has(name: string): boolean

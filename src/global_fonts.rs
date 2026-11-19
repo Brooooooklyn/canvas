@@ -174,6 +174,69 @@ fn set_system_font_renderer(enabled: bool) -> napi::Result<()> {
   Ok(())
 }
 
+/// The descriptors `register` declares, checked as Chrome's FontFace parses
+/// them (an invalid one makes the face's status "error", never used): a
+/// weight in [1, 1000], a style `normal`, `italic` or `oblique [<angle>]`
+/// (font::parse_font_face_style). A missing field is the FontFace default,
+/// 400 or normal. ConsumeFontWeight checks the double; then
+/// GetFontSelectionCapabilities keeps FontSelectionValue(float) (quarter
+/// steps).
+fn face_descriptors(
+  weight: Option<f64>,
+  style: Option<&str>,
+) -> Option<crate::sk::ffi::skiac_face_descriptors> {
+  let weight = weight.unwrap_or(400.0);
+  if !(1.0..=1000.0).contains(&weight) {
+    return None;
+  }
+  let slope = match style {
+    Some(style) => crate::font::parse_font_face_style(style)?,
+    None => 0.0,
+  };
+  Some(crate::sk::ffi::skiac_face_descriptors {
+    weight: crate::font::font_selection_value((weight as f32).into()),
+    slope,
+  })
+}
+
+/// FontFaceDescriptors (font_face_descriptors.idl): `descriptors` must be an
+/// object, else a TypeError, as the FontFace constructor throws. Its members
+/// are DOMStrings, converted in IDL order (style, then weight); a conversion
+/// may throw (a Symbol). Ok(None) when one is invalid: a weight that is not
+/// a number (a string such as '700' is not parsed) or face_descriptors.
+fn read_face_descriptors(
+  env: napi::sys::napi_env,
+  value: napi::sys::napi_value,
+) -> napi::Result<Option<crate::sk::ffi::skiac_face_descriptors>> {
+  use napi::bindgen_prelude::FromNapiValue;
+  if !matches!(
+    webidl::type_of(env, value)?,
+    ValueType::Object | ValueType::Function
+  ) {
+    return Err(webidl::type_error(
+      env,
+      "The provided value is not of type 'FontFaceDescriptors'.",
+    ));
+  }
+  let prefix =
+    |key: &str| format!("Failed to read the '{key}' property from 'FontFaceDescriptors': ");
+  let style = match webidl::member(env, value, "style")? {
+    Some(style) => Some(webidl::to_dom_string(env, style, &prefix("style"))?),
+    None => None,
+  };
+  let weight = match webidl::member(env, value, "weight")? {
+    Some(weight) if webidl::type_of(env, weight)? == ValueType::Number => {
+      Some(unsafe { f64::from_napi_value(env, weight)? })
+    }
+    Some(weight) => {
+      webidl::to_dom_string(env, weight, &prefix("weight"))?;
+      return Ok(None);
+    }
+    None => None,
+  };
+  Ok(face_descriptors(weight, style.as_deref()))
+}
+
 #[napi(js_name = "GlobalFonts")]
 #[allow(non_snake_case)]
 pub mod global_fonts {
@@ -183,12 +246,37 @@ pub mod global_fonts {
   use super::FONT_DIR;
   use super::{FontKey, get_font, into_napi_error};
 
+  /// `descriptors`: the face's @font-face descriptors
+  /// (super::read_face_descriptors); an invalid one registers nothing and
+  /// gives null. Without them, `auto`.
+  ///
+  /// `font_data` (a Uint8Array) is read after the descriptors convert, as
+  /// FontFace::Create takes the source's ByteSpan() after its bindings
+  /// converted them: their getters may detach or shrink its buffer, which
+  /// then gives the bytes left (none for a detached one).
   #[napi]
-  pub fn register(font_data: &[u8], name_alias: Option<String>) -> Result<Option<FontKey>> {
+  pub fn register(
+    env: &Env,
+    #[napi(ts_arg_type = "Buffer")] font_data: Unknown,
+    name_alias: Option<String>,
+    descriptors: Option<Unknown>,
+  ) -> Result<Option<FontKey>> {
+    // The `&[u8]` conversion checks the type first, as before; its slice is
+    // not kept, since JavaScript runs before the data is read.
+    unsafe { <&[u8]>::from_napi_value(env.raw(), font_data.raw())? };
     let maybe_name_alias = name_alias.filter(|s| !s.is_empty());
+    let descriptors = match descriptors {
+      Some(d) => match super::read_face_descriptors(env.raw(), d.raw())? {
+        Some(descriptors) => Some(descriptors),
+        None => return Ok(None),
+      },
+      None => None,
+    };
+    // No JavaScript runs from here until the bytes are copied.
+    let font_data = unsafe { <&[u8]>::from_napi_value(env.raw(), font_data.raw())? };
     let font = get_font().map_err(into_napi_error)?;
     let result = font
-      .register(font_data, maybe_name_alias)
+      .register(font_data, maybe_name_alias, descriptors.as_ref())
       .map(|typeface_id| FontKey { typeface_id });
     if result.is_some() {
       super::note_font_collection_mutation();

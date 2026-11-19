@@ -34,6 +34,13 @@ pub mod ffi {
 
   #[repr(C)]
   #[derive(Copy, Clone, Debug)]
+  pub struct skiac_face_descriptors {
+    pub weight: f32,
+    pub slope: f32,
+  }
+
+  #[repr(C)]
+  #[derive(Copy, Clone, Debug)]
   pub struct skiac_w_memory_stream {
     _unused: [u8; 0],
   }
@@ -1536,6 +1543,7 @@ pub mod ffi {
       font: *const u8,
       length: usize,
       maybe_name_alias: *const c_char,
+      descriptors: *const skiac_face_descriptors,
     ) -> u32;
 
     pub fn skiac_font_collection_register_from_path(
@@ -6544,7 +6552,12 @@ impl FontCollection {
     names
   }
 
-  pub fn register<S: AsRef<str>>(&self, font: &[u8], maybe_name_alias: Option<S>) -> Option<u32> {
+  pub fn register<S: AsRef<str>>(
+    &self,
+    font: &[u8],
+    maybe_name_alias: Option<S>,
+    descriptors: Option<&ffi::skiac_face_descriptors>,
+  ) -> Option<u32> {
     let name_alias_ptr = match maybe_name_alias {
       Some(name_alias) => match CString::new(name_alias.as_ref()) {
         Ok(cstring) => cstring.into_raw(),
@@ -6553,8 +6566,13 @@ impl FontCollection {
       None => ptr::null_mut(),
     };
     let result = unsafe {
-      let typeface_id =
-        ffi::skiac_font_collection_register(self.0, font.as_ptr(), font.len(), name_alias_ptr);
+      let typeface_id = ffi::skiac_font_collection_register(
+        self.0,
+        font.as_ptr(),
+        font.len(),
+        name_alias_ptr,
+        descriptors.map_or(ptr::null(), |d| d as *const _),
+      );
       if typeface_id > 0 {
         Some(typeface_id)
       } else {
