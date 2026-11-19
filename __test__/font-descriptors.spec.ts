@@ -1368,3 +1368,233 @@ for (const renderer of ['portable', 'system'] as const) {
     })
   })
 }
+
+// SVG text draws the instances canvas text draws: Blink makes SVG text's Font
+// from the same FontDescription and font selector
+// (LayoutSVGInlineText::ComputeNewScaledFontForStyle), so ResolveVariations
+// runs for it: wght, slnt and ital from the style, opsz at the font-size, a
+// declared face's own coordinates, the request's for a fallback run and for
+// an installed face. Chrome 159 (an SVG image with @font-face) draws bold
+// RobotoMono as wght 700 and 300 as wght 300, italic ScienceGothic as slnt
+// -10 (= oblique), italic FontStyleTest-ital as ital 1 (not oblique),
+// Newsreader at font-size 32 as opsz 32, and declared {weight: 400} 300 as
+// normal. Each case is drawn per glyph at fixed x, as SVG text and as canvas
+// text, in a child process per renderer: the convertSVGTextToPath outlines
+// against the SVG canvas export of canvas text (both renderers), and the
+// pixels with the system renderer, which draws SVG text with canvas text's
+// draw font.
+const SVG_VARIATIONS_PROBE = `
+  const { readFileSync } = require('fs')
+  const { createHash } = require('crypto')
+  const { convertSVGTextToPath, createCanvas, GlobalFonts, Image, Path2D, setTextRenderer, SvgExportFlag } =
+    require(process.env.PROBE_INDEX)
+  const { RENDERER, PROBE_DIR, PROBE_FONTS } = process.env
+  setTextRenderer(RENDERER)
+  const font = (name) => readFileSync(PROBE_FONTS + '/' + name)
+  const out = { loaded: GlobalFonts.loadFontsFromDir(PROBE_DIR), keys: [] }
+  const mono = font('RobotoMono-VariableFont_wght.ttf')
+  out.keys.push(
+    GlobalFonts.register(mono, 'SV Rm'),
+    GlobalFonts.register(mono, 'SV Rm 400', { weight: 400 }),
+    GlobalFonts.register(font('Oswald.ttf'), 'SV Oswald'),
+    GlobalFonts.register(font('ScienceGothic-VariableFont.ttf'), 'SV Sg'),
+    GlobalFonts.register(font('FontStyleTest-ital-VF.woff2'), 'SV It'),
+    GlobalFonts.register(font('Newsreader-opsz-only.ttf'), 'SV Nw'),
+  )
+  const XS = [4, 40.5, 77.25, 113.75]
+  const W = 160
+  const ATTRS = { n: ['normal', 400], b: ['normal', 700], w300: ['normal', 300], i: ['italic', 400], o: ['oblique', 400] }
+  const CASES = JSON.parse(process.env.SVG_CASES)
+  const svgOf = (family, s, text, head = '') =>
+    head + '<svg xmlns="http://www.w3.org/2000/svg" width="' + W + '" height="60"><text x="' +
+    XS.slice(0, [...text].length).join(' ') + '" y="44" font-family="' + family + '" font-size="32" font-style="' +
+    ATTRS[s][0] + '" font-weight="' + ATTRS[s][1] + '">' + text + '</text></svg>'
+  const cssOf = (family, s) =>
+    ATTRS[s][0] + ' ' + ATTRS[s][1] + ' 32px ' + family.split(',').map((f) => '"' + f.trim().replace(/'/g, '') + '"').join(', ')
+  const sha1 = (data) => createHash('sha1').update(data).digest('hex')
+  const svgPixels = (svg) => {
+    const img = new Image()
+    img.src = Buffer.from(svg)
+    const ctx = createCanvas(W, 60).getContext('2d')
+    ctx.drawImage(img, 0, 0)
+    return ctx.getImageData(0, 0, W, 60).data
+  }
+  const canvasText = (ctx, family, s, text) => {
+    ctx.font = cssOf(family, s)
+    ;[...text].forEach((ch, k) => ctx.fillText(ch, XS[k], 44))
+  }
+  const canvasPixels = (family, s, text) => {
+    const ctx = createCanvas(W, 60).getContext('2d')
+    canvasText(ctx, family, s, text)
+    return ctx.getImageData(0, 0, W, 60).data
+  }
+  const bounds = (xml) => {
+    let b = [Infinity, Infinity, -Infinity, -Infinity]
+    for (const m of xml.matchAll(/<path([^>]*)>/g)) {
+      const d = (m[1].match(/ d="([^"]*)"/) || [])[1]
+      if (!d) continue
+      const t = (m[1].match(/translate\\(([-\\d.e]+)[ ,]+([-\\d.e]+)\\)/) || [0, 0, 0]).slice(1).map(Number)
+      const p = new Path2D(d).computeTightBounds()
+      b = [Math.min(b[0], p[0] + t[0]), Math.min(b[1], p[1] + t[1]), Math.max(b[2], p[2] + t[0]), Math.max(b[3], p[3] + t[1])]
+    }
+    return b.map((v) => Math.round(v * 1000) / 1000)
+  }
+  const canvasPaths = (family, s, text) => {
+    const canvas = createCanvas(W, 60, SvgExportFlag.ConvertTextToPaths)
+    canvasText(canvas.getContext('2d'), family, s, text)
+    return bounds(canvas.getContent().toString())
+  }
+  const alphaDiff = (a, b) => {
+    let n = 0
+    for (let i = 3; i < a.length; i += 4) if (a[i] !== b[i]) n++
+    return n
+  }
+  out.sha = {}
+  out.oracle = {}
+  out.paths = {}
+  for (const [id, family, s, text] of CASES) {
+    const svg = svgOf(family, s, text)
+    out.sha[id] = sha1(svgPixels(svg))
+    out.oracle[id] = alphaDiff(svgPixels(svg), canvasPixels(family, s, text))
+    out.paths[id] = { svg: bounds(convertSVGTextToPath(svg).toString()), canvas: canvasPaths(family, s, text) }
+  }
+  // A document only SkSVG reads (Latin-1): its font-family is one name
+  // (MatchNamedFamily).
+  const latin1 = svgOf('SV Rm', 'b', 'Hag', '<?xml version="1.0" encoding="ISO-8859-1"?><!-- \\xe9 -->')
+  out.named = bounds(convertSVGTextToPath(Buffer.from(latin1, 'latin1')).toString())
+  // The instances' font arguments count toward the caches' budget, and the
+  // drop runs after the render: a line laid out before is cold again.
+  const ctx = createCanvas(10, 10).getContext('2d')
+  ctx.font = '32px "SV Rm"'
+  const requests = () => JSON.parse(ctx.__debugTextLine('Budget line')).requestInstanceFaces
+  const cold = requests()
+  const warm = requests()
+  let sizes = ''
+  for (let i = 0; i < 300; ++i) sizes += '<text x="0" y="' + (i + 10) + '" font-family="SV Nw" font-size="' + (10 + i / 4) + '">H</text>'
+  const many = new Image()
+  many.src = Buffer.from('<svg xmlns="http://www.w3.org/2000/svg" width="40" height="320">' + sizes + '</svg>')
+  createCanvas(40, 320).getContext('2d').drawImage(many, 0, 0)
+  out.budget = { warm: warm - cold, after: requests() - warm }
+  console.log(JSON.stringify(out))`
+
+// [id, font-family, style, text]. SkSVG's Primitive shaper applies no GSUB,
+// so the texts leave out the glyphs these fonts swap by their axes (rvrn:
+// FontStyleTest's and ScienceGothic's 'a').
+const SVG_CASES: [string, string, string, string][] = [
+  ['rm.n', 'SV Rm', 'n', 'Hag'],
+  ['rm.b', 'SV Rm', 'b', 'Hag'],
+  ['rm.w300', 'SV Rm', 'w300', 'Hag'],
+  ['rm400.n', "'SV Rm 400'", 'n', 'Hag'],
+  ['rm400.w300', "'SV Rm 400'", 'w300', 'Hag'],
+  ['rm400.b', "'SV Rm 400'", 'b', 'Hag'],
+  ['sg.n', 'SV Sg', 'n', 'Hbg'],
+  ['sg.i', 'SV Sg', 'i', 'Hbg'],
+  ['sg.o', 'SV Sg', 'o', 'Hbg'],
+  ['sg.b', 'SV Sg', 'b', 'Hbg'],
+  ['it.i', 'SV It', 'i', 'opst'],
+  ['it.o', 'SV It', 'o', 'opst'],
+  ['nw.n', 'SV Nw', 'n', 'Hag'],
+  ['oswald.b', 'SV Oswald', 'b', 'Hbg'],
+  // Roboto Mono has no digraphs: the Oswald run, at the request's wght, as
+  // Oswald alone draws them. (Canvas text decomposes them: Oswald's ccmp.)
+  ['fallback.n', "'SV Rm', 'SV Oswald'", 'n', 'ǅǄ'],
+  ['fallback.b', "'SV Rm', 'SV Oswald'", 'b', 'ǅǄ'],
+  ['oswald.dg.n', 'SV Oswald', 'n', 'ǅǄ'],
+  ['oswald.dg.b', 'SV Oswald', 'b', 'ǅǄ'],
+  // loadFontsFromDir: an installed variable face takes the request's wght.
+  ['installed.b', 'Roboto Mono', 'b', 'Hag'],
+]
+
+interface SvgVariations {
+  loaded: number
+  keys: (string | null)[]
+  sha: Record<string, string>
+  oracle: Record<string, number>
+  paths: Record<string, { svg: number[]; canvas: number[] }>
+  named: number[]
+  budget: { warm: number; after: number }
+}
+
+const svgVariations = new Map<string, SvgVariations>()
+function svgVariationsOf(renderer: string): SvgVariations {
+  if (!svgVariations.has(renderer)) {
+    const dir = mkdtempSync(join(tmpdir(), 'canvas-svg-variations-'))
+    try {
+      copyFileSync(
+        join(__dirname, 'fonts', 'RobotoMono-VariableFont_wght.ttf'),
+        join(dir, 'RobotoMono-VariableFont_wght.ttf'),
+      )
+      const child = spawnSync(process.execPath, ['-e', SVG_VARIATIONS_PROBE], {
+        encoding: 'utf8',
+        timeout: 60_000,
+        env: {
+          ...process.env,
+          RENDERER: renderer,
+          PROBE_DIR: dir,
+          PROBE_FONTS: join(__dirname, 'fonts'),
+          PROBE_INDEX: join(__dirname, '..', 'index.js'),
+          SVG_CASES: JSON.stringify(SVG_CASES),
+        },
+      })
+      if (child.status !== 0) throw new Error(child.stderr)
+      svgVariations.set(renderer, JSON.parse(child.stdout))
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  }
+  return svgVariations.get(renderer)!
+}
+
+for (const renderer of ['portable', 'system'] as const) {
+  test(`SVG text: wght, slnt, ital and opsz as canvas text (${renderer})`, (t) => {
+    const { loaded, keys, sha, paths } = svgVariationsOf(renderer)
+    t.is(loaded, 1)
+    t.true(
+      keys.every((key) => key !== null),
+      `keys ${keys}`,
+    )
+    // Synthetic bold outlines differ in width between the two exports
+    // (svg-synthetic-style.spec.ts), so rm400.b is checked by pixels only.
+    for (const [id] of SVG_CASES.filter(([id]) => id !== 'rm400.b')) {
+      const { svg, canvas } = paths[id]
+      t.true(
+        svg.every((v, k) => Math.abs(v - canvas[k]) < 0.01),
+        `${id} outlines ${JSON.stringify(svg)} vs ${JSON.stringify(canvas)}`,
+      )
+    }
+    t.not(sha['rm.b'], sha['rm.n'])
+    t.not(sha['rm.w300'], sha['rm.n'])
+    // Declared 400: 300 clamps to 400.
+    t.is(sha['rm400.w300'], sha['rm400.n'])
+    t.not(sha['sg.i'], sha['sg.n'])
+    t.is(sha['sg.o'], sha['sg.i'])
+    t.not(sha['sg.b'], sha['sg.n'])
+    t.not(sha['it.i'], sha['it.o'])
+    t.not(sha['fallback.b'], sha['fallback.n'])
+    t.is(sha['fallback.n'], sha['oswald.dg.n'])
+    t.is(sha['fallback.b'], sha['oswald.dg.b'])
+  })
+
+  test(`SVG text: a document only SkSVG reads draws the same instances (${renderer})`, (t) => {
+    const { named, paths } = svgVariationsOf(renderer)
+    t.true(
+      named.every((v, k) => Math.abs(v - paths['rm.b'].canvas[k]) < 0.01),
+      `${JSON.stringify(named)} vs ${JSON.stringify(paths['rm.b'].canvas)}`,
+    )
+  })
+
+  test(`SVG text: the instances count toward the font argument budget (${renderer})`, (t) => {
+    const { budget } = svgVariationsOf(renderer)
+    t.is(budget.warm, 0)
+    // The SVG's 300 opsz instances dropped the caches after its render.
+    t.true(budget.after > 0, `${budget.after} request instances`)
+  })
+}
+
+const svgPixelTest = process.platform === 'darwin' || process.platform === 'linux' ? test : test.skip
+svgPixelTest('SVG text draws the pixels canvas text draws (system)', (t) => {
+  const { oracle } = svgVariationsOf('system')
+  for (const [id, , , text] of SVG_CASES) {
+    if (text !== 'ǅǄ') t.is(oracle[id], 0, `${id}: ${oracle[id]} px differ from canvas text`)
+  }
+})

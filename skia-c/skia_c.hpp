@@ -343,10 +343,13 @@ sk_sp<SkFontStyleSet> MakeSplitFamily(skiac_font_collection* c_collection,
                                       std::string_view tagged);
 // font_families.cpp: the face of `family` that text naming it in a font
 // list uses (the named family path: a name registered over an installed
-// family gives its registered faces), from `assets`.
+// family gives its registered faces), from `assets`. `matched`, when given,
+// gets the family name it was matched by (a tagged one too), as a font list
+// names it (ResolveFontFamilies).
 sk_sp<SkTypeface> MatchNamedFamily(skiac_font_collection* c_collection,
                                    const char* family,
-                                   const SkFontStyle& style);
+                                   const SkFontStyle& style,
+                                   std::string* matched = nullptr);
 // text_metrics.cpp: an installed face, not a registered one.
 bool IsSystemTypeface(skiac_font_collection* c_collection,
                       SkTypeface* typeface);

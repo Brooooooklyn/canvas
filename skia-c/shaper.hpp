@@ -610,6 +610,57 @@ LastResortFont LastResortFace(
     bool coretext,
     const std::optional<skia::textlayout::FontArguments>& font_args);
 
+// A family entry's face (the instance at its opsz and descriptors), its
+// face before font arguments, its size, its opsz and its descriptors.
+struct FamilyFace {
+  sk_sp<SkTypeface> face;
+  SkTypeface* base;
+  float size;
+  float opsz;
+  FaceDescriptors declared;
+};
+
+// The FontList's family entries (DESIGN-SHAPER 2.8): for each found face k
+// (an index into `base_faces`, not into `families`), the size and opsz
+// ComputeUsedSizes gives its family and its descriptors (`declared`,
+// FamilyDescriptors). A face with another opsz or descriptors than the
+// primary's, or a registered face with an ital axis (HasWebItalAxis), has
+// its own instance (FontVariations of the face alone); the others take the
+// request's (`font_args`, no ital), as Blink makes one FontPlatformData per
+// face (FontCustomPlatformData::GetFontPlatformData).
+// A face of no family in `sizes.faces` takes the primary's size and opsz.
+// `faces` gets the entries' faces. When no face has its own instance, they
+// are findTypefaces of all of `families` at `font_args`, as before; else
+// each face is cloned once, at its own or the request's coordinates, from a
+// findTypefaces call of its family alone (FaceFamilies, FaceInstance), or,
+// for a face whose family is not found, of all of `families` ([k] when it
+// gives one per face). The cloneTypeface cache gives the same SkTypeface
+// for the same face and coordinates. Every font argument list is noted
+// here, before the layout takes any reference into the caches.
+// Canvas text and SVG text (svg_image.cpp) both make their instances here.
+std::vector<FamilyFace> FamilyFaces(
+    skiac_font_collection* c_collection,
+    const std::vector<SkString>& families,
+    const SkFontStyle& font_style,
+    const std::vector<sk_sp<SkTypeface>>& base_faces,
+    const std::vector<FaceDescriptors>& declared,
+    std::optional<std::vector<std::optional<size_t>>> family_of,
+    const std::optional<skia::textlayout::FontArguments>& font_args,
+    const UsedSizes& sizes,
+    const skiac_text_request& request,
+    std::vector<sk_sp<SkTypeface>>* faces);
+
+// The request's own coordinates for the font list's faces `base_faces`
+// (FontVariations of all of them, no descriptors, no ital), opsz at `opsz`:
+// for every family entry with no instance of its own (FamilyFaces) and the
+// last resort font; none when no face varies and the request has no
+// variations. Noted (noteFontArguments).
+std::optional<skia::textlayout::FontArguments> RequestFontArguments(
+    skiac_font_collection* c_collection,
+    const std::vector<sk_sp<SkTypeface>>& base_faces,
+    const skiac_text_request& request,
+    float opsz);
+
 // A system fallback face at an opsz (FontPlatformDataFromCTFont), cached by
 // typeface and opsz.
 sk_sp<SkTypeface> SystemFallbackInstance(skiac_font_collection* c_collection,

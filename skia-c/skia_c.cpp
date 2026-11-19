@@ -5165,7 +5165,10 @@ void skiac_svg_text_to_path(const uint8_t* data,
   auto svg_root = svg_dom->getRoot();
   auto svg_container_size =
       svg_root->intrinsicSize(SkSVGLengthContext(SkSize::Make(0, 0)));
+  // As RenderPrepared: the drop the text's instances ask for, after it.
+  c_collection->layout_font_arguments.clear();
   WriteTextToPath(svg_dom.get(), svg_container_size, output_data);
+  c_collection->dropCachesIfOverBudget();
 }
 
 void skiac_svg_text_to_path_prepared(const uint8_t* data,
@@ -5190,7 +5193,9 @@ void skiac_svg_text_to_path_prepared(const uint8_t* data,
   SkSize size;
   RootSize(root, root_len, &size);
   svg_dom->setContainerSize(size);
+  c_collection->layout_font_arguments.clear();
   WriteTextToPath(svg_dom.get(), size, output_data);
+  c_collection->dropCachesIfOverBudget();
 }
 
 bool skiac_svg_root_size(const char* root,

@@ -1877,7 +1877,8 @@ sk_sp<SkFontStyleSet> MakeSplitFamily(skiac_font_collection* c_collection,
 
 sk_sp<SkTypeface> MatchNamedFamily(skiac_font_collection* c_collection,
                                    const char* family,
-                                   const SkFontStyle& style) {
+                                   const SkFontStyle& style,
+                                   std::string* matched) {
   // The named branch of ResolveFontFamilies: a web font by FindWebFont's
   // name, a tagged one from its split set. A name that starts with \x01 is
   // no family (the tags), as for a font list.
@@ -1892,12 +1893,21 @@ sk_sp<SkTypeface> MatchNamedFamily(skiac_font_collection* c_collection,
         name.front() == '\x01'
             ? MakeSplitFamily(c_collection, name)
             : c_collection->assets->matchFamily(name.c_str());
+    if (matched) {
+      *matched = name;
+    }
     return set ? set->matchStyle(style) : nullptr;
   }
   // An installed family by the spelling `assets` lists, in any case, as
   // FindSystem finds it for canvas text first.
   if (family[0] && resolver.FindListed(family, &name)) {
+    if (matched) {
+      *matched = name;
+    }
     return c_collection->assets->matchFamilyStyle(name.c_str(), style);
+  }
+  if (matched) {
+    *matched = family;
   }
   return c_collection->assets->matchFamilyStyle(family, style);
 }

@@ -1171,33 +1171,8 @@ class ItemShaper {
   FallbackStage stage_ = FallbackStage::kIntermediate;
 };
 
-// A family entry's face (the instance at its opsz and descriptors), its
-// face before font arguments, its size, its opsz and its descriptors.
-struct FamilyFace {
-  sk_sp<SkTypeface> face;
-  SkTypeface* base;
-  float size;
-  float opsz;
-  FaceDescriptors declared;
-};
+}  // namespace
 
-// The FontList's family entries (DESIGN-SHAPER 2.8): for each found face k
-// (an index into `base_faces`, not into `families`), the size and opsz
-// ComputeUsedSizes gives its family and its descriptors (`declared`,
-// FamilyDescriptors). A face with another opsz or descriptors than the
-// primary's, or a registered face with an ital axis (HasWebItalAxis), has
-// its own instance (FontVariations of the face alone); the others take the
-// request's (`font_args`, no ital), as Blink makes one FontPlatformData per
-// face (FontCustomPlatformData::GetFontPlatformData).
-// A face of no family in `sizes.faces` takes the primary's size and opsz.
-// `faces` gets the entries' faces. When no face has its own instance, they
-// are findTypefaces of all of `families` at `font_args`, as before; else
-// each face is cloned once, at its own or the request's coordinates, from a
-// findTypefaces call of its family alone (FaceFamilies, FaceInstance), or,
-// for a face whose family is not found, of all of `families` ([k] when it
-// gives one per face). The cloneTypeface cache gives the same SkTypeface
-// for the same face and coordinates. Every font argument list is noted
-// here, before the layout takes any reference into the caches.
 std::vector<FamilyFace> FamilyFaces(
     skiac_font_collection* c_collection,
     const std::vector<SkString>& families,
@@ -1310,6 +1285,26 @@ std::vector<FamilyFace> FamilyFaces(
   }
   return out;
 }
+
+std::optional<FontArguments> RequestFontArguments(
+    skiac_font_collection* c_collection,
+    const std::vector<sk_sp<SkTypeface>>& base_faces,
+    const skiac_text_request& request,
+    float opsz) {
+  const std::vector<SkFontArguments::VariationPosition::Coordinate> coords =
+      FontVariations(base_faces, request, opsz, std::nullopt, false);
+  if (coords.empty()) {
+    return std::nullopt;
+  }
+  SkFontArguments args;
+  args.setVariationDesignPosition(
+      {coords.data(), static_cast<int>(coords.size())});
+  std::optional<FontArguments> font_args(args);
+  c_collection->noteFontArguments(std::hash<FontArguments>()(*font_args));
+  return font_args;
+}
+
+namespace {
 
 // Chrome's UI locales (build/config/locales.gni platform_pak_locales off
 // Android; the .lproj names of Chrome.app on macOS).
@@ -1605,16 +1600,8 @@ LineFaces ResolveLineFaces(skiac_font_collection* c_collection,
   // The request's own axes, for every face with `auto` descriptors and the
   // last resort font; a face with descriptors or a registered one with an
   // ital axis gets its own (FamilyFaces).
-  const std::vector<SkFontArguments::VariationPosition::Coordinate> coords =
-      FontVariations(out.base_faces, request, out.sizes.opsz, std::nullopt,
-                     false);
-  if (!coords.empty()) {
-    SkFontArguments args;
-    args.setVariationDesignPosition(
-        {coords.data(), static_cast<int>(coords.size())});
-    out.font_args.emplace(args);
-    c_collection->noteFontArguments(std::hash<FontArguments>()(*out.font_args));
-  }
+  out.font_args = RequestFontArguments(c_collection, out.base_faces, request,
+                                       out.sizes.opsz);
   out.family_faces = FamilyFaces(
       c_collection, out.families, out.font_style, out.base_faces, out.declared,
       std::move(family_of), out.font_args, out.sizes, request, &out.faces);

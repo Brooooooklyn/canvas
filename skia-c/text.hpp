@@ -279,7 +279,8 @@ struct SyntheticStyle {
 // descriptors (FamilyDescriptors). `web_face`: `face` is FontVariations'
 // instance of `base` alone with web_face, so the `italic` keyword on an ital
 // axis is never skewed; false for a face with no ital coordinate (the last
-// resort font, SVG text's base faces) (text_styles.cpp).
+// resort font, a face drawn without its family entry's instance)
+// (text_styles.cpp).
 SyntheticStyle SynthesizeStyle(skiac_font_collection* c_collection,
                                SkTypeface* face,
                                SkTypeface* base,
