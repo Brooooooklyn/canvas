@@ -249,13 +249,21 @@ pub mod global_fonts {
   /// `descriptors`: the face's @font-face descriptors
   /// (super::read_face_descriptors); an invalid one registers nothing and
   /// gives null. Without them, `auto`.
+  ///
+  /// `font_data` (a Uint8Array) is read after the descriptors convert, as
+  /// FontFace::Create takes the source's ByteSpan() after its bindings
+  /// converted them: their getters may detach or shrink its buffer, which
+  /// then gives the bytes left (none for a detached one).
   #[napi]
   pub fn register(
     env: &Env,
-    font_data: &[u8],
+    #[napi(ts_arg_type = "Buffer")] font_data: Unknown,
     name_alias: Option<String>,
     descriptors: Option<Unknown>,
   ) -> Result<Option<FontKey>> {
+    // The `&[u8]` conversion checks the type first, as before; its slice is
+    // not kept, since JavaScript runs before the data is read.
+    unsafe { <&[u8]>::from_napi_value(env.raw(), font_data.raw())? };
     let maybe_name_alias = name_alias.filter(|s| !s.is_empty());
     let descriptors = match descriptors {
       Some(d) => match super::read_face_descriptors(env.raw(), d.raw())? {
@@ -264,6 +272,8 @@ pub mod global_fonts {
       },
       None => None,
     };
+    // No JavaScript runs from here until the bytes are copied.
+    let font_data = unsafe { <&[u8]>::from_napi_value(env.raw(), font_data.raw())? };
     let font = get_font().map_err(into_napi_error)?;
     let result = font
       .register(font_data, maybe_name_alias, descriptors.as_ref())

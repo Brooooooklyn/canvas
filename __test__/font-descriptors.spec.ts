@@ -249,6 +249,41 @@ test('members convert as DOMStrings, style then weight; a Symbol throws a TypeEr
   }
 })
 
+test('the font data is read after the descriptors convert', (t) => {
+  // FontFace::Create reads the source's ByteSpan() after the bindings
+  // converted the descriptors: a getter that detaches the buffer leaves no
+  // data (status 'error'), one that shrinks it leaves the bytes it keeps.
+  const lato = font('Lato-Regular.ttf')
+  const detach: [string, (data: Uint8Array) => unknown][] = [
+    ['transfer', (data) => data.buffer.transfer()],
+    ['structuredClone', (data) => structuredClone(data, { transfer: [data.buffer] })],
+  ]
+  for (const [how, detachData] of detach) {
+    const data = new Uint8Array(lato)
+    const name = `Descriptors Detached ${how}`
+    const descriptors = {
+      get weight() {
+        detachData(data)
+        return 400
+      },
+    }
+    t.is(GlobalFonts.register(data, name, descriptors), null, how)
+    t.true(data.buffer.detached, how)
+    t.false(GlobalFonts.has(name), how)
+  }
+  const buffer = new ArrayBuffer(lato.length, { maxByteLength: lato.length })
+  const data = new Uint8Array(buffer)
+  data.set(lato)
+  const descriptors = {
+    get weight() {
+      buffer.resize(16)
+      return 400
+    },
+  }
+  t.is(GlobalFonts.register(data, 'Descriptors Shrunk', descriptors), null)
+  t.false(GlobalFonts.has('Descriptors Shrunk'))
+})
+
 test('descriptors stay with their name across a rebuild and go with a remove', (t) => {
   // RegisteredFontAssets counts the names with descriptors
   // (DeclaredDescriptors' check): a rebuild carries them, a remove drops them.
