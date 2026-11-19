@@ -30,7 +30,7 @@ const scienceGothic = font('ScienceGothic-VariableFont.ttf')
 GlobalFonts.register(scienceGothic, 'Slant Auto')
 GlobalFonts.register(scienceGothic, 'Slant Normal', { weight: 400 })
 GlobalFonts.register(scienceGothic, 'Slant Italic', { style: 'italic' })
-GlobalFonts.register(scienceGothic, 'Slant Oblique 5', { style: 'Oblique  +5DEG' })
+GlobalFonts.register(scienceGothic, 'Slant Oblique 5', { style: 'Oblique  +5DEG' as FontFaceDescriptors['style'] })
 GlobalFonts.register(scienceGothic, 'Slant Oblique 20', { style: 'oblique 20deg' })
 
 const GREEK = 'ΑΒΓΔΕΘΛΞ'
@@ -124,8 +124,9 @@ test('declared oblique <angle>: slnt at the angle, skewed under 14deg', (t) => {
 })
 
 test('style keywords are ASCII case-insensitive', (t) => {
-  t.truthy(GlobalFonts.register(robotoMono, 'Descriptors ITALIC', { style: 'ITALIC' as 'italic' }))
-  t.deepEqual(draw('italic 32px "Descriptors ITALIC"').pixels, draw('italic 32px "Descriptors Italic"').pixels)
+  // (Not "Descriptors ITALIC": family names fold case too.)
+  t.truthy(GlobalFonts.register(robotoMono, 'Descriptors Upper', { style: 'ITALIC' as 'italic' }))
+  t.deepEqual(draw('italic 32px "Descriptors Upper"').pixels, draw('italic 32px "Descriptors Italic"').pixels)
 })
 
 test('a missing field is the FontFace default; unknown keys are ignored', (t) => {
@@ -173,9 +174,9 @@ function svgPixels(family: string, text: string) {
 }
 
 test('SVG text: a face has the same descriptors with and without a fallback run', (t) => {
-  const family = 'Descriptors 400, Descriptors Oswald'
+  const family = "'Descriptors 400', 'Descriptors Oswald'"
   const alone = svgPixels(family, 'Ham')
   t.deepEqual(svgPixels(family, `Ham${DIGRAPHS}`), alone)
   // Declared 400: bold is emboldened, unlike `auto`.
-  t.notDeepEqual(alone, svgPixels('Descriptors Auto, Descriptors Oswald', 'Ham'))
+  t.notDeepEqual(alone, svgPixels("'Descriptors Auto', 'Descriptors Oswald'", 'Ham'))
 })
