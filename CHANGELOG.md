@@ -1,3 +1,19 @@
+# [1.2.0](https://github.com/Brooooooklyn/canvas/compare/v1.1.1...v1.2.0) (2026-11-20)
+
+
+### Bug Fixes
+
+* **deps:** update and group libavif crates ([#1461](https://github.com/Brooooooklyn/canvas/issues/1461)) ([8590948](https://github.com/Brooooooklyn/canvas/commit/8590948d35327878f81707d18965bcbf883f8d9c))
+
+
+### Features
+
+* **canvas:** add ctx.antialias property ([#1466](https://github.com/Brooooooklyn/canvas/issues/1466)) ([0e6a445](https://github.com/Brooooooklyn/canvas/commit/0e6a445275a3ca93f748fb3006451df981e0c385))
+* **encode:** PNG compressionLevel and filters ([#1463](https://github.com/Brooooooklyn/canvas/issues/1463)) ([25449f5](https://github.com/Brooooooklyn/canvas/commit/25449f536054521412b0a724c5e3762c44c421d2))
+* **fonts:** [@font-face](https://github.com/font-face) descriptor follow-ups of [#1464](https://github.com/Brooooooklyn/canvas/issues/1464) ([#1465](https://github.com/Brooooooklyn/canvas/issues/1465)) ([e7dd9f1](https://github.com/Brooooooklyn/canvas/commit/e7dd9f1199ff388569846d126bc7b9eb1c588feb))
+* **fonts:** `@font-face` descriptors in GlobalFonts.register ([#1464](https://github.com/Brooooooklyn/canvas/issues/1464)) ([e38d73f](https://github.com/Brooooooklyn/canvas/commit/e38d73f22ac60028a9f88bd2910b6b7f79443d23))
+* **fonts:** support [@font-face](https://github.com/font-face) stretch descriptor and fix static font-stretch matching ([#1467](https://github.com/Brooooooklyn/canvas/issues/1467)) ([2dde24a](https://github.com/Brooooooklyn/canvas/commit/2dde24ad561e76be573baf5d4c4fb88caeae4767))
+* **text:** use DirectWrite and Fontations on Windows in system text renderer ([#1468](https://github.com/Brooooooklyn/canvas/issues/1468)) ([3093c34](https://github.com/Brooooooklyn/canvas/commit/3093c348b73e98bc6235394e761d571443573521))
 ## [1.1.1](https://github.com/Brooooooklyn/canvas/compare/v1.1.0...v1.1.1) (2026-11-12)
 
 
