@@ -381,7 +381,7 @@ impl<'c> CanvasElement<'c> {
       .plan(ty)
       .map_err(|msg| webidl::context_range_error(env.raw(), "", &msg))?;
     let image = self.snapshot()?.ok_or_else(|| no_pixels_error(&env))?;
-    let encoding = node_encoding(ty, options.quality, true);
+    let encoding = node_encoding(ty, options, true);
     encode_image(
       &image,
       &encoding,
@@ -609,7 +609,7 @@ impl<'c> CanvasElement<'c> {
     })?;
     Ok(ContextData {
       image,
-      encoding: node_encoding(ty, options.quality, false),
+      encoding: node_encoding(ty, options, false),
       width: self.ctx.context.width,
       height: self.ctx.context.height,
       metadata,
@@ -628,9 +628,13 @@ impl<'c> CanvasElement<'c> {
 
 /// The encoding of a Node method (toBuffer, or encode/encodeSync): a number
 /// is the 0-100 quality (a larger one is 100), an AvifConfig the AVIF
-/// settings. Without either, the defaults each method has always used.
-fn node_encoding(ty: ImageType, quality: NodeQuality, to_buffer: bool) -> Encoding {
-  match quality {
+/// settings. Without either, the defaults each method has always used. PNG
+/// takes compressionLevel and filters.
+fn node_encoding(ty: ImageType, options: NodeEncodeOptions, to_buffer: bool) -> Encoding {
+  if ty == ImageType::Png {
+    return Encoding::Png(options.png);
+  }
+  match options.quality {
     NodeQuality::Number(quality) => Encoding::node(ty, Some(quality)),
     NodeQuality::Config(config) => match ty {
       ImageType::Avif => Encoding::Avif(config),

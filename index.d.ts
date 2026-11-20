@@ -874,6 +874,33 @@ export interface JpegEncodeOptions extends ImageMetadata {
   quality?: number
 }
 
+/**
+ * libpng row filter flags for {@link PngEncodeOptions.filters}, combinable with `|`.
+ * Use `None` (`0x08`) to disable row filtering; default is `All` (`0xF8`).
+ */
+export enum PngFilter {
+  None = 0x08,
+  Sub = 0x10,
+  Up = 0x20,
+  Avg = 0x40,
+  Paeth = 0x80,
+  All = 0xf8,
+}
+
+export interface PngEncodeOptions extends ImageMetadata {
+  /**
+   * zlib compression level, an integer from 0 (uncompressed, fastest) to 9 (smallest).
+   * Out-of-range, fractional and non-number values use the default (6).
+   */
+  compressionLevel?: number
+  /**
+   * libpng row filter bitmask (see {@link PngFilter}): a non-zero OR of
+   * `0x08` (none), `0x10` (sub), `0x20` (up), `0x40` (average), `0x80` (Paeth).
+   * Any other value (including `0`) uses the default (`0xF8`, all filters).
+   */
+  filters?: number
+}
+
 /** GIF encoding configuration for single-frame encoding */
 export interface GifConfig {
   /**
@@ -1059,18 +1086,18 @@ export class Canvas {
   getContext(contextType: '2d', contextAttributes?: ContextAttributes): SKRSContext2D
   encodeSync(format: 'webp' | 'jpeg', quality?: number): Buffer
   encodeSync(format: 'jpeg', options: JpegEncodeOptions): Buffer
-  encodeSync(format: 'png', options?: ImageMetadata): Buffer
+  encodeSync(format: 'png', options?: PngEncodeOptions): Buffer
   encodeSync(format: 'avif', cfg?: AvifConfig | number): Buffer
   encodeSync(format: 'gif', quality?: number): Buffer
   encode(format: 'webp' | 'jpeg', quality?: number): Promise<Buffer>
   encode(format: 'jpeg', options: JpegEncodeOptions): Promise<Buffer>
-  encode(format: 'png', options?: ImageMetadata): Promise<Buffer>
+  encode(format: 'png', options?: PngEncodeOptions): Promise<Buffer>
   encode(format: 'avif', cfg?: AvifConfig | number): Promise<Buffer>
   encode(format: 'gif', quality?: number): Promise<Buffer>
-  /** Writes no image metadata; use `encode` and stream the Buffer for that. */
+  /** Writes no image metadata and uses default PNG options; use `encode` and stream the Buffer for those. */
   encodeStream(format: 'webp' | 'jpeg', quality?: number): ReadableStream<Buffer>
   encodeStream(format: 'png'): ReadableStream<Buffer>
-  toBuffer(mime: 'image/png', options?: ImageMetadata): Buffer
+  toBuffer(mime: 'image/png', options?: PngEncodeOptions): Buffer
   toBuffer(mime: 'image/jpeg' | 'image/webp', quality?: number): Buffer
   /**
    * JPEG with metadata, at quality 92: toBuffer does not read a quality from an

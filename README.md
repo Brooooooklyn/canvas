@@ -123,6 +123,29 @@ const jpeg = await canvas.encode('jpeg', { quality: 90, resolution: 300, copyrig
 
 WebP, AVIF and GIF output ignore these options. `toDataURL`, `toDataURLAsync`, `toBlob`, `convertToBlob`, `encodeStream` and `savePng` never write metadata. To save a file with metadata, write the Buffer from `toBuffer` or `encode`. With an options object, `toBuffer('image/jpeg', ...)` encodes at quality 92; use `encode` or `encodeSync` for another quality.
 
+### PNG encoding options
+
+For PNG output, `toBuffer('image/png', options)`, `encode('png', options)` and `encodeSync('png', options)` also accept `compressionLevel` (zlib level `0–9`, default `6`) and `filters` (libpng row filter bitmask from `PngFilter`, default `PngFilter.All` / `0xF8`) in the same options object:
+
+```js
+const { createCanvas, PngFilter } = require('@napi-rs/canvas')
+
+// Fast PNG encoding (Chromium's canvas preset: zlib level 1, Up filter only)
+const png = await canvas.encode('png', {
+  compressionLevel: 1,
+  filters: PngFilter.Up, // 0x20
+})
+```
+
+| `PngFilter` constant | Value  | Description           |
+| -------------------- | ------ | --------------------- |
+| `PngFilter.None`     | `0x08` | None filter           |
+| `PngFilter.Sub`      | `0x10` | Sub filter            |
+| `PngFilter.Up`       | `0x20` | Up filter             |
+| `PngFilter.Avg`      | `0x40` | Average filter        |
+| `PngFilter.Paeth`    | `0x80` | Paeth filter          |
+| `PngFilter.All`      | `0xF8` | All filters (default) |
+
 ## Text rendering
 
 By default text is drawn the same way on every OS. Every font is drawn with FreeType, with Skia's default text gamma, no LCD (subpixel) text and one font family table (the one Linux uses).

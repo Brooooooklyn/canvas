@@ -7,10 +7,10 @@
 //! encoder settings. AVIF and GIF are this library's extra types there. The
 //! Node methods (toBuffer, encode, encodeSync, encodeStream) take a 0-100
 //! quality; toBuffer, encode and encodeSync also take PNG and JPEG metadata
-//! (image_metadata.rs) in the same options object.
+//! (image_metadata.rs) and PNG encoder options (compressionLevel, filters) in
+//! the same options object.
 
-use std::cell::Cell;
-use std::mem;
+use std::{cell::Cell, ffi::CStr, mem, ptr};
 
 use napi::bindgen_prelude::*;
 
@@ -106,11 +106,42 @@ impl ImageType {
 
 #[derive(Clone)]
 pub(crate) enum Encoding {
-  Png,
+  Png(PngOptions),
   Jpeg(u8),
   Webp { quality: f32, lossless: bool },
   Avif(AvifConfig),
   Gif(GifConfig),
+}
+
+/// node-canvas's `compressionLevel` and `filters` for Skia's PNG encoder;
+/// None keeps its default.
+#[derive(Clone, Copy, Default)]
+pub(crate) struct PngOptions {
+  pub(crate) zlib_level: Option<u8>,
+  pub(crate) filters: Option<u8>,
+}
+
+impl PngOptions {
+  /// compressionLevel (an integer from 0 to 9) and filters (non-zero OR of
+  /// libpng's filter bits: 0x08, 0x10, 0x20, 0x40, 0x80) of `object`; any
+  /// other value is missing (keeps Skia's default).
+  unsafe fn read(env: sys::napi_env, object: sys::napi_value) -> Result<Self> {
+    let int = |key: &CStr, valid: fn(u32) -> bool| -> Result<Option<u8>> {
+      let mut value = ptr::null_mut();
+      check_status!(unsafe {
+        sys::napi_get_named_property(env, object, key.as_ptr(), &mut value)
+      })?;
+      if webidl::type_of(env, value)? != ValueType::Number {
+        return Ok(None);
+      }
+      let n = unsafe { f64::from_napi_value(env, value)? };
+      Ok((n.fract() == 0.0 && (0.0..=255.0).contains(&n) && valid(n as u32)).then_some(n as u8))
+    };
+    Ok(Self {
+      zlib_level: int(c"compressionLevel", |n| n <= 9)?,
+      filters: int(c"filters", |n| n != 0 && n & !0xF8 == 0)?,
+    })
+  }
 }
 
 /// Blink's rounding of a quality to a percentage:
@@ -126,7 +157,7 @@ impl Encoding {
   pub(crate) fn web(ty: ImageType, quality: Option<f64>, avif: Option<AvifConfig>) -> Self {
     let in_range = quality.filter(|q| (0.0..=1.0).contains(q));
     match ty {
-      ImageType::Png => Self::Png,
+      ImageType::Png => Self::Png(PngOptions::default()),
       ImageType::Jpeg => Self::Jpeg(in_range.map_or(DEFAULT_JPEG_QUALITY, |q| percent(q) as u8)),
       // Exactly 1 is lossless, with effort 75. A lossy quality keeps its
       // fraction: Skia passes the float to libwebp.
@@ -155,7 +186,7 @@ impl Encoding {
   pub(crate) fn node(ty: ImageType, quality: Option<u32>) -> Self {
     let clamped = quality.map(|q| q.min(100));
     match ty {
-      ImageType::Png => Self::Png,
+      ImageType::Png => Self::Png(PngOptions::default()),
       ImageType::Jpeg => Self::Jpeg(clamped.unwrap_or(NODE_DEFAULT_QUALITY) as u8),
       ImageType::Webp => match clamped.unwrap_or(NODE_DEFAULT_QUALITY) {
         100 => Self::Webp {
@@ -178,7 +209,7 @@ impl Encoding {
 
   pub(crate) fn image_type(&self) -> ImageType {
     match self {
-      Self::Png => ImageType::Png,
+      Self::Png(_) => ImageType::Png,
       Self::Jpeg(_) => ImageType::Jpeg,
       Self::Webp { .. } => ImageType::Webp,
       Self::Avif(_) => ImageType::Avif,
@@ -190,7 +221,7 @@ impl Encoding {
   /// GIF.
   pub(crate) fn skia(&self) -> Option<(SkEncodedImageFormat, f32, bool)> {
     match self {
-      Self::Png => Some((SkEncodedImageFormat::Png, 100.0, false)),
+      Self::Png(_) => Some((SkEncodedImageFormat::Png, 100.0, false)),
       Self::Jpeg(q) => Some((SkEncodedImageFormat::Jpeg, f32::from(*q), false)),
       Self::Webp { quality, lossless } => Some((SkEncodedImageFormat::Webp, *quality, *lossless)),
       Self::Avif(_) | Self::Gif(_) => None,
@@ -281,6 +312,10 @@ pub(crate) fn encode_image(
         lossless,
         crop_to_max_dimension,
         unpremul_readback,
+        match encoding {
+          Encoding::Png(png) => *png,
+          _ => PngOptions::default(),
+        },
       )
       .map(ContextOutputData::Skia)
       .ok_or(None);
@@ -303,7 +338,7 @@ pub(crate) fn encode_image(
         .map(ContextOutputData::Gif)
         .map_err(|e| Some(format!("{e}")))
     }
-    Encoding::Png | Encoding::Jpeg(_) | Encoding::Webp { .. } => unreachable!(),
+    Encoding::Png(_) | Encoding::Jpeg(_) | Encoding::Webp { .. } => unreachable!(),
   }
 }
 
@@ -373,10 +408,12 @@ pub(crate) enum NodeQuality {
 }
 
 /// The 2nd argument of toBuffer, encode and encodeSync: the quality, and,
-/// from an object, the metadata members, read after the AvifConfig ones.
+/// from an object, the metadata and PNG encoder members, read after the
+/// AvifConfig ones.
 pub struct NodeEncodeOptions {
   pub(crate) quality: NodeQuality,
   pub(crate) metadata: ImageMetadata,
+  pub(crate) png: PngOptions,
 }
 
 impl FromNapiValue for NodeEncodeOptions {
@@ -396,12 +433,21 @@ impl FromNapiValue for NodeEncodeOptions {
         "Failed to read the encode options".to_owned(),
       ));
     }
-    let metadata = if webidl::type_of(env, value)? == ValueType::Object {
-      unsafe { ImageMetadata::read(env, value)? }
+    let (metadata, png) = if webidl::type_of(env, value)? == ValueType::Object {
+      unsafe {
+        (
+          ImageMetadata::read(env, value)?,
+          PngOptions::read(env, value)?,
+        )
+      }
     } else {
-      ImageMetadata::default()
+      Default::default()
     };
-    Ok(Self { quality, metadata })
+    Ok(Self {
+      quality,
+      metadata,
+      png,
+    })
   }
 }
 
