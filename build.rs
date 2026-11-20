@@ -176,8 +176,13 @@ fn main() {
         // clang-cl takes the clang flag only through /clang:, as in
         // Chromium and scripts/skia-gn-args.cjs (CHROME_WIN_CFLAGS).
         .flag("/clang:-ffp-contract=off")
+        .flag("/bigobj")
+        .flag("/utf-8")
         .flag("-Wno-unused-function")
         .flag("-Wno-unused-parameter")
+        .define("WIN32_LEAN_AND_MEAN", None)
+        .define("NOMINMAX", None)
+        .define("_CRT_SECURE_NO_WARNINGS", None)
         .static_crt(true);
     }
     "linux" => {
@@ -291,11 +296,12 @@ fn main() {
   let out_dir = env::var("OUT_DIR").unwrap();
 
   // Skia's Fontations font scaler, which Chrome draws Linux fonts and some
-  // macOS web fonts with (skia-c/font_scalers.cpp). Its Rust half is the
-  // skia-fontations crate; its C++ half is compiled here with the toolchain
-  // setup above and libskia's own defines.
-  let fontations = compile_target_os == "macos" || compile_target_os == "linux";
+  // macOS and Windows web fonts with (skia-c/font_scalers.cpp). Its Rust half
+  // is the skia-fontations crate; its C++ half is compiled here with the
+  // toolchain setup above and libskia's own defines.
+  let fontations = matches!(compile_target_os.as_str(), "macos" | "linux" | "windows");
   let mut fontations_build = build.clone();
+  let mut dwrite_build = build.clone();
 
   if fontations {
     build.define("SKIAC_FONTATIONS", None);
@@ -354,6 +360,32 @@ fn main() {
       .cargo_metadata(false)
       .out_dir(&out_dir)
       .compile("skiac_fontations");
+  }
+
+  if compile_target_os == "windows" {
+    // Skia's DirectWrite font manager and scaler, which Chrome draws Windows
+    // text with (skia-c/font_scalers.cpp). SkDWrite.cpp and friends are
+    // already in Windows libskia (skia_utils_private) and dynamically load
+    // dwrite.dll via LoadLibraryExW. SK_WINUWP skips the legacy pre-Win8
+    // SystemParametersInfoW fallback so user32.dll is not imported.
+    // SK_WIN_FONTMGR_NO_SIMULATIONS matches Chromium skia/BUILD.gn.
+    dwrite_build
+      .file(skia_path.join("src/ports/SkFontMgr_win_dw.cpp"))
+      .file(skia_path.join("src/ports/SkScalerContext_win_dw.cpp"))
+      .file(skia_path.join("src/ports/SkTypeface_win_dw.cpp"))
+      .include(skia_path)
+      .define("SK_TYPEFACE_FACTORY_DIRECTWRITE", None)
+      .define("SK_FONTMGR_DIRECTWRITE_AVAILABLE", None)
+      .define("SK_WIN_FONTMGR_NO_SIMULATIONS", None)
+      .define("SK_WINUWP", None);
+    for flag in libskia_flags(&compile_target) {
+      dwrite_build.flag(flag);
+    }
+    dwrite_build
+      .flag_if_supported("-Wno-unused-but-set-variable")
+      .cargo_metadata(false)
+      .out_dir(&out_dir)
+      .compile("skiac_dwrite");
   }
 
   println!("cargo:rustc-link-search={skia_lib_dir}");

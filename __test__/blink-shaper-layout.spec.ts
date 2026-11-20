@@ -248,7 +248,10 @@ test.serial('a registered Type 1 font keeps its glyphs', (t) => {
             t.is(runs[0].family, 'Roboto2', name)
           }
           if (text === 'H') {
-            t.true(near(m.width, 22.02, 0.01), `${name}: ${m.width}`)
+            // Windows system mode uses kNormal hinting without linearMetrics
+            // (matching Chrome), so FreeType integer-hints the kept Type 1 advance.
+            const expected = renderer === 'system' && process.platform === 'win32' ? 22 : 22.02
+            t.true(near(m.width, expected, 0.01), `${name}: ${m.width}`)
           }
           lines[family].push([
             text,

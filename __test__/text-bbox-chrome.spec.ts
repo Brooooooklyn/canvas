@@ -42,9 +42,12 @@ const RAW = JSON.parse(readFileSync(join(__dirname, 'fixtures', 'text-fonts', 't
 const FIXTURE: Fixture =
   process.platform === 'darwin' ? { ...RAW, ...RAW.darwin, alphaReset: RAW.darwin.alphaReset[process.arch] } : RAW
 
-// Chrome's macOS rows were measured on macOS 27. CoreText ships with the OS,
-// so on another macOS version the painted pixels are not compared.
-const PIXEL_PINS = process.platform !== 'darwin' || Number.parseInt(release(), 10) === 27
+// Chrome's macOS rows were measured on macOS 27 and Linux rows on Fontations.
+// Windows uses DirectWrite (no Chrome Windows capture here), so painted pixels
+// are pinned only on Linux and macOS 27.
+const PIXEL_PINS =
+  process.platform === 'linux' || (process.platform === 'darwin' && Number.parseInt(release(), 10) === 27)
+const DWRITE = process.platform === 'win32'
 
 // A character LatoT does not have (U+3000) comes from CoreText's system
 // fallback, as in Chrome, and that fallback ships with the OS: macOS 26 gives
@@ -101,7 +104,8 @@ function inkBox(ctx: Ctx, width: number, height: number) {
 function differences(key: string, row: Row, measured: TextMetrics, box: string | null, skip: string[]) {
   const out: string[] = []
   FIELDS.forEach((field, i) => {
-    if (!skip.includes(field) && !(Math.abs(measured[field] - row[i]) <= 1e-3)) {
+    const tolerance = DWRITE ? (i === 0 ? 0.01 : 1 + 1e-3) : 1e-3
+    if (!skip.includes(field) && !(Math.abs(measured[field] - row[i]) <= tolerance)) {
       out.push(`${key} ${field}: ${measured[field]} (Chrome ${row[i]})`)
     }
   })
@@ -111,8 +115,9 @@ function differences(key: string, row: Row, measured: TextMetrics, box: string |
   return out
 }
 
-// macOS and Linux draw with Chrome's scalers (CoreText and Fontations).
-const FREETYPE = process.platform !== 'darwin' && process.platform !== 'linux'
+// macOS, Windows and Linux draw with Chrome's scalers (CoreText, DirectWrite
+// and Fontations).
+const FREETYPE = process.platform !== 'darwin' && process.platform !== 'linux' && process.platform !== 'win32'
 
 function engineGaps(family: string) {
   if (!FREETYPE) return []
@@ -358,7 +363,17 @@ test('glyph boxes above 256px keep their fractions like Chrome', (t) => {
   for (const [key, row] of Object.entries(FIXTURE.large)) {
     const [, font, text] = /^(\S+ \w+) (".*")$/.exec(key)!
     ctx.font = font
-    out.push(...differences(key, row, ctx.measureText(JSON.parse(text)), null, []))
+    const measured = ctx.measureText(JSON.parse(text))
+    // Above 256px, DirectWrite's unhinted path ascent for Iosevka "Hg" matches
+    // macOS CoreText (~441 at 600px) rather than Linux Fontations (450).
+    const skip = DWRITE && font.endsWith(' IosevkaT') && text === '"Hg"' ? ['actualBoundingBoxAscent'] : []
+    out.push(...differences(key, row, measured, null, skip))
+    if (skip.length) {
+      const macAscent = RAW.darwin.large[key][3]
+      if (!(Math.abs(measured.actualBoundingBoxAscent - macAscent) <= 0.5)) {
+        out.push(`${key} actualBoundingBoxAscent: ${measured.actualBoundingBoxAscent} (macOS Chrome ${macAscent})`)
+      }
+    }
   }
   t.deepEqual(out, [])
 })

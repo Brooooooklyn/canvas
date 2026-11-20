@@ -39,9 +39,13 @@ interface Fixture {
 const RAW = JSON.parse(readFileSync(join(__dirname, 'fixtures', 'text-fonts', 'text-metrics.json'), 'utf8'))
 const FIXTURE: Fixture = process.platform === 'darwin' ? { ...RAW, ...RAW.darwin } : RAW
 
-// Chrome's macOS rows were measured on macOS 27. CoreText ships with the OS,
-// so on another macOS version the painted pixels are not compared.
-const PIXEL_PINS = process.platform !== 'darwin' || Number.parseInt(release(), 10) === 27
+// Chrome's macOS rows were measured on macOS 27 and Linux rows on Fontations.
+// Windows uses DirectWrite (no Chrome Windows capture here), so painted pixels
+// are pinned only on Linux and macOS 27, and DirectWrite glyph boxes allow a
+// 1px engine difference against the Linux rows.
+const PIXEL_PINS =
+  process.platform === 'linux' || (process.platform === 'darwin' && Number.parseInt(release(), 10) === 27)
+const DWRITE = process.platform === 'win32'
 
 for (const [family, file] of Object.entries(FIXTURE.fonts)) {
   GlobalFonts.registerFromPath(join(__dirname, 'fonts', file), family)
@@ -78,7 +82,14 @@ function mismatches(
     const metrics = measure(font, baseline, text) as unknown as Record<string, number>
     for (const field of fields) {
       const want = expected[FIXTURE.keys.indexOf(field)]
-      if (!(Math.abs(metrics[field] - want) <= 1e-3)) {
+      const tolerance = DWRITE
+        ? field === 'width'
+          ? 0.01
+          : field.startsWith('actualBoundingBox')
+            ? 1 + 1e-3
+            : 1e-3
+        : 1e-3
+      if (!(Math.abs(metrics[field] - want) <= tolerance)) {
         out.push(`${key} ${field}: ${metrics[field]} (Chrome ${want})`)
       }
     }
@@ -107,10 +118,10 @@ test('the font metrics and baselines follow textBaseline like Chrome', (t) => {
 })
 
 test('the glyph box moves with textBaseline like Chrome', (t) => {
-  // Every run's glyphs count (HanT's "中文Hg" is two runs). On Windows,
-  // which keeps FreeType, Harmattan's 13px glyph boxes are one pixel taller
-  // than Chrome's (Fontations).
-  const freetype = process.platform !== 'darwin' && process.platform !== 'linux'
+  // Every run's glyphs count (HanT's "中文Hg" is two runs). On FreeType-only
+  // platforms, Harmattan's 13px glyph boxes are one pixel taller than Chrome's
+  // (Fontations).
+  const freetype = process.platform !== 'darwin' && process.platform !== 'linux' && process.platform !== 'win32'
   const out = mismatches(
     FIXTURE.baselines,
     [...X_FIELDS, ...INK_FIELDS],

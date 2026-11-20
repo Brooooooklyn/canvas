@@ -14,6 +14,9 @@
 //   macOS     CoreText; Fontations for CBDT, COLRv1,   CoreText: every face
 //             CFF2, avar2 and COLRv0 fonts              CoreText lists
 //             (web_font_typeface_factory.cc)            (loadSystemFonts)
+//   Windows   DirectWrite; Fontations for CBDT,        DirectWrite: every
+//             COLRv1, SBIX, CFF2, avar2 (and variable  unsimulated face
+//             fonts without IDWriteFontFace5)           DirectWrite lists
 //   Linux     Fontations                                Fontations
 //                                                       (loadSystemFonts)
 //   others    FreeType                                  FreeType
@@ -37,6 +40,8 @@
 #include <include/ports/SkFontMgr_mac_ct.h>
 #include <include/ports/SkTypeface_mac.h>
 #include <src/ports/SkTypeface_mac_ct.h>
+#elif defined(_WIN32)
+#include <include/ports/SkTypeface_win.h>
 #endif
 
 #include "skia_c.hpp"
@@ -49,8 +54,9 @@
 #error "skia-c must be built with SK_RELEASE like libskia (see build.rs)"
 #endif
 
-#if defined(__APPLE__) && !defined(SKIAC_FONTATIONS)
-#error "macOS builds draw some web fonts with Fontations (see build.rs)"
+#if (defined(__APPLE__) || defined(_WIN32)) && !defined(SKIAC_FONTATIONS)
+#error \
+    "macOS and Windows builds draw some web fonts with Fontations (see build.rs)"
 #endif
 
 namespace {
@@ -201,6 +207,184 @@ bool WantsFontations(const SkTypeface& probe) {
   // CoreText, a COLRv0 font to Fontations.
   return colr == 0;
 }
+#elif defined(_WIN32)
+const sk_sp<SkFontMgr>& DirectWriteFactory() {
+  static const sk_sp<SkFontMgr> manager = SkFontMgr_New_DirectWrite();
+  return manager;
+}
+
+// blink dwrite_font_format_support.cc DWriteVersionSupportsVariations:
+// probes a default DirectWrite typeface for IDWriteFontFace5 support.
+bool DWriteSupportsVariations() {
+  static const bool supported = [] {
+    const sk_sp<SkFontMgr>& fm = DirectWriteFactory();
+    if (!fm) {
+      return false;
+    }
+    sk_sp<SkTypeface> probe = fm->legacyMakeTypeface(nullptr, SkFontStyle());
+    return probe && probe->getVariationDesignPosition({}) > -1;
+  }();
+  return supported;
+}
+
+// web_font_typeface_factory.cc CreateTypeface on Windows, with the checks of
+// format_check.rs: which fonts Fontations draws instead of DirectWrite.
+bool WantsFontations(const SkTypeface& probe) {
+  auto has = [&probe](SkFontTableTag tag) {
+    return probe.getTableSize(tag) > 0;
+  };
+  auto version = [&probe](SkFontTableTag tag) -> int {
+    uint8_t bytes[2];
+    if (probe.getTableData(tag, 0, 2, bytes) != 2) {
+      return -1;
+    }
+    return (bytes[0] << 8) | bytes[1];
+  };
+  const bool variable = has(Tag('f', 'v', 'a', 'r'));
+  const bool cbdt =
+      has(Tag('C', 'B', 'D', 'T')) && has(Tag('C', 'B', 'L', 'C'));
+  const bool sbix = has(Tag('s', 'b', 'i', 'x'));
+  const bool cff2 = has(Tag('C', 'F', 'F', '2'));
+  const int colr =
+      has(Tag('C', 'O', 'L', 'R')) ? version(Tag('C', 'O', 'L', 'R')) : -1;
+  const bool color = sbix || cbdt || colr == 0 || colr == 1;
+  if (!variable && !color && !cff2) {
+    return false;
+  }
+  if (cbdt || colr == 1 || sbix || cff2) {
+    return true;
+  }
+  // FontFormatAvar2 is a stable feature.
+  if (has(Tag('a', 'v', 'a', 'r')) && version(Tag('a', 'v', 'a', 'r')) == 2) {
+    return true;
+  }
+  // Variable fonts (including variable COLRv0) go to DirectWrite when
+  // IDWriteFontFace5 is available, else Fontations; static COLRv0 goes to
+  // DirectWrite.
+  if (variable) {
+    return !DWriteSupportsVariations();
+  }
+  return false;
+}
+
+// SkFontStyleSet_DirectWrite::count() / getStyle() / createTypeface() include
+// DirectWrite's simulated bold/oblique faces, which Css3StyleSet and
+// listInstalledFaces would otherwise treat as real faces. Filter out faces
+// with DirectWrite simulations (unless a family has only simulated faces).
+class NoSimulationsStyleSet final : public SkFontStyleSet {
+ public:
+  explicit NoSimulationsStyleSet(sk_sp<SkFontStyleSet> base) {
+    if (!base) {
+      return;
+    }
+    const int n = base->count();
+    std::vector<Entry> all;
+    all.reserve(n);
+    for (int i = 0; i < n; ++i) {
+      SkFontStyle style;
+      SkString name;
+      base->getStyle(i, &style, &name);
+      sk_sp<SkTypeface> face = base->createTypeface(i);
+      if (!face) {
+        continue;
+      }
+      const bool simulated =
+          face->isSyntheticBold() || face->isSyntheticOblique();
+      all.push_back({style, std::move(name), std::move(face), simulated});
+    }
+    for (auto& e : all) {
+      if (!e.simulated) {
+        entries_.push_back(std::move(e));
+      }
+    }
+    if (entries_.empty()) {
+      entries_ = std::move(all);
+    }
+  }
+
+  int count() override { return static_cast<int>(entries_.size()); }
+  void getStyle(int index, SkFontStyle* style, SkString* name) override {
+    if (style) {
+      *style = entries_[index].style;
+    }
+    if (name) {
+      *name = entries_[index].name;
+    }
+  }
+  sk_sp<SkTypeface> createTypeface(int index) override {
+    return entries_[index].face;
+  }
+  sk_sp<SkTypeface> matchStyle(const SkFontStyle& pattern) override {
+    return MatchStyleCSS3(this, pattern);
+  }
+
+ private:
+  struct Entry {
+    SkFontStyle style;
+    SkString name;
+    sk_sp<SkTypeface> face;
+    bool simulated;
+  };
+  std::vector<Entry> entries_;
+};
+
+class NoSimulationsFontMgr final : public SkFontMgr {
+ public:
+  explicit NoSimulationsFontMgr(sk_sp<SkFontMgr> mgr) : mgr_(std::move(mgr)) {}
+
+ protected:
+  int onCountFamilies() const override { return mgr_->countFamilies(); }
+  void onGetFamilyName(int index, SkString* familyName) const override {
+    mgr_->getFamilyName(index, familyName);
+  }
+  sk_sp<SkFontStyleSet> onCreateStyleSet(int index) const override {
+    sk_sp<SkFontStyleSet> set = mgr_->createStyleSet(index);
+    return set ? sk_make_sp<NoSimulationsStyleSet>(std::move(set)) : nullptr;
+  }
+  sk_sp<SkFontStyleSet> onMatchFamily(const char familyName[]) const override {
+    sk_sp<SkFontStyleSet> set = mgr_->matchFamily(familyName);
+    return set ? sk_make_sp<NoSimulationsStyleSet>(std::move(set)) : nullptr;
+  }
+  sk_sp<SkTypeface> onMatchFamilyStyle(
+      const char familyName[],
+      const SkFontStyle& style) const override {
+    sk_sp<SkFontStyleSet> set = this->onMatchFamily(familyName);
+    return set ? set->matchStyle(style) : nullptr;
+  }
+  sk_sp<SkTypeface> onMatchFamilyStyleCharacter(
+      const char familyName[],
+      const SkFontStyle& style,
+      const char* bcp47[],
+      int bcp47Count,
+      SkUnichar character) const override {
+    return mgr_->matchFamilyStyleCharacter(familyName, style, bcp47, bcp47Count,
+                                           character);
+  }
+  sk_sp<SkTypeface> onMakeFromData(sk_sp<SkData> data,
+                                   int ttcIndex) const override {
+    return mgr_->makeFromData(std::move(data), ttcIndex);
+  }
+  sk_sp<SkTypeface> onMakeFromStreamIndex(std::unique_ptr<SkStreamAsset> stream,
+                                          int ttcIndex) const override {
+    return mgr_->makeFromStream(std::move(stream), ttcIndex);
+  }
+  sk_sp<SkTypeface> onMakeFromStreamArgs(
+      std::unique_ptr<SkStreamAsset> stream,
+      const SkFontArguments& args) const override {
+    return mgr_->makeFromStream(std::move(stream), args);
+  }
+  sk_sp<SkTypeface> onMakeFromFile(const char path[],
+                                   int ttcIndex) const override {
+    return mgr_->makeFromFile(path, ttcIndex);
+  }
+  sk_sp<SkTypeface> onLegacyMakeTypeface(const char familyName[],
+                                         SkFontStyle style) const override {
+    return mgr_->legacyMakeTypeface(familyName, style);
+  }
+
+ private:
+  sk_sp<SkFontMgr> mgr_;
+};
 #endif
 
 // setTextRenderer(): Rust keeps its own copy
@@ -221,8 +405,8 @@ sk_sp<SkFontMgr> MakeInstalledFontManager() {
   if (!SystemFontRenderer()) {
     return WrapCss3FontMgr(SkFontMgr_New_Custom_Directory(SK_FONT_FILE_PREFIX));
   }
-#if defined(__APPLE__)
-  // CoreText's installed fonts come with loadSystemFonts
+#if defined(__APPLE__) || defined(_WIN32)
+  // CoreText's / DirectWrite's installed fonts come with loadSystemFonts
   // (skiac_font_collection::enableInstalledFonts).
   return nullptr;
 #else
@@ -237,7 +421,7 @@ sk_sp<SkTypeface> MakeCanvasTypeface(std::unique_ptr<SkStreamAsset> stream) {
   if (!SystemFontRenderer()) {
     return SkFontMgr_New_Custom_Empty()->makeFromStream(std::move(stream), 0);
   }
-#if defined(__APPLE__)
+#if defined(__APPLE__) || defined(_WIN32)
   sk_sp<const SkData> data = SfntData(std::move(stream));
   if (!data) {
     return nullptr;
@@ -247,8 +431,15 @@ sk_sp<SkTypeface> MakeCanvasTypeface(std::unique_ptr<SkStreamAsset> stream) {
   if (fontations && WantsFontations(*fontations)) {
     return fontations;
   }
+#if defined(__APPLE__)
   return CoreTextFactory()->makeFromStream(
       SkMemoryStream::Make(std::move(data)), 0);
+#else
+  const sk_sp<SkFontMgr>& dwrite = DirectWriteFactory();
+  return dwrite
+             ? dwrite->makeFromStream(SkMemoryStream::Make(std::move(data)), 0)
+             : nullptr;
+#endif
 #elif defined(SKIAC_FONTATIONS)
   // Fontations reads the file in place (a file stream is mapped).
   uint8_t signature[4] = {};
@@ -451,5 +642,11 @@ sk_sp<SkFontMgr> MakeSystemUiFontManager(std::set<SkTypefaceID>* ids) {
   }
   return sk_make_sp<SystemUiFontMgr>(
       sk_make_sp<SystemUiStyleSet>(std::move(faces)));
+}
+#elif defined(_WIN32)
+sk_sp<SkFontMgr> MakeDirectWriteFontManager() {
+  const sk_sp<SkFontMgr>& dwrite = DirectWriteFactory();
+  return dwrite ? WrapCss3FontMgr(sk_make_sp<NoSimulationsFontMgr>(dwrite))
+                : nullptr;
 }
 #endif

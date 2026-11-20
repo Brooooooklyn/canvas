@@ -201,7 +201,7 @@ Set `DISABLE_SYSTEM_FONTS_LOAD=1` to keep installed fonts out of `GlobalFonts.fa
 
 ### `setTextRenderer()`
 
-`setTextRenderer('system')` draws text the way Chrome does on each OS: CoreText on macOS (with CoreText's installed fonts and fallback), Fontations on Linux and FreeType on Windows, plus each OS's text gamma, LCD text on opaque macOS canvases, Chrome's per-OS font families and the macOS metric rules. This was the default in 1.0.12 and 1.0.13. `'portable'` is the default.
+`setTextRenderer('system')` draws text the way Chrome does on each OS: CoreText on macOS (with CoreText's installed fonts and fallback), Fontations on Linux and DirectWrite on Windows (with Fontations for color/CFF2/avar2 web fonts), plus each OS's text gamma, LCD text on opaque macOS canvases, Chrome's per-OS font families and the macOS metric rules. This was the default on macOS and Linux in 1.0.12 and 1.0.13. `'portable'` is the default.
 
 ```js
 const { setTextRenderer, getTextRenderer } = require('@napi-rs/canvas')

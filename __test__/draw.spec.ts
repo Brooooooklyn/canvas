@@ -1581,6 +1581,7 @@ test('reset', async (t) => {
   ctx.fontVariantPosition = 'super'
   ctx.fontSizeAdjust = '0.5'
   ctx.fontOpticalSizing = 'none'
+  ctx.textRendering = 'optimizeSpeed'
   ctx.fillRect(50, 50, 100, 100)
 
   // Save state
@@ -1623,8 +1624,7 @@ test('reset', async (t) => {
   t.is(ctx.fontVariantPosition as string, 'normal')
   t.is(ctx.fontSizeAdjust, 'none')
   t.is(ctx.fontOpticalSizing as string, 'auto')
-  // TODO Support textRendering
-  // t.is(ctx.textRendering , 'auto')
+  t.is(ctx.textRendering, 'auto')
   // Other properties
   t.is(ctx.globalCompositeOperation, 'source-over')
   t.is(ctx.imageSmoothingEnabled, true)

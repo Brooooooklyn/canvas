@@ -675,9 +675,14 @@ bool ListInstalledFallbackFamilies(skiac_font_collection* c_collection,
     }
     listed[std::move(folded)].push_back(font.typeface);
   }
-  // Each family `assets` lists, by its place in `families`.
+  // Each family `assets` lists, by its place in `families`, and every
+  // typeface ID already listed (e.g. DirectWrite faces shared via fTFCache).
   std::map<std::string, size_t> in_assets;
+  std::set<SkTypefaceID> in_assets_ids;
   for (auto& [folded, faces] : listed) {
+    for (const auto& face : faces) {
+      in_assets_ids.insert(face->uniqueID());
+    }
     in_assets.emplace(folded, index->families.size());
     index->families.push_back({folded, std::move(faces)});
   }
@@ -701,23 +706,28 @@ bool ListInstalledFallbackFamilies(skiac_font_collection* c_collection,
       // list (the same file loadSystemFonts or loadFontsFromDir loaded).
       const auto merged = in_assets.find(folded);
       std::set<std::string> loaded;
-      if (merged != in_assets.end()) {
-        for (const auto& face : index->families[merged->second].faces) {
-          if (const std::string& identity = index->IdentityOf(face.get());
-              !identity.empty()) {
-            loaded.insert(identity);
-          }
-        }
-      }
+      bool loaded_ready = false;
       sk_sp<SkFontStyleSet> set = manager->createStyleSet(i);
       for (int j = 0; set && j < set->count(); ++j) {
         sk_sp<SkTypeface> face = set->createTypeface(j);
         if (!face) {
           continue;
         }
+        if (in_assets_ids.count(face->uniqueID())) {
+          continue;
+        }
         if (merged == in_assets.end()) {
           others[folded].push_back(std::move(face));
           continue;
+        }
+        if (!loaded_ready) {
+          loaded_ready = true;
+          for (const auto& existing : index->families[merged->second].faces) {
+            if (const std::string& identity = index->IdentityOf(existing.get());
+                !identity.empty()) {
+              loaded.insert(identity);
+            }
+          }
         }
         const std::string& identity = index->IdentityOf(face.get());
         if (identity.empty() || !loaded.count(identity)) {

@@ -35,9 +35,12 @@ interface Fixture {
 const RAW = JSON.parse(readFileSync(join(__dirname, 'fixtures', 'text-fonts', 'whitespace-maxwidth.json'), 'utf8'))
 const FIXTURE: Fixture = process.platform === 'darwin' ? { ...RAW, ...RAW.darwin } : RAW
 
-// Chrome's macOS rows were measured on macOS 27. CoreText ships with the OS,
-// so on another macOS version the painted pixels are not compared.
-const PIXEL_PINS = process.platform !== 'darwin' || Number.parseInt(release(), 10) === 27
+// Chrome's macOS rows were measured on macOS 27 and Linux rows on Fontations.
+// Windows uses DirectWrite (no Chrome Windows capture here), so painted pixels
+// are pinned only on Linux and macOS 27.
+const PIXEL_PINS =
+  process.platform === 'linux' || (process.platform === 'darwin' && Number.parseInt(release(), 10) === 27)
+const DWRITE = process.platform === 'win32'
 
 GlobalFonts.registerFromPath(join(__dirname, 'fonts', 'Lato-Regular.ttf'), 'LatoT')
 
@@ -58,7 +61,9 @@ type Ctx = ReturnType<ReturnType<typeof createCanvas>['getContext']>
 
 function rowMismatch(key: string, m: TextMetrics, row: Row) {
   const actual = FIELDS.map((field) => m[field])
-  return actual.every((v, i) => Math.abs(v - row[i]) <= 1e-3) ? [] : [`${key}: ${actual} (Chrome ${row})`]
+  return actual.every((v, i) => Math.abs(v - row[i]) <= (DWRITE ? (i ? 1 + 1e-3 : 0.01) : 1e-3))
+    ? []
+    : [`${key}: ${actual} (Chrome ${row})`]
 }
 
 // The painted box, or on another macOS version only whether anything drew.

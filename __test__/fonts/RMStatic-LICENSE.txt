@@ -4,7 +4,7 @@ instances of RobotoMono-VariableFont_wght.ttf in this folder at wght 400 and
 "RMStatic" (subfamilies Regular and Bold, usWeightClass, fsSelection and
 macStyle set to match). RMStatic-Italic.ttf and RMStatic-BoldItalic.ttf
 are those two with their outlines skewed 12deg, hinting removed and the
-italic style bits set (subfamilies Italic and Bold Italic). Licensed under
+italic style bits and STAT ital axis value set (subfamilies Italic and Bold Italic). Licensed under
 the SIL Open Font License 1.1 (text below), as their source; the source's copyright notice is kept in each
 font's name table:
 
