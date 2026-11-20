@@ -2225,6 +2225,8 @@ struct skiac_text_request {
   // The draw may get LCD glyph masks (macOS): an alpha:false raster canvas,
   // source-over, no filter layer. text_raster.cpp checks the size and matrix.
   bool lcd_text;
+  // ctx.antialias: 0 default, 1 none, 2 gray, 3 subpixel.
+  uint8_t antialias;
 };
 
 extern "C" {
@@ -2409,8 +2411,11 @@ void skiac_canvas_clip_rect(skiac_canvas* c_canvas,
                             float x,
                             float y,
                             float w,
-                            float h);
-void skiac_canvas_clip_path(skiac_canvas* c_canvas, skiac_path* c_path);
+                            float h,
+                            bool aa);
+void skiac_canvas_clip_path(skiac_canvas* c_canvas,
+                            skiac_path* c_path,
+                            bool aa);
 void skiac_canvas_save(skiac_canvas* c_canvas);
 void skiac_canvas_save_layer(skiac_canvas* c_canvas, skiac_paint* c_paint);
 void skiac_canvas_restore(skiac_canvas* c_canvas);

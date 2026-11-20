@@ -170,6 +170,7 @@ void AppendLineKey(std::string* key, const skiac_text_request& request) {
   put_int(request.size_adjust_metric);
   put_float(request.size_adjust_value);
   put_int(request.size_adjust_from_font);
+  put_int(request.antialias == kAntialiasNone ? 1 : 0);
   put(request.text, request.text_len);
 }
 
@@ -208,7 +209,7 @@ size_t MakeRunBlobs(Line* line, const TextRasterPolicy& policy) {
   size_t glyphs = 0;
   line->runs.reserve(line->blink.runs.size());
   for (const BlinkRun& run : line->blink.runs) {
-    const SkFont font = policy.DrawFont(run.font, nullptr);
+    const SkFont font = policy.RasterFont(run.font, nullptr);
     SkTextBlobBuilder builder;
     const auto& buffer = builder.allocRunPos(font, run.glyphs.size());
     memcpy(buffer.glyphs, run.glyphs.data(),
@@ -498,7 +499,7 @@ void MeasureOrDraw(skiac_font_collection* c_collection,
     if (policy.DrawFontUsesDevice()) {
       const SkMatrix device = canvas->getTotalMatrix();
       for (const BlinkRun& run : line->blink.runs) {
-        const SkFont font = policy.DrawFont(run.font, &device);
+        const SkFont font = policy.RasterFont(run.font, &device);
         SkTextBlobBuilder builder;
         const auto& buffer = builder.allocRunPos(font, run.glyphs.size());
         memcpy(buffer.glyphs, run.glyphs.data(),

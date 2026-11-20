@@ -2132,7 +2132,8 @@ void skiac_canvas_draw_image(skiac_canvas* c_canvas,
   }
   const SkMatrix ctm = conv_from_transform(c_ctm);
   SkPaint paint = c_paint ? *PAINT_CAST : SkPaint();
-  paint.setAntiAlias(ShouldDrawImageAntialiased(ctm, dst.w, dst.h));
+  const bool allow_aa = c_paint ? paint.isAntiAlias() : true;
+  paint.setAntiAlias(allow_aa && ShouldDrawImageAntialiased(ctm, dst.w, dst.h));
   const SkRect src_rect = src.ToSkRect();
   const SkRect dst_rect = dst.ToSkRect();
   // DrawImageRectOp::RasterWithFlags (cc/paint/paint_op.cc:1456-1457).
@@ -2256,13 +2257,16 @@ void skiac_canvas_clip_rect(skiac_canvas* c_canvas,
                             float x,
                             float y,
                             float w,
-                            float h) {
+                            float h,
+                            bool aa) {
   auto rect = SkRect::MakeXYWH(x, y, w, h);
-  CANVAS_CAST->clipRect(rect, true);
+  CANVAS_CAST->clipRect(rect, aa);
 }
 
-void skiac_canvas_clip_path(skiac_canvas* c_canvas, skiac_path* c_path) {
-  CANVAS_CAST->clipPath(c_path->path(), true);
+void skiac_canvas_clip_path(skiac_canvas* c_canvas,
+                            skiac_path* c_path,
+                            bool aa) {
+  CANVAS_CAST->clipPath(c_path->path(), aa);
 }
 
 void skiac_canvas_save(skiac_canvas* c_canvas) {
@@ -2393,6 +2397,7 @@ void skiac_canvas_draw_picture_rect(skiac_canvas* c_canvas,
 
   const auto dst_rect = SkRect::MakeXYWH(dx, dy, dw, dh);
   const SkPaint* paint = PAINT_CAST;
+  const bool clip_aa = paint ? paint->isAntiAlias() : true;
 
   if (isolate) {
     // drawImage of a canvas draws its pixels: the source's own copy, clears
@@ -2416,7 +2421,7 @@ void skiac_canvas_draw_picture_rect(skiac_canvas* c_canvas,
       canvas->saveLayer(nullptr, paint);
     }
     canvas->setMatrix(ctm);
-    canvas->clipRect(dst_rect, SkClipOp::kIntersect, true /* antialias */);
+    canvas->clipRect(dst_rect, SkClipOp::kIntersect, clip_aa);
     canvas->drawPicture(picture, &matrix, nullptr);
     canvas->restore();
     canvas->restore();
@@ -2426,7 +2431,7 @@ void skiac_canvas_draw_picture_rect(skiac_canvas* c_canvas,
   canvas->save();
   // The source crop -- `drawPicture` replays the whole picture. The clip
   // would truncate a halo, so `paint` must carry no image filter.
-  canvas->clipRect(dst_rect, SkClipOp::kIntersect, true /* antialias */);
+  canvas->clipRect(dst_rect, SkClipOp::kIntersect, clip_aa);
 
   // Optimization: skip paint if it's default (SrcOver blend, full alpha, no
   // filter) This matches skia-canvas behavior

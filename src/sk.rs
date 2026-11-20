@@ -414,6 +414,7 @@ pub mod ffi {
     pub size_adjust_value: f32,
     pub size_adjust_from_font: bool,
     pub lcd_text: bool,
+    pub antialias: u8,
   }
 
   #[repr(C)]
@@ -855,9 +856,16 @@ pub mod ffi {
 
     pub fn skiac_canvas_get_device_clip_bounds(canvas: *mut skiac_canvas, ltrb: *mut i32) -> bool;
 
-    pub fn skiac_canvas_clip_rect(canvas: *mut skiac_canvas, x: f32, y: f32, w: f32, h: f32);
+    pub fn skiac_canvas_clip_rect(
+      canvas: *mut skiac_canvas,
+      x: f32,
+      y: f32,
+      w: f32,
+      h: f32,
+      aa: bool,
+    );
 
-    pub fn skiac_canvas_clip_path(canvas: *mut skiac_canvas, path: *mut skiac_path);
+    pub fn skiac_canvas_clip_path(canvas: *mut skiac_canvas, path: *mut skiac_path, aa: bool);
 
     pub fn skiac_canvas_save(canvas: *mut skiac_canvas);
 
@@ -2520,6 +2528,45 @@ impl TextRendering {
   }
 }
 
+#[repr(u8)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum Antialias {
+  #[default]
+  Default = 0,
+  None = 1,
+  Gray = 2,
+  Subpixel = 3,
+}
+
+impl Antialias {
+  pub fn as_str(&self) -> &'static str {
+    match self {
+      Self::Default => "default",
+      Self::None => "none",
+      Self::Gray => "gray",
+      Self::Subpixel => "subpixel",
+    }
+  }
+
+  pub fn is_enabled(&self) -> bool {
+    !matches!(self, Self::None)
+  }
+}
+
+impl FromStr for Antialias {
+  type Err = ();
+
+  fn from_str(s: &str) -> Result<Self, Self::Err> {
+    match s {
+      "default" => Ok(Self::Default),
+      "none" => Ok(Self::None),
+      "gray" => Ok(Self::Gray),
+      "subpixel" => Ok(Self::Subpixel),
+      _ => Err(()),
+    }
+  }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(i32)]
 pub enum SkEncodedImageFormat {
@@ -3362,6 +3409,7 @@ pub struct TextSettings {
   /// alpha:false raster canvas, a source-over draw and no `ctx.filter` layer.
   /// skia-c checks the transform and size (text_raster.cpp UsesLcdText).
   pub lcd_text: bool,
+  pub antialias: Antialias,
 }
 
 impl TextSettings {
@@ -3441,6 +3489,7 @@ impl TextSettings {
       size_adjust_value,
       size_adjust_from_font,
       lcd_text: self.lcd_text,
+      antialias: self.antialias as u8,
     };
     f(&request)
   }
@@ -3725,15 +3774,15 @@ impl Canvas {
     }
   }
 
-  pub fn set_clip_rect(&mut self, x: f32, y: f32, w: f32, h: f32) {
+  pub fn set_clip_rect(&mut self, x: f32, y: f32, w: f32, h: f32, aa: bool) {
     unsafe {
-      ffi::skiac_canvas_clip_rect(self.0, x, y, w, h);
+      ffi::skiac_canvas_clip_rect(self.0, x, y, w, h, aa);
     }
   }
 
-  pub fn set_clip_path(&mut self, path: &Path) {
+  pub fn set_clip_path(&mut self, path: &Path, aa: bool) {
     unsafe {
-      ffi::skiac_canvas_clip_path(self.0, path.0);
+      ffi::skiac_canvas_clip_path(self.0, path.0, aa);
     }
   }
 
@@ -7370,6 +7419,7 @@ mod text_line_tests {
       size_adjust: FontSizeAdjust::None,
       optical_sizing: FontOpticalSizing::Auto,
       lcd_text: false,
+      antialias: Antialias::default(),
     }
   }
 

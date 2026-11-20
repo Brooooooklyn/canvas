@@ -221,6 +221,7 @@ sites! {
   SetLineDashOffset: set "lineDashOffset" on "CanvasRenderingContext2D";
   CtxSetLineDash: execute "setLineDash" on "CanvasRenderingContext2D";
   SetGlobalCompositeOperation: set "globalCompositeOperation" on "CanvasRenderingContext2D";
+  SetAntialias: set "antialias" on "CanvasRenderingContext2D";
   SetImageSmoothingQuality: set "imageSmoothingQuality" on "CanvasRenderingContext2D";
   SetLineCap: set "lineCap" on "CanvasRenderingContext2D";
   SetLineJoin: set "lineJoin" on "CanvasRenderingContext2D";
