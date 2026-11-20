@@ -305,7 +305,7 @@ class LineFonts {
     entry.size = size;
     entry.opsz = opsz;
     entry.synthetic = SynthesizeStyle(c_collection_, entry.face.get(), base,
-                                      request_, declared);
+                                      request_, declared, true);
     if (!Finish(&entry)) {
       return false;
     }
@@ -372,8 +372,9 @@ class LineFonts {
         entry.base = last_resort_base_;
         entry.size = sizes_.effective;
         entry.opsz = sizes_.opsz;
-        entry.synthetic = SynthesizeStyle(c_collection_, entry.face.get(),
-                                          last_resort_base_, request_, {});
+        entry.synthetic =
+            SynthesizeStyle(c_collection_, entry.face.get(), last_resort_base_,
+                            request_, {}, false);
         if (Finish(&entry)) {
           others_.push_back(std::move(entry));
           last_resort_ = &others_.back();
@@ -1170,99 +1171,140 @@ class ItemShaper {
   FallbackStage stage_ = FallbackStage::kIntermediate;
 };
 
-// A family entry's face (the instance at its opsz and descriptors), its
-// face before font arguments, its size, its opsz and its descriptors.
-struct FamilyFace {
-  sk_sp<SkTypeface> face;
-  SkTypeface* base;
-  float size;
-  float opsz;
-  FaceDescriptors declared;
-};
+}  // namespace
 
-// The FontList's family entries (DESIGN-SHAPER 2.8): for each found face k
-// (an index into `base_faces`, not into `families`), the size and opsz
-// ComputeUsedSizes gives its family, its descriptors (`declared`,
-// FamilyDescriptors), and, for another opsz or descriptors than the
-// primary's, its own instance (FontVariations of the face alone) from a
-// findTypefaces call of its family alone (FaceFamilies), so only that face
-// is cloned, by the cloneTypeface cache (the same SkTypeface for the same
-// face and coordinates). A face of no family in `sizes.faces` takes the
-// primary's size and opsz; one whose family is not found, the primary's
-// instance too unless findTypefaces of all of `families` gives one per
-// face. Every font argument list is noted here, before the layout takes any
-// reference into the caches.
 std::vector<FamilyFace> FamilyFaces(
     skiac_font_collection* c_collection,
     const std::vector<SkString>& families,
     const SkFontStyle& font_style,
     const std::vector<sk_sp<SkTypeface>>& base_faces,
     const std::vector<FaceDescriptors>& declared,
-    const std::vector<sk_sp<SkTypeface>>& faces,
+    std::optional<std::vector<std::optional<size_t>>> family_of,
+    const std::optional<FontArguments>& font_args,
     const UsedSizes& sizes,
-    const skiac_text_request& request) {
+    const skiac_text_request& request,
+    std::vector<sk_sp<SkTypeface>>* faces) {
   using Coords = std::vector<SkFontArguments::VariationPosition::Coordinate>;
+  auto font_collection = c_collection->collection;
+  // Each base face's size, opsz and descriptors: the entry of `sizes.faces`
+  // with its base.
   std::vector<FamilyFace> out;
-  out.reserve(faces.size());
-  const bool same_count = faces.size() == base_faces.size();
-  // The family of each face, found when a face needs its own instance.
-  std::optional<std::vector<std::optional<size_t>>> family_of;
-  for (size_t k = 0; k < faces.size(); ++k) {
-    FamilyFace family{
-        faces[k], same_count ? base_faces[k].get() : faces[k].get(),
-        sizes.effective, sizes.opsz,
-        same_count && k < declared.size() ? declared[k] : std::nullopt};
-    // The family of the face: the entry of `sizes.faces` with its base.
+  out.reserve(base_faces.size());
+  // Without font arguments no face varies, so none has an ital axis.
+  auto own_of = [&](const FamilyFace& family) {
+    return family.opsz != sizes.opsz || family.declared ||
+           (font_args && HasWebItalAxis(c_collection, family.base));
+  };
+  bool own_any = false;
+  for (size_t k = 0; k < base_faces.size(); ++k) {
     std::optional<size_t> index;
-    if (!sizes.faces.empty() && same_count) {
-      for (size_t i = 0; !index && i < sizes.faces.size(); ++i) {
-        if (sizes.faces[i]->uniqueID() == base_faces[k]->uniqueID()) {
-          index = i;
-        }
-      }
-      if (!index && sizes.faces.size() == base_faces.size()) {
-        index = k;
+    for (size_t i = 0; !index && i < sizes.faces.size(); ++i) {
+      if (sizes.faces[i]->uniqueID() == base_faces[k]->uniqueID()) {
+        index = i;
       }
     }
-    const float size = index ? sizes.face_sizes[*index] : sizes.effective;
-    const float opsz = index ? sizes.face_opsz[*index] : sizes.opsz;
-    if (opsz == sizes.opsz && !family.declared) {
-      family.size = size;
+    if (!index && !sizes.faces.empty() &&
+        sizes.faces.size() == base_faces.size()) {
+      index = k;
+    }
+    FamilyFace family{base_faces[k], base_faces[k].get(),
+                      index ? sizes.face_sizes[*index] : sizes.effective,
+                      index ? sizes.face_opsz[*index] : sizes.opsz,
+                      k < declared.size() ? declared[k] : std::nullopt};
+    own_any = own_any || own_of(family);
+    out.push_back(std::move(family));
+  }
+  if (!own_any) {
+    // No face has its own instance: one lookup of the list at the
+    // request's coordinates.
+    *faces = !font_args ? base_faces
+                        : font_collection->findTypefaces(families, font_style,
+                                                         font_args);
+    if (font_args) {
+      c_collection->request_instance_faces += faces->size();
+    }
+    if (faces->size() == base_faces.size()) {
+      for (size_t k = 0; k < faces->size(); ++k) {
+        out[k].face = (*faces)[k];
+      }
     } else {
-      const Coords own =
-          FontVariations({base_faces[k]}, request, opsz, family.declared);
-      if (own.empty()) {
-        // No variation to set: the face at the request's axes.
-        family.size = size;
-        family.opsz = opsz;
-      } else {
+      // A clone failed: the faces that were cloned, at the primary's size.
+      out.clear();
+      for (const sk_sp<SkTypeface>& face : *faces) {
+        out.push_back(
+            {face, face.get(), sizes.effective, sizes.opsz, std::nullopt});
+      }
+    }
+    return out;
+  }
+  if (!family_of) {
+    family_of = FaceFamilies(c_collection, families, font_style, base_faces);
+  }
+  // All of `families` at the request's coordinates, for a face of no family.
+  std::optional<std::vector<sk_sp<SkTypeface>>> request_list;
+  faces->clear();
+  for (size_t k = 0; k < out.size(); ++k) {
+    FamilyFace& family = out[k];
+    const bool own = own_of(family);
+    std::optional<FontArguments> own_args;
+    if (own) {
+      const Coords coords =
+          FontVariations({base_faces[k]}, request, family.opsz, family.declared,
+                         !IsSystemTypeface(c_collection, base_faces[k].get()));
+      if (!coords.empty()) {
         SkFontArguments args;
         args.setVariationDesignPosition(
-            {own.data(), static_cast<int>(own.size())});
-        const std::optional<FontArguments> arguments(args);
-        c_collection->noteFontArguments(std::hash<FontArguments>()(*arguments));
-        if (!family_of) {
-          family_of =
-              FaceFamilies(c_collection, families, font_style, base_faces);
+            {coords.data(), static_cast<int>(coords.size())});
+        own_args.emplace(args);
+        c_collection->noteFontArguments(std::hash<FontArguments>()(*own_args));
+      }
+    }
+    const std::optional<FontArguments>& args = own ? own_args : font_args;
+    // No variation to set: the base face.
+    if (args) {
+      uint64_t& looked_up = own ? c_collection->family_instance_faces
+                                : c_collection->request_instance_faces;
+      if (const std::optional<size_t> i = (*family_of)[k]) {
+        family.face = FaceInstance(c_collection, families[*i], font_style,
+                                   base_faces[k], args);
+        ++looked_up;
+      } else {
+        std::optional<std::vector<sk_sp<SkTypeface>>> own_list;
+        std::optional<std::vector<sk_sp<SkTypeface>>>& list =
+            own ? own_list : request_list;
+        if (!list) {
+          list = font_collection->findTypefaces(families, font_style, args);
+          looked_up += list->size();
         }
-        const std::optional<size_t> i = (*family_of)[k];
-        const std::vector<sk_sp<SkTypeface>> found =
-            c_collection->collection->findTypefaces(
-                i ? std::vector<SkString>{families[*i]} : families, font_style,
-                arguments);
-        c_collection->family_instance_faces += found.size();
-        const size_t at = i ? 0 : k;
-        if (found.size() == (i ? 1 : base_faces.size()) && found[at]) {
-          family.face = found[at];
-          family.size = size;
-          family.opsz = opsz;
+        if (list->size() == base_faces.size() && (*list)[k]) {
+          family.face = (*list)[k];
         }
       }
     }
-    out.push_back(std::move(family));
+    faces->push_back(family.face);
   }
   return out;
 }
+
+std::optional<FontArguments> RequestFontArguments(
+    skiac_font_collection* c_collection,
+    const std::vector<sk_sp<SkTypeface>>& base_faces,
+    const skiac_text_request& request,
+    float opsz) {
+  const std::vector<SkFontArguments::VariationPosition::Coordinate> coords =
+      FontVariations(base_faces, request, opsz, std::nullopt, false);
+  if (coords.empty()) {
+    return std::nullopt;
+  }
+  SkFontArguments args;
+  args.setVariationDesignPosition(
+      {coords.data(), static_cast<int>(coords.size())});
+  std::optional<FontArguments> font_args(args);
+  c_collection->noteFontArguments(std::hash<FontArguments>()(*font_args));
+  return font_args;
+}
+
+namespace {
 
 // Chrome's UI locales (build/config/locales.gni platform_pak_locales off
 // Android; the .lproj names of Chrome.app on macOS).
@@ -1547,30 +1589,25 @@ LineFaces ResolveLineFaces(skiac_font_collection* c_collection,
                   static_cast<SkFontStyle::Slant>(request.style));
   const TextCaches::Families& resolved =
       CachedFontFamilies(c_collection, request, resolution.locale());
-  out.families = resolved.names;
+  // FontSelectionRequest's weight in quarter steps, which font_style rounds,
+  // and its slope, which font_style has as a slant only.
+  out.families = AtRequest(c_collection, resolved.names, request.weight,
+                           request.slope, request.style);
   const std::vector<bool> generic = resolved.generic;
   out.base_faces = font_collection->findTypefaces(out.families, out.font_style);
+  std::optional<std::vector<std::optional<size_t>>> family_of;
   out.declared = FamilyDescriptors(c_collection, out.families, generic,
-                                   out.font_style, out.base_faces);
+                                   out.font_style, out.base_faces, &family_of);
   out.sizes = ComputeUsedSizes(c_collection, out.base_faces, out.declared,
                                request, resolution.locale());
   // The request's own axes, for every face with `auto` descriptors and the
-  // last resort font; a face with descriptors gets its own (FamilyFaces).
-  const std::vector<SkFontArguments::VariationPosition::Coordinate> coords =
-      FontVariations(out.base_faces, request, out.sizes.opsz, std::nullopt);
-  if (!coords.empty()) {
-    SkFontArguments args;
-    args.setVariationDesignPosition(
-        {coords.data(), static_cast<int>(coords.size())});
-    out.font_args.emplace(args);
-    c_collection->noteFontArguments(std::hash<FontArguments>()(*out.font_args));
-  }
-  out.faces = coords.empty() ? out.base_faces
-                             : font_collection->findTypefaces(
-                                   out.families, out.font_style, out.font_args);
-  out.family_faces =
-      FamilyFaces(c_collection, out.families, out.font_style, out.base_faces,
-                  out.declared, out.faces, out.sizes, request);
+  // last resort font; a face with descriptors or a registered one with an
+  // ital axis gets its own (FamilyFaces).
+  out.font_args = RequestFontArguments(c_collection, out.base_faces, request,
+                                       out.sizes.opsz);
+  out.family_faces = FamilyFaces(
+      c_collection, out.families, out.font_style, out.base_faces, out.declared,
+      std::move(family_of), out.font_args, out.sizes, request, &out.faces);
   return out;
 }
 
@@ -1753,8 +1790,9 @@ bool skiac_font_collection_primary_font_units(
   units->cap_height = metrics.cap_height;
   SkFont font(family.face, family.size);
   TextRasterPolicy(*request).ApplyShapingFlags(&font);
-  const SyntheticStyle synthetic = SynthesizeStyle(
-      c_collection, family.face.get(), family.base, *request, family.declared);
+  const SyntheticStyle synthetic =
+      SynthesizeStyle(c_collection, family.face.get(), family.base, *request,
+                      family.declared, true);
   font.setEmbolden(synthetic.bold);
   font.setSkewX(synthetic.italic ? -SK_Scalar1 / 4 : 0);
   // SimpleFontData::GlyphForCharacter: HarfBuzz's cmap.

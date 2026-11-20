@@ -17,6 +17,8 @@ import {
   SvgExportFlag,
 } from '../index'
 
+import { withoutGlyf } from './font-fixtures'
+
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const fontPath = join(__dirname, 'fonts', 'SourceSerifPro-Regular.ttf')
 const fontData = readFileSync(fontPath)
@@ -1514,40 +1516,6 @@ for (const renderer of ['portable', 'system'] as const) {
   )
 }
 
-// Lato with no glyf table: FreeType (portable) opens it, CoreText (system,
-// macOS) does not. The tables are kept as they are, only the directory is
-// written again.
-function withoutGlyf(font: Buffer): Buffer {
-  const tables = []
-  for (let i = 0; i < font.readUInt16BE(4); i++) {
-    const at = 12 + 16 * i
-    if (font.toString('latin1', at, at + 4) !== 'glyf') {
-      tables.push({
-        entry: font.subarray(at, at + 16),
-        data: font.subarray(font.readUInt32BE(at + 8)).subarray(0, font.readUInt32BE(at + 12)),
-      })
-    }
-  }
-  const head = Buffer.alloc(12 + 16 * tables.length)
-  font.copy(head, 0, 0, 4)
-  const selector = Math.floor(Math.log2(tables.length))
-  head.writeUInt16BE(tables.length, 4)
-  head.writeUInt16BE(16 << selector, 6)
-  head.writeUInt16BE(selector, 8)
-  head.writeUInt16BE(tables.length * 16 - (16 << selector), 10)
-  const parts = [head]
-  let offset = head.length
-  for (const [i, { entry, data }] of tables.entries()) {
-    entry.copy(head, 12 + 16 * i)
-    head.writeUInt32BE(offset, 12 + 16 * i + 8)
-    const padded = Buffer.alloc((data.length + 3) & ~3)
-    data.copy(padded)
-    parts.push(padded)
-    offset += padded.length
-  }
-  return Buffer.concat(parts)
-}
-
 // Picks a font file the portable renderer loads and the system renderer
 // cannot read: Lato with no glyf table (CoreText), a Type 1 font
 // (Fontations). On Windows both renderers are FreeType: none.
@@ -1658,8 +1626,8 @@ for (const renderer of ['portable', 'system'] as const) {
   )
 }
 
-// Steps, separated by commas: reg:FONT[:NAME] (registerFromPath; buf: the
-// same with register(buffer)), alias:FAMILY:NAME, remove:FONT (its latest
+// Steps, separated by commas: reg:FONT[:NAME[:WEIGHT]] (registerFromPath,
+// declared with that weight; buf: the same with register(buffer)), alias:FAMILY:NAME, remove:FONT (its latest
 // registration), dir (loadFontsFromDir of PROBE_DIR), state, rebuild (an
 // unrelated font removed), switch (the other renderer and back). Each state
 // gives, per name of PROBE_NAMES: "Ag" and "Agक" measureText [width,
@@ -1709,16 +1677,18 @@ const FACE_ORDER_PROBE = `
     variations: GlobalFonts.hasVariations(name, 400, 5, 0),
     axes: GlobalFonts.getVariationAxes(name, 400, 5, 0).map((axis) => axis.tag),
   })
-  const register = (how, font, name) =>
-    how === 'buf'
-      ? GlobalFonts.register(readFileSync(PROBE_FONTS + '/' + FILES[font]), name)
-      : GlobalFonts.registerFromPath(PROBE_FONTS + '/' + FILES[font], name)
+  const register = (how, font, name, weight) => {
+    const descriptors = weight ? { weight: Number(weight) } : undefined
+    return how === 'buf'
+      ? GlobalFonts.register(readFileSync(PROBE_FONTS + '/' + FILES[font]), name, descriptors)
+      : GlobalFonts.registerFromPath(PROBE_FONTS + '/' + FILES[font], name, descriptors)
+  }
   const out = { steps: [], states: [], refs: {} }
   const keys = {}
   for (const step of PROBE_STEPS.split(',')) {
-    const [kind, a, b] = step.split(':')
+    const [kind, a, b, c] = step.split(':')
     if (kind === 'reg' || kind === 'buf') {
-      keys[a] = register(kind, a, b)
+      keys[a] = register(kind, a, b, c)
       out.steps.push(keys[a] !== null)
     } else if (kind === 'alias') out.steps.push(GlobalFonts.setAlias(a, b))
     else if (kind === 'remove') out.steps.push(GlobalFonts.remove(keys[a]))
@@ -1872,6 +1842,8 @@ for (const renderer of ['portable', 'system'] as const) {
 // the face is picked by style over all its faces; of two faces of one style
 // the one added last draws ("ties"). A setAlias name is one more face of
 // that family. The SVG path and the variation queries use the same faces.
+// The probe declared SHSBold { weight: 700 }, so it is declared here too:
+// faces with no descriptors are one segment, where the newest draws.
 const FAMILY_SPELLINGS = JSON.parse(
   readFileSync(join(__dirname, 'fixtures', 'text-fonts', 'family-spellings.json'), 'utf8'),
 )
@@ -1883,14 +1855,16 @@ for (const renderer of ['portable', 'system'] as const) {
     for (const [key, row] of Object.entries<any>({ ...FAMILY_SPELLINGS.pinned, ...FAMILY_SPELLINGS.ties })) {
       const steps = row.faces.map(([name, font]: string[]) =>
         // Source Serif Pro under its own name: no alias.
-        name === 'Source Serif Pro' ? `reg:${font}` : `reg:${font === 'RobotoMono' ? 'RM' : font}:${name}`,
+        name === 'Source Serif Pro'
+          ? `reg:${font}`
+          : `reg:${font === 'RobotoMono' ? 'RM' : font}:${name}${font === 'SHSBold' ? ':700' : ''}`,
       )
       rows.push([key, steps, row.names, key in FAMILY_SPELLINGS.pinned])
     }
     // A setAlias name of the family's spelling is a face of it too.
     rows.push([
       'b-alias',
-      ['reg:Lato:Brand', 'reg:SHSBold:Other', 'alias:Other:brand'],
+      ['reg:Lato:Brand', 'reg:SHSBold:Other:700', 'alias:Other:brand'],
       FAMILY_SPELLINGS.pinned['b-style'].names,
       true,
     ])

@@ -90,7 +90,7 @@ GlobalFonts.registerFromPath(path.join(F, 'RobotoMono-VariableFont_wght.ttf'), '
 const CHROME = JSON.parse(process.env.CHROME_ROWS)
 const sha1 = (data) => createHash('sha1').update(data).digest('hex')
 const STYLES = {
-  n: ['normal', 400], w500: ['normal', 500], w600: ['normal', 600], b: ['normal', 700],
+  n: ['normal', 400], w300: ['normal', 300], w500: ['normal', 500], w600: ['normal', 600], b: ['normal', 700],
   i: ['italic', 400], o: ['oblique', 400], bi: ['italic', 700],
 }
 const FAMILY = { lato: 'SynthLato', shsb: 'SynthShsBold', rmono: 'SynthRMono', chalk: 'Chalkduster' }
@@ -141,7 +141,7 @@ const bounds = (xml) => {
 }
 const out = { oracle: {}, hamburg: {}, paths: {}, stroke: {}, chrome: {} }
 const XS = [2, 30.5, 61.25, 92.75]
-for (const [f, styles] of [['lato', ['n', 'w500', 'w600', 'b', 'i', 'o', 'bi']], ['shsb', ['n', 'b', 'i', 'bi']], ['rmono', ['n', 'i']]]) {
+for (const [f, styles] of [['lato', ['n', 'w500', 'w600', 'b', 'i', 'o', 'bi']], ['shsb', ['n', 'b', 'i', 'bi']], ['rmono', ['n', 'i', 'b', 'w300']]]) {
   for (const s of styles) {
     const id = f + '.' + s
     const svg = raster(svgOf(FAMILY[f], s, 'Hagf', XS.join(' '), 200), 200)
@@ -292,9 +292,9 @@ oracleTest('SVG text draws the synthetic styles canvas text draws (system)', (t)
   const { oracle } = probeOf('system')
   // Regular Lato; bold and italic Lato (regular only); Source Han Serif
   // Bold (bold only: no extra bold, italic is synthetic); Roboto Mono's
-  // variable font italic (no slnt axis).
+  // variable font italic (no slnt axis), bold and 300 (the wght instances).
   for (const id of Object.keys(oracle)) t.is(oracle[id], 0, `${id}: ${oracle[id]} px differ from canvas text`)
-  t.is(Object.keys(oracle).length, 13)
+  t.is(Object.keys(oracle).length, 15)
 })
 
 for (const renderer of ['portable', 'system'] as const) {

@@ -27,6 +27,8 @@ fn main() {
   println!("cargo:rerun-if-changed=skia-c/shaper_fallback_installed.cpp");
   println!("cargo:rerun-if-changed=third_party/emoji-segmenter/emoji_presentation_scanner.c");
   println!("cargo:rerun-if-changed=skia-c/font_families.cpp");
+  println!("cargo:rerun-if-changed=skia-c/font_selection.cpp");
+  println!("cargo:rerun-if-changed=skia-c/font_selection.hpp");
   println!("cargo:rerun-if-changed=skia-c/text_metrics.cpp");
   println!("cargo:rerun-if-changed=skia-c/hb_api.h");
   println!("cargo:rerun-if-changed=skia-c/text_words.cpp");
@@ -302,6 +304,7 @@ fn main() {
     .file("skia-c/skia_c.cpp")
     .file("skia-c/text.cpp")
     .file("skia-c/font_families.cpp")
+    .file("skia-c/font_selection.cpp")
     .file("skia-c/text_metrics.cpp")
     .file("skia-c/text_words.cpp")
     .file("skia-c/text_styles.cpp")

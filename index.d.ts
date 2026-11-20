@@ -1140,17 +1140,23 @@ export interface FontVariationAxis {
  */
 export interface FontFaceDescriptors {
   /**
-   * A number from 1 to 1000. Default 400. Any other value, `null` or a
-   * string included, is invalid.
+   * A FontFace weight, as a CSS string or a number (converted with
+   * `String()` first): `normal` (default), `bold`, `auto`, a number from 1
+   * to 1000, a `calc()` number, or a range `<a> <b>` (a reversed one is
+   * swapped). A `calc()` weight outside 1-1000 makes every descriptor
+   * `auto`, as Chrome does. `bolder`, `lighter` and any other value are
+   * invalid.
    */
-  weight?: number
+  weight?: number | 'normal' | 'bold' | 'auto' | `${number}` | `${number} ${number}` | (string & {})
   /**
-   * `normal`, `italic`, `oblique` or `oblique <angle>` (a CSS angle such as
-   * `10deg`, `0.2rad` or `calc(5deg)`; a written number from -90 to 90), in
-   * any ASCII case. Default 'normal'. A value that is not a string is
-   * converted with `String()` first (`null` is 'null', invalid).
+   * `normal` (default), `italic`, `oblique`, `oblique <angle>`,
+   * `oblique <angle> <angle>` (a range; a reversed one is swapped) or
+   * `auto`, in any ASCII case. An angle is a CSS angle such as `10deg`,
+   * `0.2rad` or `calc(5deg)`; a written number from -90 to 90. A value that
+   * is not a string is converted with `String()` first (`null` is 'null',
+   * invalid).
    */
-  style?: 'normal' | 'italic' | 'oblique' | `oblique ${string}`
+  style?: 'normal' | 'italic' | 'oblique' | 'auto' | `oblique ${string}`
 }
 
 interface IGlobalFonts {
@@ -1160,11 +1166,31 @@ interface IGlobalFonts {
    * registers nothing; a `descriptors` that is not an object, or a Symbol
    * value, throws a TypeError). `descriptors`: the font's descriptors under
    * this name; a text font list uses them where this name matches the font.
-   * Without them, `auto`: the font's own weight and style ranges.
+   * Without them (or with every one `auto`), `auto`: the face is picked as
+   * `normal` (weight 400, upright), and the font's own weight and style axis
+   * ranges are kept for variations (no clamping).
+   * Faces of one family are chosen by their descriptors, as with
+   * `@font-face`. Without descriptors every face is `auto` and the newest
+   * face wins; give `{ weight, style }` for each file of a family, or use
+   * `loadFontsFromDir` (installed fonts match by the file's own style).
+   * A font registered under a generic keyword (`serif`, `sans-serif`, ...):
+   * for that keyword written unquoted, each face is matched by the file's
+   * own style and descriptors are ignored (bold is made from weight 600, as
+   * for other registered fonts). Only the quoted name (`"serif"`) follows
+   * the descriptor and newest-face rule.
    */
   register(font: Buffer, nameAlias?: string, descriptors?: FontFaceDescriptors): FontKey | null
-  // absolute path - returns FontKey if succeeded, null if failed
-  registerFromPath(path: string, nameAlias?: string): FontKey | null
+  /**
+   * Absolute path. The FontKey, or null if it failed. `descriptors`: as
+   * `register`'s; a file `loadFontsFromDir` loaded is an installed font and
+   * takes none, so a call with them registers the file again. Faces of one
+   * family are chosen as for `register`: without descriptors the newest
+   * face wins. Exceptions: an unquoted generic keyword name, and a file
+   * `loadFontsFromDir` already loaded, given again with no descriptors and
+   * no other alias, which stays an installed font and keeps matching by the
+   * file's own style.
+   */
+  registerFromPath(path: string, nameAlias?: string, descriptors?: FontFaceDescriptors): FontKey | null
   has(name: string): boolean
   loadFontsFromDir(path: string): number
   /**

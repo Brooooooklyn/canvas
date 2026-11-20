@@ -34,9 +34,17 @@ pub mod ffi {
 
   #[repr(C)]
   #[derive(Copy, Clone, Debug)]
+  pub struct skiac_face_range {
+    pub min: f32,
+    pub max: f32,
+    pub from_auto: bool,
+  }
+
+  #[repr(C)]
+  #[derive(Copy, Clone, Debug)]
   pub struct skiac_face_descriptors {
-    pub weight: f32,
-    pub slope: f32,
+    pub weight: skiac_face_range,
+    pub slope: skiac_face_range,
   }
 
   #[repr(C)]
@@ -1550,6 +1558,7 @@ pub mod ffi {
       c_font_collection: *mut skiac_font_collection,
       font_path: *const c_char,
       maybe_name_alias: *const c_char,
+      descriptors: *const skiac_face_descriptors,
     ) -> u32;
 
     pub fn skiac_font_collection_register_system_font(
@@ -6600,6 +6609,7 @@ impl FontCollection {
     &self,
     font_path: &str,
     maybe_name_alias: Option<S>,
+    descriptors: Option<&ffi::skiac_face_descriptors>,
   ) -> Option<u32> {
     if let Ok(fp) = CString::new(font_path) {
       let name_alias_ptr = match maybe_name_alias {
@@ -6610,8 +6620,12 @@ impl FontCollection {
         None => ptr::null_mut(),
       };
       let result = unsafe {
-        let typeface_id =
-          ffi::skiac_font_collection_register_from_path(self.0, fp.as_ptr(), name_alias_ptr);
+        let typeface_id = ffi::skiac_font_collection_register_from_path(
+          self.0,
+          fp.as_ptr(),
+          name_alias_ptr,
+          descriptors.map_or(ptr::null(), |d| d as *const _),
+        );
         if typeface_id > 0 {
           Some(typeface_id)
         } else {
@@ -7380,7 +7394,7 @@ mod text_line_tests {
     );
     assert!(
       collection
-        .register_from_path(lato, Some("CacheLato"))
+        .register_from_path(lato, Some("CacheLato"), None)
         .is_some()
     );
     let settings = settings();
@@ -7422,7 +7436,11 @@ mod text_line_tests {
       ("NotoSansDevanagari-subset.ttf", "DropDeva"),
     ] {
       let path = format!("{}/__test__/fonts/{file}", env!("CARGO_MANIFEST_DIR"));
-      assert!(collection.register_from_path(&path, Some(name)).is_some());
+      assert!(
+        collection
+          .register_from_path(&path, Some(name), None)
+          .is_some()
+      );
     }
     collection
   }

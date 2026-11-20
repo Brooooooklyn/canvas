@@ -29,6 +29,21 @@ std::vector<SkString> ResolveFontFamilies(
     std::vector<bool>* generic = nullptr,
     const LocaleFamilies* locale = nullptr);
 
+// `families` (ResolveFontFamilies) for a request of `weight`, `slope` (in
+// degrees) and `style` (SkFontStyle::Slant): a family whose faces are
+// matched by their descriptors (FontFaceStyleSet) gets the weight as a
+// FontSelectionValue (quarter steps, FontSelectionAlgorithm::
+// WeightDistance) under the tag "\x01q\x01" quarters "\x01", and an oblique
+// slope other than 14deg (StyleDistance) under "\x01o\x01" quarters + 360
+// "\x01" before it, since SkFontStyle and FontCollection's cache key hold an
+// integer weight and a slant only. The same list for a whole weight with an
+// upright, italic or 14deg style, or when no font has descriptors.
+std::vector<SkString> AtRequest(skiac_font_collection* c_collection,
+                                std::vector<SkString> families,
+                                float weight,
+                                float slope,
+                                int style);
+
 // FontCache::GetLastResortFallbackFont's family for `request`: on macOS with
 // the system renderer Times (else Lucida Grande); empty when none resolves
 // (font_families.cpp).
@@ -153,23 +168,43 @@ size_t NextWordEndIndex(const char16_t* text,
 using FaceDescriptors = std::optional<skiac_face_descriptors>;
 
 // The descriptors `base` (a face before font arguments) was registered with
-// under `family`, a family name or ResolveFontFamilies' spelling of one
+// under `family`, a family name or ResolveFontFamilies' spelling of one, or,
+// for a setAlias alias of the face, under the name the alias names
 // (text_styles.cpp).
 FaceDescriptors DeclaredDescriptors(skiac_font_collection* c_collection,
                                     SkTypeface* base,
                                     std::string_view family);
 
+// The descriptors the face `id` has under the case-folded `folded`: those
+// its registration declares for the name, else, when the name is a setAlias
+// alias of that face, those of the name the alias names (a chain too).
+// `seen` (empty at first): the names looked up already, so a loop of
+// aliases ends (text_styles.cpp).
+FaceDescriptors DescriptorsUnder(skiac_font_collection* c_collection,
+                                 SkTypefaceID id,
+                                 const std::string& folded,
+                                 std::vector<const std::string*>& seen);
+
+// Whether a face may have descriptors under the case-folded `folded`
+// (DescriptorsUnder), so a list of names without any looks nothing up.
+// `seen` as for DescriptorsUnder (text_styles.cpp).
+bool DescribesName(skiac_font_collection* c_collection,
+                   const std::string& folded,
+                   std::vector<const std::string*>& seen);
+
 // For each of `base_faces` (findTypefaces of `families` at `style`), the
 // descriptors of the family that matched it, as Blink's CSSFontSelector
 // takes the FontFace of one family at a time; none for a generic family
-// (`generic`, ResolveFontFamilies). Empty when no font has descriptors
+// (`generic`, ResolveFontFamilies). Empty when no font has descriptors;
+// `family_of`, when given, gets the FaceFamilies it looked up, if any
 // (text_styles.cpp).
 std::vector<FaceDescriptors> FamilyDescriptors(
     skiac_font_collection* c_collection,
     const std::vector<SkString>& families,
     const std::vector<bool>& generic,
     const SkFontStyle& style,
-    const std::vector<sk_sp<SkTypeface>>& base_faces);
+    const std::vector<sk_sp<SkTypeface>>& base_faces,
+    std::optional<std::vector<std::optional<size_t>>>* family_of = nullptr);
 
 // For each of `base_faces` (findTypefaces of `families` at `style`), the
 // index in `families` of the family that matched it (findTypefaces of that
@@ -181,19 +216,39 @@ std::vector<std::optional<size_t>> FaceFamilies(
     const SkFontStyle& style,
     const std::vector<sk_sp<SkTypeface>>& base_faces);
 
+// `base`, the face `family` matches at `style` (FaceFamilies), at `args`:
+// the clone from findTypefaces of the family alone, or `base` when the
+// clone fails, as FontCustomPlatformData::GetFontPlatformData keeps
+// base_typeface_ (text_styles.cpp).
+sk_sp<SkTypeface> FaceInstance(skiac_font_collection* c_collection,
+                               const SkString& family,
+                               const SkFontStyle& style,
+                               const sk_sp<SkTypeface>& base,
+                               const std::optional<FontArguments>& args);
+
 // The variation coordinates for `request` when `faces` (the request's
 // families' faces before font arguments) vary or the request has its own
-// variations, else none: wght, wdth and slnt from the weight (`declared`'s,
-// the descriptors of every face of `faces`), stretch and slope, the
-// request's variations, then, for font-optical-sizing: auto and
-// no opsz of the request's own, opsz at `opsz_size` (UsedSizes::opsz), and
-// for none with the system renderer on Apple the axis default of the first
-// of `faces` with the axis (text_styles.cpp).
+// variations, else none: wght, wdth and slnt from the weight, stretch and
+// slope (each clamped to `declared`'s explicit range: the descriptors of
+// every face of `faces`), the request's variations, then, for
+// font-optical-sizing: auto and no opsz of the request's own, opsz at
+// `opsz_size` (UsedSizes::opsz), and for none with the system renderer on Apple
+// the axis default of the first of `faces` with the axis. `web_face`: the
+// one face of `faces` is a registered font's (FontCustomPlatformData's
+// ResolveVariations): its ital axis, when it has one, is 1 for the `italic`
+// keyword (and slnt the axis default) and 0 for any other style; an
+// installed or fallback face gets no ital (FontCache) (text_styles.cpp).
 std::vector<SkFontArguments::VariationPosition::Coordinate> FontVariations(
     const std::vector<sk_sp<SkTypeface>>& faces,
     const skiac_text_request& request,
     float opsz_size,
-    const FaceDescriptors& declared);
+    const FaceDescriptors& declared,
+    bool web_face);
+
+// Whether `base` is a registered face with an ital axis: its instance is its
+// own, as FontVariations with web_face sets the axis for every style
+// (text_styles.cpp).
+bool HasWebItalAxis(skiac_font_collection* c_collection, SkTypeface* base);
 
 // The font sizes font-size-adjust gives (FontBuilder::UpdateAdjustedSize,
 // FontDescription::EffectiveFontSize, CSSFontFace::GetFontData and
@@ -236,12 +291,17 @@ struct SyntheticStyle {
 
 // The synthetic styles of `face` drawing `request`: `base` is the family's
 // face before font arguments, null for a fallback font; `declared` its
-// descriptors (FamilyDescriptors).
+// descriptors (FamilyDescriptors). `web_face`: `face` is FontVariations'
+// instance of `base` alone with web_face, so the `italic` keyword on an ital
+// axis is never skewed; false for a face with no ital coordinate (the last
+// resort font, a face drawn without its family entry's instance)
+// (text_styles.cpp).
 SyntheticStyle SynthesizeStyle(skiac_font_collection* c_collection,
                                SkTypeface* face,
                                SkTypeface* base,
                                const skiac_text_request& request,
-                               const FaceDescriptors& declared);
+                               const FaceDescriptors& declared,
+                               bool web_face);
 
 // font-variant-caps per font, for the Blink shaper (text_caps.cpp): Blink's
 // OpenTypeCapsSupport of one font for request.variant_caps and a script.

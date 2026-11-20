@@ -5,13 +5,17 @@
 // one family up at a time), and its own variation coordinates. Chrome 159
 // draws every equivalence here alike (FontFace with the same descriptors).
 
-import { readFileSync } from 'node:fs'
+import { spawnSync } from 'node:child_process'
+import { copyFileSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 import test from 'ava'
 
-import { createCanvas, type FontFaceDescriptors, GlobalFonts, Image } from '../index'
+import { convertSVGTextToPath, createCanvas, type FontFaceDescriptors, GlobalFonts, Image } from '../index'
+
+import { withoutGlyf } from './font-fixtures'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const font = (name: string) => readFileSync(join(__dirname, 'fonts', name))
@@ -161,8 +165,34 @@ test('invalid descriptors register nothing and give null', (t) => {
     { style: 'oblique 5.deg' },
     { style: 'italic italic' },
     { weight: 400, style: 'Italics' },
-    // Not parsed yet (Chrome takes a string weight).
-    { weight: '700' },
+    // ConsumeFontWeight in font-face mode: no `bolder` / `lighter`, a
+    // literal in [1, 1000], at most two values, no CSS-wide keywords.
+    { weight: 'bolder' },
+    { weight: 'lighter' },
+    { weight: '0' },
+    { weight: '1001' },
+    { weight: '700 1001' },
+    { weight: '700px' },
+    { weight: '' },
+    { weight: 'inherit' },
+    { weight: 'initial' },
+    { weight: 'var(--x)' },
+    { weight: '100 900 500' },
+    { weight: 'auto 700' },
+    { weight: '700 auto' },
+    { weight: 'bold 900' },
+    // ToString: "1e+21", out of range.
+    { weight: 1e21 },
+    // ConsumeFontStyle in font-face mode.
+    { style: 'italic 10deg' },
+    { style: 'normal 10deg' },
+    { style: 'oblique 91deg 10deg' },
+    { style: 'oblique 10deg 91deg' },
+    { style: 'oblique 10deg 20deg 30deg' },
+    { style: 'oblique 10deg auto' },
+    { style: 'oblique 10 20deg' },
+    { style: 'oblique 0 20deg' },
+    { style: 'auto auto' },
   ]
   for (const [i, descriptors] of invalid.entries()) {
     const name = `Descriptors Invalid ${i}`
@@ -210,6 +240,149 @@ test('style takes any CSS angle, math functions and comments', (t) => {
     t.truthy(GlobalFonts.register(scienceGothic, name, { style: style as FontFaceDescriptors['style'] }), style)
     t.deepEqual(draw(`32px "${name}"`).pixels, draw(`32px "${same}"`).pixels, style)
   }
+})
+
+// Registers `data` under `name` with `descriptors` and checks it took them.
+function declare(t: import('ava').ExecutionContext, data: Buffer, name: string, descriptors: FontFaceDescriptors) {
+  t.truthy(GlobalFonts.register(data, name, descriptors), `${name} ${JSON.stringify(descriptors)}`)
+}
+
+test('weight ranges clamp the wght and synthesize from their maximum', (t) => {
+  // ClampAxisValue clamps the request to an explicit range;
+  // CSSSegmentedFontFace emboldens when the range's maximum is under 600.
+  declare(t, robotoMono, 'Range 100 900', { weight: '100 900' })
+  declare(t, robotoMono, 'Range 900 100', { weight: '900 100' })
+  declare(t, robotoMono, 'Range 100 500', { weight: '100 500' })
+  declare(t, robotoMono, 'Range 500 700', { weight: '500 700' })
+  declare(t, robotoMono, 'Range 300 300', { weight: '300 300' })
+  declare(t, robotoMono, 'Range 500', { weight: 500 })
+  declare(t, robotoMono, 'Range 300', { weight: 300 })
+  const px = (font: string) => draw(font).pixels
+  t.deepEqual(px('bold 32px "Range 100 900"'), px('bold 32px "Descriptors Auto"'))
+  t.deepEqual(px('bold 32px "Range 900 100"'), px('bold 32px "Range 100 900"'))
+  t.deepEqual(px('200 32px "Range 100 900"'), px('200 32px "Descriptors Auto"'))
+  t.deepEqual(px('1 32px "Range 100 900"'), px('100 32px "Descriptors Auto"'))
+  // 500 emboldened.
+  const bold500 = px('bold 32px "Range 500"')
+  t.deepEqual(px('bold 32px "Range 100 500"'), bold500)
+  t.deepEqual(px('800 32px "Range 100 500"'), bold500)
+  t.notDeepEqual(bold500, px('500 32px "Descriptors Auto"'))
+  t.deepEqual(px('32px "Range 100 500"'), px('32px "Descriptors Auto"'))
+  t.deepEqual(px('300 32px "Range 500 700"'), px('32px "Range 500"'))
+  t.deepEqual(px('900 32px "Range 500 700"'), px('32px "Descriptors 700"'))
+  t.deepEqual(px('600 32px "Range 500 700"'), px('600 32px "Descriptors Auto"'))
+  t.deepEqual(px('32px "Range 300 300"'), px('32px "Range 300"'))
+  t.deepEqual(px('32px "Range 300"'), px('300 32px "Descriptors Auto"'))
+})
+
+test('a static face is emboldened only when its range stays under 600', (t) => {
+  const lato = font('Lato-Regular.ttf')
+  declare(t, lato, 'Lato 100 900', { weight: '100 900' })
+  declare(t, lato, 'Lato 100 500', { weight: '100 500' })
+  declare(t, lato, 'Lato 400', { weight: 400 })
+  const px = (font: string) => draw(font).pixels
+  t.deepEqual(px('bold 32px "Lato 100 900"'), px('32px "Descriptors Lato"'))
+  t.notDeepEqual(px('bold 32px "Lato 100 900"'), px('bold 32px "Descriptors Lato"'))
+  t.deepEqual(px('bold 32px "Lato 100 500"'), px('bold 32px "Lato 400"'))
+})
+
+test('style ranges clamp the slnt and skew from their maximum', (t) => {
+  declare(t, scienceGothic, 'Slant 0 20', { style: 'oblique 0deg 20deg' })
+  declare(t, scienceGothic, 'Slant 20 0', { style: 'oblique 20deg 0deg' })
+  declare(t, scienceGothic, 'Slant 0 10', { style: 'oblique 0deg 10deg' })
+  declare(t, scienceGothic, 'Slant 10', { style: 'oblique 10deg' })
+  declare(t, scienceGothic, 'Slant 5 8', { style: 'oblique 5deg 8deg' })
+  declare(t, scienceGothic, 'Slant 7', { style: 'oblique 7deg' })
+  declare(t, scienceGothic, 'Slant 8', { style: 'oblique 8deg' })
+  declare(t, scienceGothic, 'Slant -10 10', { style: 'oblique -10deg 10deg' })
+  declare(t, scienceGothic, 'Slant 0 0', { style: 'oblique 0deg 0deg' })
+  declare(t, scienceGothic, 'Slant calc 8', { style: 'oblique calc(5deg + 2deg) 8deg' })
+  declare(t, scienceGothic, 'Slant 7 8', { style: 'OBLIQUE 7DEG 8DEG' as FontFaceDescriptors['style'] })
+  const px = (font: string) => draw(font).pixels
+  // slnt -14, clamped to the axis' -10; a maximum of 14 or more: no skew.
+  const slanted = px('32px "Slant Italic"')
+  t.deepEqual(px('italic 32px "Slant 0 20"'), slanted)
+  t.deepEqual(px('italic 32px "Slant Auto"'), slanted)
+  t.deepEqual(px('italic 32px "Slant 20 0"'), slanted)
+  t.deepEqual(px('32px "Slant 0 20"'), px('32px "Slant Normal"'))
+  // A maximum under 14: slnt -10 and skewed.
+  t.deepEqual(px('italic 32px "Slant 0 10"'), px('italic 32px "Slant 10"'))
+  t.notDeepEqual(px('italic 32px "Slant 0 10"'), px('32px "Slant 10"'))
+  t.deepEqual(px('oblique 7deg 32px "Slant 5 8"'), px('32px "Slant 7"'))
+  t.deepEqual(px('italic 32px "Slant 5 8"'), px('italic 32px "Slant 8"'))
+  t.deepEqual(px('32px "Slant 5 8"'), px('32px "Slant Oblique 5"'))
+  t.deepEqual(px('32px "Slant -10 10"'), px('32px "Slant Normal"'))
+  t.deepEqual(px('oblique 5deg 32px "Slant -10 10"'), px('32px "Slant Oblique 5"'))
+  t.deepEqual(px('italic 32px "Slant 0 0"'), px('italic 32px "Slant Normal"'))
+  t.deepEqual(px('32px "Slant calc 8"'), px('32px "Slant 7"'))
+  t.deepEqual(px('italic 32px "Slant calc 8"'), px('italic 32px "Slant 7 8"'))
+})
+
+test('a calc() weight outside [1, 1000] makes every descriptor auto', (t) => {
+  // GetFontSelectionCapabilities returns normal_capabilities: the style is
+  // dropped too.
+  declare(t, scienceGothic, 'Reset Italic', { weight: 'calc(2000)', style: 'italic' })
+  declare(t, robotoMono, 'Reset Range', { weight: 'calc(-5) 700' })
+  declare(t, robotoMono, 'Reset Small', { weight: 'calc(0.5)' })
+  const px = (font: string) => draw(font).pixels
+  t.deepEqual(px('32px "Reset Italic"'), px('32px "Slant Auto"'))
+  t.notDeepEqual(px('32px "Reset Italic"'), px('32px "Slant Italic"'))
+  t.deepEqual(px('italic 32px "Reset Italic"'), px('italic 32px "Slant Auto"'))
+  for (const name of ['Reset Range', 'Reset Small']) {
+    t.deepEqual(px(`32px "${name}"`), px('32px "Descriptors Auto"'), name)
+    t.deepEqual(px(`bold 32px "${name}"`), px('bold 32px "Descriptors Auto"'), name)
+  }
+  // Only `from < 1` and `to > 1000` reset a range: [500, 2000].
+  declare(t, robotoMono, 'Range calc 500', { weight: 'calc(2000) 500' })
+  t.deepEqual(px('300 32px "Range calc 500"'), px('500 32px "Descriptors Auto"'))
+  t.deepEqual(px('bold 32px "Range calc 500"'), px('32px "Descriptors 700"'))
+})
+
+test('auto per descriptor: that field follows the axes, the other is declared', (t) => {
+  declare(t, robotoMono, 'Weight Auto', { weight: 'auto' })
+  declare(t, scienceGothic, 'Slant Weight Auto', { weight: 'auto' })
+  declare(t, scienceGothic, 'Slant Style Auto', { style: 'auto' })
+  declare(t, scienceGothic, 'Slant Style AUTO', { style: 'AUTO' as 'auto' })
+  const px = (font: string) => draw(font).pixels
+  t.deepEqual(px('bold 32px "Weight Auto"'), px('bold 32px "Descriptors Auto"'))
+  // The default style is `normal`: italic is the slnt 0 instance skewed.
+  t.deepEqual(px('bold 32px "Slant Weight Auto"'), px('bold 32px "Slant Auto"'))
+  t.deepEqual(px('italic 32px "Slant Weight Auto"'), px('italic 32px "Slant Normal"'))
+  // The default weight is `normal`: bold is the 400 instance emboldened.
+  for (const name of ['Slant Style Auto', 'Slant Style AUTO']) {
+    t.deepEqual(px(`italic 32px "${name}"`), px('italic 32px "Slant Auto"'), name)
+    t.deepEqual(px(`bold 32px "${name}"`), px('bold 32px "Slant Normal"'), name)
+    t.notDeepEqual(px(`bold 32px "${name}"`), px('bold 32px "Slant Auto"'), name)
+  }
+})
+
+test('weight strings are CSS: keywords, numbers, calc(); numbers are ToString-ed', (t) => {
+  const px = (font: string) => draw(font).pixels
+  const weights: [unknown, string][] = [
+    ['700', '32px "Descriptors 700"'],
+    ['bold', '32px "Descriptors 700"'],
+    ['BOLD', '32px "Descriptors 700"'],
+    [' 700 ', '32px "Descriptors 700"'],
+    ['+700', '32px "Descriptors 700"'],
+    ['700.0', '32px "Descriptors 700"'],
+    ['calc(350 + 350)', '32px "Descriptors 700"'],
+    ['/**/700', '32px "Descriptors 700"'],
+    ['normal', 'bold 32px "Descriptors 400"'],
+    ['400', 'bold 32px "Descriptors 400"'],
+    ['1e3', '1000 32px "Descriptors Auto"'],
+    [1000, '1000 32px "Descriptors Auto"'],
+    // An object's toString: the range.
+    [{ toString: () => '100 900' }, 'bold 32px "Descriptors Auto"'],
+  ]
+  for (const [i, [weight, same]] of weights.entries()) {
+    const name = `Weight String ${i}`
+    declare(t, robotoMono, name, { weight } as FontFaceDescriptors)
+    const request = same.startsWith('32px') ? '32px' : same.split(' 32px')[0] + ' 32px'
+    t.deepEqual(px(`${request} "${name}"`), px(same), String(weight))
+  }
+  // An all-auto object is no descriptors.
+  declare(t, robotoMono, 'Weight All Auto', { weight: 'auto', style: 'auto' })
+  t.deepEqual(px('bold 32px "Weight All Auto"'), px('bold 32px "Descriptors Auto"'))
 })
 
 test('descriptors that are not an object throw a TypeError and register nothing', (t) => {
@@ -287,6 +460,34 @@ test('the font data is read after the descriptors convert', (t) => {
   t.false(GlobalFonts.has('Descriptors Shrunk'))
 })
 
+// The layout counters of skiac_debug_text_line (cumulative per collection).
+type LineCounters = { familyInstanceFaces: number; requestInstanceFaces: number; descriptorLookups: number }
+function lineCounters(font: string, text: string): LineCounters {
+  const ctx = createCanvas(10, 10).getContext('2d')
+  ctx.font = font
+  return JSON.parse((ctx as unknown as { __debugTextLine(text: string): string }).__debugTextLine(text))
+}
+
+// The instances one cold layout (a new text) of `font` looked up: at the
+// request's coordinates for the whole list (ResolveLineFaces) and a family
+// entry's own (FamilyFaces).
+function instanceDelta(font: string, text: string) {
+  const before = lineCounters('32px "Descriptors Lato"', `${text} (before)`)
+  const after = lineCounters(font, text)
+  return {
+    request: after.requestInstanceFaces - before.requestInstanceFaces,
+    family: after.familyInstanceFaces - before.familyInstanceFaces,
+  }
+}
+
+// The faces the list adds after its families: the standard font, when the
+// host has one (FontFallbackList::GetFontData's -webkit-standard).
+function standardFaces(t: import('ava').ExecutionContext, text: string) {
+  const standard = instanceDelta('32px "Descriptors Auto"', text).request - 1
+  t.true(standard === 0 || standard === 1, `standard faces ${standard}`)
+  return standard
+}
+
 test('a face with its own descriptors is the only face cloned at its coordinates', (t) => {
   // Six faces (one file padded apart), each declared with its own weight: a
   // cold layout looks up one instance per face, not every matched face at
@@ -297,15 +498,197 @@ test('a face with its own descriptors is the only face cloned at its coordinates
     t.truthy(GlobalFonts.register(data, name, { weight: 100 + 100 * i }))
     return `"${name}"`
   })
-  const ctx = createCanvas(10, 10).getContext('2d')
-  const instanceFaces = (font: string) => {
-    ctx.font = font
-    const debug = ctx as unknown as { __debugTextLine(text: string): string }
-    return JSON.parse(debug.__debugTextLine('Own instances')).familyInstanceFaces
-  }
   // The registrations dropped the caches: the layout of the list is cold.
-  const before = instanceFaces('32px "Descriptors Lato"')
-  t.is(instanceFaces(`32px ${names.join(', ')}`) - before, 6)
+  const delta = instanceDelta(`32px ${names.join(', ')}`, 'Own instances')
+  t.is(delta.family, 6)
+  // None is also cloned at the request's coordinates; only the standard
+  // font (no descriptors) is.
+  t.is(delta.request, standardFaces(t, 'Own instances standard'))
+})
+
+test('the debug line reports its instance and descriptor lookups', (t) => {
+  const counters = lineCounters('32px "Descriptors 400"', 'Counters')
+  t.is(typeof counters.requestInstanceFaces, 'number')
+  t.is(typeof counters.descriptorLookups, 'number')
+  t.is(typeof counters.familyInstanceFaces, 'number')
+})
+
+test('request instances: one per matched face without its own', (t) => {
+  // A face with descriptors gets only its own instance (FamilyFaces); the
+  // others take the request's coordinates, one lookup each.
+  const standard = standardFaces(t, 'Request standard')
+  t.deepEqual(instanceDelta('32px "Descriptors 400", "Descriptors Oswald"', 'Request 400 Oswald'), {
+    request: 1 + standard,
+    family: 1,
+  })
+  // No face has its own: one lookup of the whole list, as before.
+  t.deepEqual(instanceDelta('32px "Descriptors Auto", "Descriptors Oswald"', 'Request Auto Oswald'), {
+    request: 2 + standard,
+    family: 0,
+  })
+})
+
+// A child process (its own counters): fonts with no descriptors, drawn
+// through every DeclaredDescriptors caller (font list, font-size-adjust,
+// SVG text), then one declared face.
+const NO_DESCRIPTORS_PROBE = `
+  const { readFileSync } = require('fs')
+  const { createCanvas, GlobalFonts, Image, setTextRenderer } = require(process.env.PROBE_INDEX)
+  const { RENDERER, PROBE_DIR, PROBE_FONTS } = process.env
+  setTextRenderer(RENDERER)
+  const font = (name) => readFileSync(PROBE_FONTS + '/' + name)
+  const out = { loaded: GlobalFonts.loadFontsFromDir(PROBE_DIR), keys: [] }
+  out.keys.push(GlobalFonts.register(font('RobotoMono-VariableFont_wght.ttf'), 'Guard Mono'))
+  out.keys.push(GlobalFonts.register(font('Oswald.ttf'), 'Guard Oswald', null))
+  out.keys.push(GlobalFonts.register(font('Lato-Regular.ttf')))
+  out.keys.push(GlobalFonts.registerFromPath(PROBE_FONTS + '/ScienceGothic-VariableFont.ttf', 'Guard Slant'))
+  const FONTS = [
+    '32px "Guard Mono"', 'bold 32px "Guard Mono", serif', 'italic 32px "Guard Slant"',
+    '300 32px "Guard Oswald", "Guard Mono"', '32px Lato', 'bold italic 32px Lato, "Source Serif Pro"',
+    '32px "Source Serif Pro"', '32px sans-serif', '32px monospace', '32px NoSuchFamily, "Guard Oswald"',
+  ]
+  const ctx = createCanvas(400, 60).getContext('2d')
+  const counters = (text) => JSON.parse(ctx.__debugTextLine(text))
+  for (let i = 0; i < 50; ++i) {
+    ctx.font = FONTS[i % FONTS.length]
+    ctx.fontSizeAdjust = i % 3 === 0 ? '0.5' : 'none'
+    ctx.fillText('Line ' + i + ' Hamburgefonts ΑΒΓ ǅǄ', 10, 40)
+  }
+  ctx.fontSizeAdjust = 'none'
+  for (const family of ['Guard Mono', 'Guard Slant', 'Lato', 'Source Serif Pro']) {
+    const img = new Image()
+    img.src = Buffer.from('<svg xmlns="http://www.w3.org/2000/svg" width="200" height="60"><text x="10" y="44" font-family="' + family + '" font-weight="bold" font-size="32">Ham</text></svg>')
+    ctx.drawImage(img, 0, 0)
+  }
+  out.none = counters('Line done')
+  out.keys.push(GlobalFonts.register(font('RobotoMono-VariableFont_wght.ttf'), 'Guard Declared', { weight: 400 }))
+  ctx.font = 'bold 32px "Guard Declared"'
+  out.declared = counters('Line declared')
+  console.log(JSON.stringify(out))`
+
+for (const renderer of ['portable', 'system'] as const) {
+  test(`no font with descriptors: no descriptor lookup (${renderer})`, (t) => {
+    const dir = mkdtempSync(join(tmpdir(), 'canvas-no-descriptors-'))
+    t.teardown(() => rmSync(dir, { recursive: true, force: true }))
+    copyFileSync(join(__dirname, 'fonts', 'SourceSerifPro-Regular.ttf'), join(dir, 'SourceSerifPro-Regular.ttf'))
+    const child = spawnSync(process.execPath, ['-e', NO_DESCRIPTORS_PROBE], {
+      encoding: 'utf8',
+      timeout: 60_000,
+      env: {
+        ...process.env,
+        RENDERER: renderer,
+        PROBE_DIR: dir,
+        PROBE_FONTS: join(__dirname, 'fonts'),
+        PROBE_INDEX: join(__dirname, '..', 'index.js'),
+      },
+    })
+    t.is(child.status, 0, child.stderr)
+    const out = JSON.parse(child.stdout)
+    t.is(out.loaded, 1)
+    t.true(
+      out.keys.every((key: unknown) => key !== null),
+      `keys ${out.keys}`,
+    )
+    t.is(out.none.descriptorLookups, 0)
+    // The counter counts: a declared face is looked up.
+    t.true(out.declared.descriptorLookups > 0)
+  })
+}
+
+// A child process (its own counters): 100 files with no descriptors under
+// one name are one segment, so a line lists the newest and 99 older faces
+// (siblings). The family's FontFaces are gathered once per flush, not once
+// per sibling.
+const SIBLINGS_PROBE = `
+  const { readFileSync } = require('fs')
+  const { createCanvas, GlobalFonts } = require(process.env.PROBE_INDEX)
+  const base = readFileSync(process.env.PROBE_FONT)
+  const ctx = createCanvas(400, 60).getContext('2d')
+  const cores = (font, text) => { ctx.font = font; return JSON.parse(ctx.__debugTextLine(text)).fontFaceCores }
+  const register = (i) => GlobalFonts.register(Buffer.concat([base, Buffer.from('\\0\\0\\0\\0' + String(i).padStart(8, '0'))]), 'Guard Siblings')
+  for (let i = 0; i < 100; ++i) register(i)
+  const out = []
+  let last = cores('32px serif', 'Flushed')
+  for (const [font, text] of [['32px "Guard Siblings"', 'Cold'], ['bold 32px "Guard Siblings", serif', 'Other list']]) {
+    const now = cores(font, text)
+    out.push(now - last)
+    last = now
+  }
+  register(100)
+  last = cores('32px serif', 'Flushed again')
+  out.push(cores('32px "Guard Siblings"', 'Cold again') - last)
+  console.log(JSON.stringify(out))`
+
+test('the faces of an auto family are gathered once per flush, not once per sibling', (t) => {
+  const child = spawnSync(process.execPath, ['-e', SIBLINGS_PROBE], {
+    encoding: 'utf8',
+    timeout: 60_000,
+    env: {
+      ...process.env,
+      PROBE_FONT: join(__dirname, 'fonts', 'RMStatic-Regular.ttf'),
+      PROBE_INDEX: join(__dirname, '..', 'index.js'),
+    },
+  })
+  t.is(child.status, 0, child.stderr)
+  // Cold line: one; a second list of the family: none; after a register: one.
+  t.deepEqual(JSON.parse(child.stdout), [1, 0, 1])
+})
+
+// A child process (its own counters): a declared family's sets for quarter
+// request weights ("\x01q\x01", AtRequestWeight) share its FontFaces, as
+// Blink's FontFaceCache keeps one CSSSegmentedFontFace per capabilities
+// whatever the request.
+const QUARTER_WEIGHT_CORES_PROBE = `
+  const { readFileSync } = require('fs')
+  const { createCanvas, GlobalFonts } = require(process.env.PROBE_INDEX)
+  const { PROBE_FONTS } = process.env
+  const regular = readFileSync(PROBE_FONTS + '/RMStatic-Regular.ttf')
+  const bold = readFileSync(PROBE_FONTS + '/RMStatic-Bold.ttf')
+  const own = (data, i) => Buffer.concat([data, Buffer.from('\\0\\0\\0\\0' + String(i).padStart(8, '0'))])
+  for (let i = 0; i < 4; ++i) {
+    GlobalFonts.register(own(regular, i), 'Guard Quarter', { weight: 400 })
+    GlobalFonts.register(own(bold, i), 'Guard Quarter', { weight: 700 })
+  }
+  GlobalFonts.register(regular, 'Guard Quarter Regular')
+  GlobalFonts.register(bold, 'Guard Quarter Bold', { weight: 700 })
+  const ctx = createCanvas(400, 60).getContext('2d')
+  const cores = (font, text) => { ctx.font = font; return JSON.parse(ctx.__debugTextLine(text)).fontFaceCores }
+  const pixels = (font) => {
+    const c = createCanvas(300, 60).getContext('2d')
+    c.font = font
+    c.fillText('Hamburg', 10, 42)
+    return Buffer.from(c.getImageData(0, 0, 300, 60).data).toString('base64')
+  }
+  const out = { cores: [], faces: {} }
+  let last = cores('32px serif', 'Flushed')
+  for (const weight of ['', '400.25 ', '400.5 ', '650.75 ', '400.5 ']) {
+    const now = cores(weight + '32px "Guard Quarter"', 'Weight ' + weight)
+    out.cores.push(now - last)
+    last = now
+  }
+  for (const weight of ['400.5', '650.75']) {
+    const drawn = pixels(weight + ' 32px "Guard Quarter"')
+    out.faces[weight] = drawn === pixels(weight + ' 32px "Guard Quarter Regular"') ? 'regular'
+      : drawn === pixels(weight + ' 32px "Guard Quarter Bold"') ? 'bold' : 'other'
+  }
+  console.log(JSON.stringify(out))`
+
+test('the sets of quarter request weights share the family FontFaces', (t) => {
+  const child = spawnSync(process.execPath, ['-e', QUARTER_WEIGHT_CORES_PROBE], {
+    encoding: 'utf8',
+    timeout: 60_000,
+    env: {
+      ...process.env,
+      PROBE_FONTS: join(__dirname, 'fonts'),
+      PROBE_INDEX: join(__dirname, '..', 'index.js'),
+    },
+  })
+  t.is(child.status, 0, child.stderr)
+  // Cold line: one; each quarter weight: none.
+  t.deepEqual(JSON.parse(child.stdout), {
+    cores: [1, 0, 0, 0, 0],
+    faces: { '400.5': 'regular', '650.75': 'bold' },
+  })
 })
 
 test('descriptors stay with their name across a rebuild and go with a remove', (t) => {
@@ -342,3 +725,2151 @@ test('SVG text: a face has the same descriptors with and without a fallback run'
   // Declared 400: bold is emboldened, unlike `auto`.
   t.notDeepEqual(alone, svgPixels("'Descriptors Auto', 'Descriptors Oswald'", 'Ham'))
 })
+
+// setAlias lists the face of its target under the alias: the face has the
+// target's descriptors there, looked up through the alias at draw time, so
+// along a chain and after the target is declared again.
+test('setAlias of a declared name takes its descriptors', (t) => {
+  const declared = draw('bold 32px "Descriptors 400"').pixels
+  t.notDeepEqual(declared, draw('bold 32px "Descriptors Auto"').pixels)
+  t.true(GlobalFonts.setAlias('Descriptors 400', 'Alias 400'))
+  t.deepEqual(draw('bold 32px "Alias 400"').pixels, declared)
+  t.deepEqual(draw('bold 32px "alias 400"').pixels, declared)
+  // After an auto face: the alias face draws the Greek with its descriptors.
+  t.deepEqual(
+    draw('bold 32px "Descriptors Lato", "Alias 400"', GREEK).pixels,
+    draw('bold 32px "Descriptors 400"', GREEK).pixels,
+  )
+  t.true(GlobalFonts.setAlias('Descriptors Italic', 'Alias Italic'))
+  t.deepEqual(draw('italic 32px "Alias Italic"').pixels, draw('32px "Descriptors Auto"').pixels)
+})
+
+test('setAlias of an alias takes the descriptors at the end of the chain', (t) => {
+  const declared = draw('bold 32px "Descriptors 400"').pixels
+  t.true(GlobalFonts.setAlias('Descriptors 400', 'Alias Chain 1'))
+  t.true(GlobalFonts.setAlias('Alias Chain 1', 'Alias Chain 2'))
+  t.deepEqual(draw('bold 32px "Alias Chain 2"').pixels, declared)
+  // A loop back to a name in the chain changes nothing.
+  t.true(GlobalFonts.setAlias('Alias Chain 2', 'Alias Chain 1'))
+  t.deepEqual(draw('bold 32px "Alias Chain 1"').pixels, declared)
+  t.deepEqual(draw('bold 32px "Alias Chain 2"').pixels, declared)
+  // A loop of aliases of an auto name ends: auto.
+  t.true(GlobalFonts.setAlias('Descriptors Auto', 'Alias Loop 1'))
+  t.true(GlobalFonts.setAlias('Alias Loop 1', 'Alias Loop 2'))
+  t.true(GlobalFonts.setAlias('Alias Loop 2', 'Alias Loop 1'))
+  t.deepEqual(draw('bold 32px "Alias Loop 1", "Alias Loop 2"').pixels, draw('bold 32px "Descriptors Auto"').pixels)
+  // A rebuild (an unrelated remove) makes the faces and aliases again.
+  const key = GlobalFonts.register(Buffer.concat([robotoMono, Buffer.alloc(96)]), 'Alias Chain Removed')
+  t.truthy(key)
+  t.true(GlobalFonts.remove(key!))
+  t.deepEqual(draw('bold 32px "Alias Chain 2"').pixels, declared)
+})
+
+test('an alias keeps the face it named when its target is declared again', (t) => {
+  // Own bytes: no other name shares the registration.
+  const data = Buffer.concat([robotoMono, Buffer.alloc(64)])
+  const key400 = GlobalFonts.register(data, 'Redeclare', { weight: 400 })
+  t.truthy(key400)
+  t.true(GlobalFonts.setAlias('Redeclare', 'Redeclare Alias'))
+  const declared400 = draw('bold 32px "Descriptors 400"').pixels
+  t.deepEqual(draw('bold 32px "Redeclare Alias"').pixels, declared400)
+  // A second declaration is a face of its own (a FontKey of its own); the
+  // alias lists the face it named, whose descriptors stay {400}.
+  const key700 = GlobalFonts.register(data, 'Redeclare', { weight: 700 })
+  t.truthy(key700)
+  t.not(key700!.typefaceId, key400!.typefaceId)
+  t.deepEqual(draw('bold 32px "Redeclare Alias"').pixels, declared400)
+})
+
+// Chrome 159: FontFace(Dest, V, {weight: 400}) then FontFace(Dest, V) are
+// one {400} segment, newest first, so bold Dest is the auto face at wght
+// 700; in the reverse order the {400} face is newest (wght 400 emboldened).
+// A direct auto declaration newer than the alias wins over it.
+test('an auto declaration newer than an alias of the same face is auto', (t) => {
+  const bold400 = draw('bold 32px "Descriptors 400"').pixels
+  const bold700 = draw('bold 32px "Descriptors Auto"').pixels
+  t.notDeepEqual(bold400, bold700)
+  const data = Buffer.concat([robotoMono, Buffer.alloc(352)])
+  declare(t, data, 'Newer Source', { weight: '400' })
+  t.true(GlobalFonts.setAlias('Newer Source', 'Newer Dest'))
+  t.deepEqual(draw('bold 32px "Newer Dest"').pixels, bold400)
+  t.truthy(GlobalFonts.register(data, 'Newer Dest'))
+  t.deepEqual(draw('bold 32px "Newer Dest"').pixels, bold700)
+  t.deepEqual(draw('bold 32px "Newer Source"').pixels, bold400)
+  // The alias newer than the auto declaration takes its target's.
+  const reversed = Buffer.concat([robotoMono, Buffer.alloc(416)])
+  t.truthy(GlobalFonts.register(reversed, 'Older Dest'))
+  declare(t, reversed, 'Older Source', { weight: '400' })
+  t.deepEqual(draw('bold 32px "Older Dest"').pixels, bold700)
+  t.true(GlobalFonts.setAlias('Older Source', 'Older Dest'))
+  t.deepEqual(draw('bold 32px "Older Dest"').pixels, bold400)
+})
+
+// A direct declared {400} and an alias of an auto name are one {400}
+// segment too: the newest wins in either order (setAlias is a FontFace of
+// the alias name with the target's face and descriptors), also after a
+// rebuild.
+test('an alias newer than a declared direct entry of the same face takes its target', (t) => {
+  const bold400 = draw('bold 32px "Descriptors 400"').pixels
+  const bold700 = draw('bold 32px "Descriptors Auto"').pixels
+  const data = Buffer.concat([robotoMono, Buffer.alloc(544)])
+  declare(t, data, 'Alias Over Dest', { weight: 400 })
+  t.truthy(GlobalFonts.register(data, 'Alias Over Source'))
+  t.deepEqual(draw('bold 32px "Alias Over Dest"').pixels, bold400)
+  t.true(GlobalFonts.setAlias('Alias Over Source', 'Alias Over Dest'))
+  t.deepEqual(draw('bold 32px "Alias Over Dest"').pixels, bold700)
+  // The declared entry newer than the alias wins over it.
+  const reversed = Buffer.concat([robotoMono, Buffer.alloc(608)])
+  t.truthy(GlobalFonts.register(reversed, 'Alias Under Source'))
+  t.true(GlobalFonts.setAlias('Alias Under Source', 'Alias Under Dest'))
+  t.deepEqual(draw('bold 32px "Alias Under Dest"').pixels, bold700)
+  declare(t, reversed, 'Alias Under Dest', { weight: 400 })
+  t.deepEqual(draw('bold 32px "Alias Under Dest"').pixels, bold400)
+  // A rebuild (an unrelated remove) keeps both.
+  t.true(GlobalFonts.remove(GlobalFonts.register(Buffer.concat([robotoMono, Buffer.alloc(672)]), 'Alias Rebuild')!))
+  t.deepEqual(draw('bold 32px "Alias Over Dest"').pixels, bold700)
+  t.deepEqual(draw('bold 32px "Alias Under Dest"').pixels, bold400)
+})
+
+// Chrome 159: setAlias again is one more FontFace of the alias name, the
+// newest of its segment (FontFaceList keeps the faces in insertion order),
+// so it wins over a declaration or an alias made since the first call.
+test('a repeated setAlias is the newest declaration of the name', (t) => {
+  const bold400 = draw('bold 32px "Descriptors 400"').pixels
+  const bold700 = draw('bold 32px "Descriptors Auto"').pixels
+  const data = Buffer.concat([robotoMono, Buffer.alloc(736)])
+  t.truthy(GlobalFonts.register(data, 'Repeat Source'))
+  declare(t, data, 'Repeat Dest', { weight: 400 })
+  t.true(GlobalFonts.setAlias('Repeat Source', 'Repeat Dest'))
+  t.deepEqual(draw('bold 32px "Repeat Dest"').pixels, bold700)
+  declare(t, data, 'Repeat Dest', { weight: 400 })
+  t.deepEqual(draw('bold 32px "Repeat Dest"').pixels, bold400)
+  t.true(GlobalFonts.setAlias('Repeat Source', 'Repeat Dest'))
+  t.deepEqual(draw('bold 32px "Repeat Dest"').pixels, bold700)
+  // Alias against alias: the repeated one is the newest.
+  const other = Buffer.concat([robotoMono, Buffer.alloc(800)])
+  declare(t, other, 'Repeat A', { weight: 400 })
+  t.truthy(GlobalFonts.register(other, 'Repeat B'))
+  t.true(GlobalFonts.setAlias('Repeat A', 'Repeat X'))
+  t.deepEqual(draw('bold 32px "Repeat X"').pixels, bold400)
+  t.true(GlobalFonts.setAlias('Repeat B', 'Repeat X'))
+  t.deepEqual(draw('bold 32px "Repeat X"').pixels, bold700)
+  t.true(GlobalFonts.setAlias('Repeat A', 'Repeat X'))
+  t.deepEqual(draw('bold 32px "Repeat X"').pixels, bold400)
+  // A rebuild (an unrelated remove) keeps both.
+  t.true(GlobalFonts.remove(GlobalFonts.register(Buffer.concat([robotoMono, Buffer.alloc(864)]), 'Repeat Rebuild')!))
+  t.deepEqual(draw('bold 32px "Repeat Dest"').pixels, bold700)
+  t.deepEqual(draw('bold 32px "Repeat X"').pixels, bold400)
+})
+
+// A child process per renderer (a warm cache of its own): setAlias,
+// getVariationAxes and hasVariations look the family up after the faces
+// registered since its last lookup, as a text lookup does, so a registration
+// right before them is the newest face of the segment.
+const WARM_LOOKUP_PROBE = `
+  const { createCanvas, GlobalFonts, setTextRenderer } = require(process.env.PROBE_INDEX)
+  const { RENDERER, PROBE_FONTS } = process.env
+  setTextRenderer(RENDERER)
+  const path = (name) => PROBE_FONTS + '/' + name
+  const ctx = createCanvas(10, 10).getContext('2d')
+  const width = (font) => { ctx.font = font; return ctx.measureText('Hello World').width }
+  GlobalFonts.registerFromPath(path('Lato-Regular.ttf'), 'Warm Lato')
+  GlobalFonts.registerFromPath(path('Oswald.ttf'), 'Warm Oswald')
+  const refs = { lato: width('40px "Warm Lato"'), oswald: width('40px "Warm Oswald"') }
+  const face = (font) => { const w = width(font); return Object.keys(refs).find((k) => refs[k] === w) || String(w) }
+  const out = {}
+  GlobalFonts.registerFromPath(path('Lato-Regular.ttf'), 'Warm Brand')
+  out.warm = face('40px "Warm Brand"')
+  GlobalFonts.registerFromPath(path('Oswald.ttf'), 'Warm Brand')
+  out.alias = GlobalFonts.setAlias('Warm Brand', 'Warm Alias')
+  out.brand = face('40px "Warm Brand"')
+  out.aliased = face('40px "Warm Alias"')
+  // A rebuild (an unrelated remove) names the alias's face again.
+  out.removed = GlobalFonts.remove(GlobalFonts.registerFromPath(path('EBGaramond-Regular.ttf'), 'Warm Unrelated'))
+  out.rebuilt = face('40px "Warm Alias"')
+  GlobalFonts.registerFromPath(path('Lato-Regular.ttf'), 'Warm Variable')
+  out.static = width('40px "Warm Variable"') === refs.lato
+  GlobalFonts.registerFromPath(path('RobotoMono-VariableFont_wght.ttf'), 'Warm Variable')
+  out.hasVariations = GlobalFonts.hasVariations('Warm Variable', 400, 5, 0)
+  out.axes = GlobalFonts.getVariationAxes('Warm Variable', 400, 5, 0).map((a) => [a.tag, a.min, a.max])
+  console.log(JSON.stringify(out))`
+
+for (const renderer of ['portable', 'system'] as const) {
+  test(`setAlias and the variation queries see a registration right before them (${renderer})`, (t) => {
+    const child = spawnSync(process.execPath, ['-e', WARM_LOOKUP_PROBE], {
+      encoding: 'utf8',
+      timeout: 60_000,
+      env: {
+        ...process.env,
+        RENDERER: renderer,
+        PROBE_FONTS: join(__dirname, 'fonts'),
+        PROBE_INDEX: join(__dirname, '..', 'index.js'),
+      },
+    })
+    t.is(child.status, 0, child.stderr)
+    const wght = 0x77676874
+    t.deepEqual(JSON.parse(child.stdout), {
+      warm: 'lato',
+      alias: true,
+      brand: 'oswald',
+      aliased: 'oswald',
+      removed: true,
+      rebuilt: 'oswald',
+      static: true,
+      hasVariations: true,
+      axes: [[wght, 100, 700]],
+    })
+  })
+}
+
+// Chrome 159: each setAlias is a FontFace of the alias name with its
+// target's face and descriptors, so an alias of an auto name newer than an
+// alias of a {400} name of the same face is the newest face of their
+// segment: auto (bold is wght 700).
+test('an alias of an auto name newer than an alias of a declared name is auto', (t) => {
+  const bold400 = draw('bold 32px "Descriptors 400"').pixels
+  const bold700 = draw('bold 32px "Descriptors Auto"').pixels
+  t.notDeepEqual(bold400, bold700)
+  t.true(GlobalFonts.setAlias('Descriptors 400', 'Alias Newer Auto'))
+  t.deepEqual(draw('bold 32px "Alias Newer Auto"').pixels, bold400)
+  t.true(GlobalFonts.setAlias('Descriptors Auto', 'Alias Newer Auto'))
+  t.deepEqual(draw('bold 32px "Alias Newer Auto"').pixels, bold700)
+  // The other order: the {400} alias is the newest.
+  t.true(GlobalFonts.setAlias('Descriptors Auto', 'Alias Newer 400'))
+  t.deepEqual(draw('bold 32px "Alias Newer 400"').pixels, bold700)
+  t.true(GlobalFonts.setAlias('Descriptors 400', 'Alias Newer 400'))
+  t.deepEqual(draw('bold 32px "Alias Newer 400"').pixels, bold400)
+  // Through a chain: an alias of an alias of the auto name.
+  t.true(GlobalFonts.setAlias('Descriptors Auto', 'Alias Newer Link'))
+  t.true(GlobalFonts.setAlias('Descriptors 400', 'Alias Newer Chain'))
+  t.true(GlobalFonts.setAlias('Alias Newer Link', 'Alias Newer Chain'))
+  t.deepEqual(draw('bold 32px "Alias Newer Chain"').pixels, bold700)
+})
+
+// A child process per renderer: a rebuild (an unrelated remove) replays an
+// alias of an alias of an installed family before the register that made
+// the middle name a FontFace name; the face that name draws stays the
+// registered one (the replay's lookups leave nothing cached).
+const ALIAS_REPLAY_PROBE = `
+  const { readFileSync } = require('fs')
+  const { createCanvas, GlobalFonts, setTextRenderer } = require(process.env.PROBE_INDEX)
+  const { RENDERER, PROBE_FONTS } = process.env
+  setTextRenderer(RENDERER)
+  const font = (name) => readFileSync(PROBE_FONTS + '/' + name)
+  const ctx = createCanvas(10, 10).getContext('2d')
+  const width = (family) => {
+    ctx.font = '40px "' + family + '"'
+    return ctx.measureText('Hamburgefonstiv WWW mmm 0123').width
+  }
+  if (!GlobalFonts.has('Arial')) {
+    console.log(JSON.stringify({ skip: true }))
+    process.exit(0)
+  }
+  const lato = font('Lato-Regular.ttf')
+  GlobalFonts.register(Buffer.concat([lato, Buffer.alloc(64)]), 'Replay Lato Ref')
+  const out = { differs: width('Replay Lato Ref') !== width('Arial') }
+  GlobalFonts.setAlias('Arial', 'Replay F')
+  GlobalFonts.setAlias('Replay F', 'Replay G')
+  GlobalFonts.register(lato, 'Replay F')
+  out.widths = [width('Replay F') === width('Replay Lato Ref')]
+  GlobalFonts.remove(GlobalFonts.register(font('SourceSerifPro-Regular.ttf'), 'Replay Unrelated'))
+  out.widths.push(width('Replay F') === width('Replay Lato Ref'))
+  out.aliasArial = width('Replay G') === width('Arial')
+  console.log(JSON.stringify(out))`
+
+for (const renderer of ['portable', 'system'] as const) {
+  test(`a rebuild keeps the registered face of a name an alias chain replays (${renderer})`, (t) => {
+    const child = spawnSync(process.execPath, ['-e', ALIAS_REPLAY_PROBE], {
+      encoding: 'utf8',
+      timeout: 60_000,
+      env: {
+        ...process.env,
+        RENDERER: renderer,
+        PROBE_FONTS: join(__dirname, 'fonts'),
+        PROBE_INDEX: join(__dirname, '..', 'index.js'),
+      },
+    })
+    t.is(child.status, 0, child.stderr)
+    const out = JSON.parse(child.stdout)
+    if (out.skip) {
+      t.pass('no installed Arial')
+      return
+    }
+    t.deepEqual(out, { differs: true, widths: [true, true], aliasArial: true })
+  })
+}
+
+test('SVG text: an alias takes its target descriptors', (t) => {
+  t.true(GlobalFonts.setAlias('Descriptors 400', 'Alias SVG 400'))
+  const declared = svgPixels("'Descriptors 400'", 'Ham')
+  t.notDeepEqual(declared, svgPixels("'Descriptors Auto'", 'Ham'))
+  t.deepEqual(svgPixels("'Alias SVG 400'", 'Ham'), declared)
+  // convertSVGTextToPath: the attribute names one family (MatchNamedFamily).
+  const paths = (family: string) =>
+    convertSVGTextToPath(
+      `<svg xmlns="http://www.w3.org/2000/svg" width="200" height="60"><text x="10" y="44" font-family="${family}" font-weight="bold" font-size="32">Ham</text></svg>`,
+    )
+      .toString()
+      .match(/ d="[^"]*"/g)
+  const declaredPaths = paths('Descriptors 400')
+  t.truthy(declaredPaths)
+  t.notDeepEqual(declaredPaths, paths('Descriptors Auto'))
+  t.deepEqual(paths('Alias SVG 400'), declaredPaths)
+})
+
+// One FontKey per declaration: the same bytes registered again under a name
+// with other descriptors are a face of their own, as a second FontFace of
+// that family is (FontFaceCache::Add keeps both); the same declaration again
+// is the same face, and another name is the same registration.
+test('the same bytes declared again with other descriptors are a face of their own', (t) => {
+  // Own bytes: no other name shares the registrations.
+  const data = Buffer.concat([robotoMono, Buffer.alloc(128)])
+  const key400 = GlobalFonts.register(data, 'Twin', { weight: 400 })
+  const key700 = GlobalFonts.register(data, 'Twin', { weight: '700' })
+  t.truthy(key400)
+  t.truthy(key700)
+  t.not(key700!.typefaceId, key400!.typefaceId)
+  t.is(GlobalFonts.register(data, 'Twin', { weight: 700 })?.typefaceId, key700!.typefaceId)
+  t.is(GlobalFonts.register(data, 'twin', { weight: 400 })?.typefaceId, key400!.typefaceId)
+  // `auto` is a declaration too.
+  const keyAuto = GlobalFonts.register(data, 'Twin')
+  t.truthy(keyAuto)
+  t.not(keyAuto!.typefaceId, key400!.typefaceId)
+  t.not(keyAuto!.typefaceId, key700!.typefaceId)
+  t.is(GlobalFonts.register(data, 'Twin Other')?.typefaceId, key400!.typefaceId)
+  // Removing a declaration keeps the others.
+  t.true(GlobalFonts.remove(key700!))
+  t.true(GlobalFonts.remove(keyAuto!))
+  t.true(GlobalFonts.has('Twin'))
+  t.deepEqual(draw('32px "Twin"').pixels, draw('32px "Descriptors 400"').pixels)
+  t.deepEqual(draw('bold 32px "Twin"').pixels, draw('bold 32px "Descriptors 400"').pixels)
+  t.true(GlobalFonts.remove(key400!))
+  t.false(GlobalFonts.has('Twin'))
+  t.false(GlobalFonts.has('Twin Other'))
+})
+
+test('removing the first declaration keeps the face declared after it', (t) => {
+  const data = Buffer.concat([robotoMono, Buffer.alloc(192)])
+  const key400 = GlobalFonts.register(data, 'Twin Later', { weight: 400 })
+  const key700 = GlobalFonts.register(data, 'Twin Later', { weight: 700 })
+  t.truthy(key400)
+  t.truthy(key700)
+  t.true(GlobalFonts.remove(key400!))
+  t.true(GlobalFonts.has('Twin Later'))
+  const declared700 = draw('32px "Descriptors 700"').pixels
+  t.deepEqual(draw('32px "Twin Later"').pixels, declared700)
+  t.deepEqual(draw('bold 32px "Twin Later"').pixels, declared700)
+  t.true(GlobalFonts.remove(key700!))
+  t.false(GlobalFonts.has('Twin Later'))
+})
+
+// A child process: both declarations of one file stay faces of their own
+// across a rebuild (an unrelated remove) and a renderer switch; the face
+// listing that only names the file's own family is no declaration.
+const TWIN_PROBE = `
+  const { readFileSync } = require('fs')
+  const { createCanvas, GlobalFonts, setTextRenderer } = require(process.env.PROBE_INDEX)
+  const { RENDERER, PROBE_FONTS } = process.env
+  setTextRenderer(RENDERER)
+  const font = (name) => readFileSync(PROBE_FONTS + '/' + name)
+  const pixels = (font) => {
+    const ctx = createCanvas(420, 60).getContext('2d')
+    ctx.font = font
+    ctx.fillText('Hamburgefonts', 10, 42)
+    return Buffer.from(ctx.getImageData(0, 0, 420, 60).data).toString('base64')
+  }
+  const styles = (name) => {
+    const family = JSON.parse(GlobalFonts.getFamilies().toString()).find((f) => f.family === name)
+    return family ? family.styles.length : 0
+  }
+  const out = {}
+  // register(V, 'F') lists V under its own family too; a call with that
+  // family and descriptors is the first declaration of it.
+  const oswald = font('Oswald.ttf')
+  const guard = [GlobalFonts.register(oswald, 'Guard F'), GlobalFonts.register(oswald, undefined, { weight: 700 })]
+  out.guardSameKey = guard[0].typefaceId === guard[1].typefaceId
+  out.guardDraws700 = pixels('40px Oswald') === pixels('700 40px "Guard F"')
+  const mono = font('RobotoMono-VariableFont_wght.ttf')
+  // Own bytes: the V{700} reference.
+  GlobalFonts.register(Buffer.concat([mono, Buffer.alloc(64)]), 'Ref 700', { weight: 700 })
+  const key400 = GlobalFonts.register(mono, 'M', { weight: 400 })
+  const key700 = GlobalFonts.register(mono, 'M', { weight: 700 })
+  out.keysDiffer = key400.typefaceId !== key700.typefaceId
+  out.styles = [styles('M')]
+  GlobalFonts.remove(GlobalFonts.registerFromPath(PROBE_FONTS + '/Lato-Regular.ttf', 'Unrelated'))
+  out.styles.push(styles('M'))
+  setTextRenderer(RENDERER === 'system' ? 'portable' : 'system')
+  setTextRenderer(RENDERER)
+  out.styles.push(styles('M'))
+  // The rebuilds listed both registrations of the bytes again.
+  out.sameAgain = [
+    GlobalFonts.register(mono, 'M', { weight: 400 }).typefaceId === key400.typefaceId,
+    GlobalFonts.register(mono, 'M', { weight: 700 }).typefaceId === key700.typefaceId,
+  ]
+  out.removed400 = GlobalFonts.remove(key400)
+  out.has = [GlobalFonts.has('M')]
+  out.draws700 = pixels('40px M') === pixels('40px "Ref 700"') && pixels('bold 40px M') === pixels('40px "Ref 700"')
+  out.removed700 = GlobalFonts.remove(key700)
+  out.has.push(GlobalFonts.has('M'))
+  console.log(JSON.stringify(out))`
+
+for (const renderer of ['portable', 'system'] as const) {
+  test(`declarations of one file keep their FontKeys across a rebuild and a switch (${renderer})`, (t) => {
+    const child = spawnSync(process.execPath, ['-e', TWIN_PROBE], {
+      encoding: 'utf8',
+      timeout: 60_000,
+      env: {
+        ...process.env,
+        RENDERER: renderer,
+        PROBE_FONTS: join(__dirname, 'fonts'),
+        PROBE_INDEX: join(__dirname, '..', 'index.js'),
+      },
+    })
+    t.is(child.status, 0, child.stderr)
+    t.deepEqual(JSON.parse(child.stdout), {
+      guardSameKey: true,
+      guardDraws700: true,
+      keysDiffer: true,
+      styles: [2, 2, 2],
+      sameAgain: [true, true],
+      removed400: true,
+      has: [true, false],
+      draws700: true,
+      removed700: true,
+    })
+  })
+}
+
+// A child process: a declaration twin made and removed again and again
+// frees its face (it shares the bytes of the first declaration).
+const TWIN_MEMORY_PROBE = `
+  const { readFileSync } = require('fs')
+  const { createCanvas, GlobalFonts } = require(process.env.PROBE_INDEX)
+  const mono = readFileSync(process.env.PROBE_FONTS + '/RobotoMono-VariableFont_wght.ttf')
+  GlobalFonts.register(mono, 'Mem', { weight: 400 })
+  const ctx = createCanvas(200, 60).getContext('2d')
+  const round = async (n) => {
+    for (let i = 0; i < n; ++i) {
+      const key = GlobalFonts.register(mono, 'Mem', { weight: 700 })
+      ctx.font = 'bold 32px Mem'
+      ctx.fillText('Ham ' + i, 10, 40)
+      GlobalFonts.remove(key)
+      await new Promise(setImmediate)
+    }
+    gc()
+    return process.memoryUsage().rss / 1048576
+  }
+  ;(async () => {
+    const rss = [await round(20), await round(200)]
+    console.log(JSON.stringify({ rss, size: mono.length }))
+  })()`
+
+test('a declaration twin made and removed 200 times does not grow RSS', (t) => {
+  const child = spawnSync(process.execPath, ['--expose-gc', '-e', TWIN_MEMORY_PROBE], {
+    encoding: 'utf8',
+    timeout: 120_000,
+    env: { ...process.env, PROBE_FONTS: join(__dirname, 'fonts'), PROBE_INDEX: join(__dirname, '..', 'index.js') },
+  })
+  t.is(child.status, 0, child.stderr)
+  const { rss } = JSON.parse(child.stdout)
+  t.true(rss[1] - rss[0] < 20, `RSS MB after 20, then 200 more: ${rss.map((v: number) => v.toFixed(1)).join(', ')}`)
+})
+
+// registerFromPath takes the same descriptors as register; a declaration of
+// the same path under the same name with other descriptors is a face of its
+// own (FontFaceCache::Add keeps every FontFace of a family).
+test('registerFromPath declares the face with its descriptors', (t) => {
+  const path = join(__dirname, 'fonts', 'RobotoMono-VariableFont_wght.ttf')
+  const key = GlobalFonts.registerFromPath(path, 'Path 400', { weight: 400 })
+  t.truthy(key)
+  const bold400 = draw('bold 32px "Descriptors 400"').pixels
+  t.deepEqual(draw('bold 32px "Path 400"').pixels, bold400)
+  t.notDeepEqual(bold400, draw('bold 32px "Descriptors Auto"').pixels)
+  t.is(GlobalFonts.registerFromPath(path, 'Path Bad', { weight: 'bolder' }), null)
+  t.false(GlobalFonts.has('Path Bad'))
+  for (const [i, descriptors] of [1, 'italic'].entries()) {
+    const name = `Path Primitive ${i}`
+    t.throws(() => GlobalFonts.registerFromPath(path, name, descriptors as unknown as FontFaceDescriptors), {
+      instanceOf: TypeError,
+      message: "The provided value is not of type 'FontFaceDescriptors'.",
+    })
+    t.false(GlobalFonts.has(name))
+  }
+})
+
+test('the same path declared again with other descriptors is a face of its own', (t) => {
+  // Its own path: no other name shares the registrations.
+  const dir = mkdtempSync(join(tmpdir(), 'canvas-path-twin-'))
+  t.teardown(() => rmSync(dir, { recursive: true, force: true }))
+  const path = join(dir, 'PathTwin.ttf')
+  copyFileSync(join(__dirname, 'fonts', 'RobotoMono-VariableFont_wght.ttf'), path)
+  const key400 = GlobalFonts.registerFromPath(path, 'Path Twin', { weight: 400 })
+  const key700 = GlobalFonts.registerFromPath(path, 'Path Twin', { weight: '700' })
+  t.truthy(key400)
+  t.truthy(key700)
+  t.not(key700!.typefaceId, key400!.typefaceId)
+  t.is(GlobalFonts.registerFromPath(path, 'Path Twin', { weight: 700 })?.typefaceId, key700!.typefaceId)
+  t.is(GlobalFonts.registerFromPath(path, 'path twin', { weight: 400 })?.typefaceId, key400!.typefaceId)
+  t.is(GlobalFonts.registerFromPath(path, 'Path Twin Other')?.typefaceId, key400!.typefaceId)
+  t.true(GlobalFonts.remove(key700!))
+  t.true(GlobalFonts.has('Path Twin'))
+  t.deepEqual(draw('32px "Path Twin"').pixels, draw('32px "Descriptors 400"').pixels)
+  t.deepEqual(draw('bold 32px "Path Twin"').pixels, draw('bold 32px "Descriptors 400"').pixels)
+  t.true(GlobalFonts.remove(key400!))
+  t.false(GlobalFonts.has('Path Twin'))
+  t.false(GlobalFonts.has('Path Twin Other'))
+})
+
+// A child process: a twin of a path is made from the data of the face the
+// path keeps. A font file the portable renderer reads and the system one
+// does not (Lato with no glyf table for CoreText, a Type 1 font for
+// Fontations) is declared {400} with the portable renderer; the file is
+// replaced by Oswald, and {700} is declared for it with the system
+// renderer, which cannot make a face of the kept data: null, as the call
+// gives when the file is not replaced, and the file's new bytes are not
+// listed. Each state: "bold 40px" font ascent and descent of the name
+// against "40px" (the {400} face, emboldened).
+const REJECTED_PATH_TWIN_PROBE = `
+  const { copyFileSync, readFileSync, renameSync } = require('fs')
+  const { createCanvas, GlobalFonts, setTextRenderer } = require(process.env.PROBE_INDEX)
+  const { PROBE_FONTS } = process.env
+  const files = JSON.parse(process.env.PROBE_FILES)
+  setTextRenderer('system')
+  const rejected = files.filter((file) => GlobalFonts.register(readFileSync(file), 'Rejected Pick') === null)
+  setTextRenderer('portable')
+  const file = rejected.find((file) => GlobalFonts.register(readFileSync(file), 'Rejected Pick') !== null)
+  if (!file) {
+    console.log(JSON.stringify({ skip: true }))
+    process.exit(0)
+  }
+  const ctx = createCanvas(10, 10).getContext('2d')
+  const metrics = (font) => {
+    ctx.font = font
+    const m = ctx.measureText('AgHW')
+    return [m.fontBoundingBoxAscent, m.fontBoundingBoxDescent]
+  }
+  const states = []
+  const state = (at) => states.push({ at, regular: metrics('40px "Rejected Twin"'), bold: metrics('bold 40px "Rejected Twin"') })
+  const listed = () => GlobalFonts.families.filter((f) => f.family === 'Rejected Twin').map((f) => f.styles.length)
+  const out = { declared: GlobalFonts.registerFromPath(file, 'Rejected Twin', { weight: 400 }) !== null }
+  state('portable')
+  out.listed = [listed()]
+  setTextRenderer('system')
+  copyFileSync(PROBE_FONTS + '/Oswald.ttf', file + '.new')
+  renameSync(file + '.new', file)
+  out.twin = GlobalFonts.registerFromPath(file, 'Rejected Twin', { weight: 700 })
+  out.listed.push(listed())
+  state('system, after the call')
+  GlobalFonts.remove(GlobalFonts.register(readFileSync(PROBE_FONTS + '/EBGaramond-Regular.ttf'), 'Rejected Unrelated'))
+  state('system, after a rebuild')
+  setTextRenderer('portable')
+  state('portable, after a switch')
+  out.listed.push(listed())
+  GlobalFonts.register(readFileSync(PROBE_FONTS + '/Oswald.ttf'), 'Rejected Oswald')
+  out.oswald = metrics('bold 40px "Rejected Oswald"')
+  out.states = states
+  console.log(JSON.stringify(out))`
+
+test('a path twin the renderer cannot make from the kept data is null', (t) => {
+  const dir = mkdtempSync(join(tmpdir(), 'canvas-rejected-path-twin-'))
+  t.teardown(() => rmSync(dir, { recursive: true, force: true }))
+  const files = ['Lato-Regular.ttf', 'Roboto2-Regular.pfb'].map((name, i) => {
+    const file = join(mkdtempSync(join(dir, `${i}-`)), name)
+    const data = readFileSync(join(__dirname, 'fonts', name))
+    writeFileSync(file, name.endsWith('.ttf') ? withoutGlyf(data) : data)
+    return file
+  })
+  const child = spawnSync(process.execPath, ['-e', REJECTED_PATH_TWIN_PROBE], {
+    encoding: 'utf8',
+    timeout: 60_000,
+    env: {
+      ...process.env,
+      PROBE_FILES: JSON.stringify(files),
+      PROBE_FONTS: join(__dirname, 'fonts'),
+      PROBE_INDEX: join(__dirname, '..', 'index.js'),
+    },
+  })
+  t.is(child.status, 0, child.stderr)
+  const out = JSON.parse(child.stdout)
+  if (out.skip) {
+    t.is(process.platform, 'win32', 'the system renderer reads every test file')
+    return
+  }
+  t.true(out.declared)
+  t.is(out.twin, null)
+  t.deepEqual(out.listed, [[1], [1], [1]])
+  t.is(out.states.length, 4)
+  for (const s of out.states) {
+    t.deepEqual(s.bold, s.regular, `${s.at}: the {400} face`)
+    t.deepEqual(s.regular, out.states[0].regular, s.at)
+    t.notDeepEqual(s.bold, out.oswald, `${s.at}: not the file read again`)
+  }
+})
+
+// A child process per renderer (the spec lists Lato and Oswald): the same
+// path is not read again, so registerFromPath of a file replaced on disk
+// with no alias is the registration it has, under the family of the face it
+// keeps; the replaced file's family gets no face, so a family list moves on
+// to the next family (an unknown family alone draws a host fallback).
+const REPLACED_PATH_PROBE = `
+  const { copyFileSync, renameSync } = require('fs')
+  const { createCanvas, GlobalFonts, setTextRenderer } = require(process.env.PROBE_INDEX)
+  const { RENDERER, PROBE_FONTS, PROBE_FILE } = process.env
+  setTextRenderer(RENDERER)
+  // Roboto Mono: no tie to Lato or Oswald.
+  GlobalFonts.register(require('fs').readFileSync(PROBE_FONTS + '/RobotoMono-VariableFont_wght.ttf'), 'Probe Ref')
+  const ctx = createCanvas(10, 10).getContext('2d')
+  const width = (families) => {
+    ctx.font = '40px ' + families
+    return ctx.measureText('Hamburg').width
+  }
+  const listed = () => GlobalFonts.families.filter((f) => f.family === 'Lato' || f.family === 'Oswald').map((f) => f.family)
+  const out = {}
+  copyFileSync(PROBE_FONTS + '/Lato-Regular.ttf', PROBE_FILE)
+  const first = GlobalFonts.registerFromPath(PROBE_FILE)
+  copyFileSync(PROBE_FONTS + '/Oswald.ttf', PROBE_FILE + '.new')
+  renameSync(PROBE_FILE + '.new', PROBE_FILE)
+  out.sameKey = GlobalFonts.registerFromPath(PROBE_FILE).typefaceId === first.typefaceId
+  out.has = [GlobalFonts.has('Oswald')]
+  out.listed = listed()
+  out.oswaldIsSkipped = width('"Oswald", "Probe Ref"') === width('"Probe Ref"')
+  out.declared = GlobalFonts.registerFromPath(PROBE_FILE, undefined, { weight: '700' }) !== null
+  out.has.push(GlobalFonts.has('Oswald'))
+  out.listed.push(...listed())
+  console.log(JSON.stringify(out))`
+
+for (const renderer of ['portable', 'system'] as const) {
+  test(`registerFromPath of a replaced file gives its new family no face (${renderer})`, (t) => {
+    const dir = mkdtempSync(join(tmpdir(), 'canvas-replaced-path-'))
+    t.teardown(() => rmSync(dir, { recursive: true, force: true }))
+    const child = spawnSync(process.execPath, ['-e', REPLACED_PATH_PROBE], {
+      encoding: 'utf8',
+      timeout: 60_000,
+      env: {
+        ...process.env,
+        RENDERER: renderer,
+        PROBE_FILE: join(dir, 'Replaced.ttf'),
+        PROBE_FONTS: join(__dirname, 'fonts'),
+        PROBE_INDEX: join(__dirname, '..', 'index.js'),
+      },
+    })
+    t.is(child.status, 0, child.stderr)
+    t.deepEqual(JSON.parse(child.stdout), {
+      sameKey: true,
+      has: [false, false],
+      listed: ['Lato', 'Lato'],
+      oswaldIsSkipped: true,
+      declared: true,
+    })
+  })
+}
+
+// A child process per renderer: registerFromPath of a path registered
+// before is a FontFace added again, so its face becomes the newest of its
+// segment under the family of the face the registration keeps, whether or
+// not the file was replaced on disk since (Regular and Bold, both
+// "RMStatic" {400}: Regular draws after the call again).
+const RELIST_PATH_PROBE = `
+  const { copyFileSync, renameSync } = require('fs')
+  const { createCanvas, GlobalFonts, setTextRenderer } = require(process.env.PROBE_INDEX)
+  const { RENDERER, PROBE_FONTS, PROBE_DIR } = process.env
+  setTextRenderer(RENDERER)
+  const ctx = createCanvas(400, 60).getContext('2d')
+  // Ink: the two faces have the same advances.
+  const ink = (font) => {
+    ctx.clearRect(0, 0, 400, 60)
+    ctx.font = font
+    ctx.fillText('Hamburg', 5, 45)
+    const { data } = ctx.getImageData(0, 0, 400, 60)
+    let sum = 0
+    for (let i = 3; i < data.length; i += 4) sum += data[i]
+    return sum
+  }
+  GlobalFonts.registerFromPath(PROBE_FONTS + '/RMStatic-Regular.ttf', 'Relist Ref Regular')
+  GlobalFonts.registerFromPath(PROBE_FONTS + '/RMStatic-Bold.ttf', 'Relist Ref Bold')
+  const refs = { Regular: ink('40px "Relist Ref Regular"'), Bold: ink('40px "Relist Ref Bold"') }
+  const face = () => {
+    const value = ink('40px "RMStatic"')
+    return Object.keys(refs).find((k) => refs[k] === value) || String(value)
+  }
+  const out = {}
+  for (const replace of [false, true]) {
+    const regular = PROBE_DIR + '/Regular-' + replace + '.ttf'
+    const bold = PROBE_DIR + '/Bold-' + replace + '.ttf'
+    copyFileSync(PROBE_FONTS + '/RMStatic-Regular.ttf', regular)
+    copyFileSync(PROBE_FONTS + '/RMStatic-Bold.ttf', bold)
+    const keys = [regular, bold].map((path) => GlobalFonts.registerFromPath(path, undefined, { weight: '400' }))
+    const result = { before: face() }
+    if (replace) {
+      copyFileSync(PROBE_FONTS + '/Oswald.ttf', regular + '.new')
+      renameSync(regular + '.new', regular)
+    }
+    result.sameKey = GlobalFonts.registerFromPath(regular, undefined, { weight: '400' }).typefaceId === keys[0].typefaceId
+    result.after = face()
+    out[replace ? 'replaced' : 'unchanged'] = result
+    GlobalFonts.removeBatch(keys)
+  }
+  console.log(JSON.stringify(out))`
+
+for (const renderer of ['portable', 'system'] as const) {
+  test(`registerFromPath of a replaced file again makes its kept face the newest (${renderer})`, (t) => {
+    const dir = mkdtempSync(join(tmpdir(), 'canvas-relist-path-'))
+    t.teardown(() => rmSync(dir, { recursive: true, force: true }))
+    const child = spawnSync(process.execPath, ['-e', RELIST_PATH_PROBE], {
+      encoding: 'utf8',
+      timeout: 60_000,
+      env: {
+        ...process.env,
+        RENDERER: renderer,
+        PROBE_DIR: dir,
+        PROBE_FONTS: join(__dirname, 'fonts'),
+        PROBE_INDEX: join(__dirname, '..', 'index.js'),
+      },
+    })
+    t.is(child.status, 0, child.stderr)
+    t.deepEqual(JSON.parse(child.stdout), {
+      unchanged: { before: 'Bold', sameKey: true, after: 'Regular' },
+      replaced: { before: 'Bold', sameKey: true, after: 'Regular' },
+    })
+  })
+}
+
+// A FontFace is an object: FontFaceSet.delete of a face deleted before
+// returns false and never deletes another face. The key of a removed
+// declaration twin does not name a twin declared after it.
+test('a removed twin key does not name the next twin of the same bytes', (t) => {
+  const dir = mkdtempSync(join(tmpdir(), 'canvas-stale-twin-'))
+  t.teardown(() => rmSync(dir, { recursive: true, force: true }))
+  const path = join(dir, 'StaleTwin.ttf')
+  copyFileSync(join(__dirname, 'fonts', 'RobotoMono-VariableFont_wght.ttf'), path)
+  const data = Buffer.concat([robotoMono, Buffer.alloc(224)])
+  const styles = (name: string) => GlobalFonts.families.find((f) => f.family === name)?.styles.length ?? 0
+  const cases: [string, (descriptors: FontFaceDescriptors) => ReturnType<typeof GlobalFonts.register>][] = [
+    ['Stale Twin', (descriptors) => GlobalFonts.register(data, 'Stale Twin', descriptors)],
+    ['Stale Path Twin', (descriptors) => GlobalFonts.registerFromPath(path, 'Stale Path Twin', descriptors)],
+  ]
+  for (const [name, declareAs] of cases) {
+    const key400 = declareAs({ weight: 400 })
+    const key500 = declareAs({ weight: 500 })
+    t.truthy(key400, name)
+    t.truthy(key500, name)
+    t.true(GlobalFonts.remove(key500!), name)
+    const key700 = declareAs({ weight: 700 })
+    t.truthy(key700, name)
+    t.not(key700!.typefaceId, key500!.typefaceId, name)
+    t.is(styles(name), 2, name)
+    t.false(GlobalFonts.remove(key500!), name)
+    t.is(GlobalFonts.removeBatch([key500!]), 0, name)
+    t.is(styles(name), 2, name)
+    t.is(GlobalFonts.removeBatch([key400!, key700!]), 2, name)
+    t.false(GlobalFonts.has(name), name)
+  }
+})
+
+// Two paths whose 32-bit hashes (computePathHash, FNV-1a) are equal: the
+// key of a removed twin of one does not go to a twin of the other, so a
+// stale key removes nothing.
+test('a removed twin key does not go to a twin of another path that hashes alike', (t) => {
+  const dir = mkdtempSync(join(tmpdir(), 'canvas-path-hash-twin-'))
+  t.teardown(() => rmSync(dir, { recursive: true, force: true }))
+  const fnv = (text: string) => {
+    let hash = 2166136261
+    for (const byte of Buffer.from(text, 'utf8')) hash = Math.imul(hash ^ byte, 16777619) >>> 0
+    return hash || 1
+  }
+  const seen = new Map<number, string>()
+  let pair: [string, string] | undefined
+  for (let i = 0; !pair; ++i) {
+    const path = join(dir, `f${i.toString(36)}.ttf`)
+    const other = seen.get(fnv(path))
+    if (other) pair = [other, path]
+    seen.set(fnv(path), path)
+  }
+  const [pathA, pathB] = pair
+  copyFileSync(join(__dirname, 'fonts', 'Lato-Regular.ttf'), pathA)
+  copyFileSync(join(__dirname, 'fonts', 'Oswald.ttf'), pathB)
+  const name = 'Path Hash Twin'
+  const styles = () => GlobalFonts.families.find((f) => f.family === name)?.styles.length ?? 0
+  const firstA = GlobalFonts.registerFromPath(pathA, name)
+  const twinA = GlobalFonts.registerFromPath(pathA, name, { weight: 700 })
+  t.truthy(firstA)
+  t.truthy(twinA)
+  t.true(GlobalFonts.remove(twinA!))
+  const firstB = GlobalFonts.registerFromPath(pathB, name)
+  const twinB = GlobalFonts.registerFromPath(pathB, name, { weight: 700 })
+  t.truthy(firstB)
+  t.truthy(twinB)
+  t.not(twinB!.typefaceId, twinA!.typefaceId)
+  t.is(styles(), 3)
+  t.false(GlobalFonts.remove(twinA!))
+  t.is(styles(), 3)
+  t.is(GlobalFonts.removeBatch([firstA!, firstB!, twinB!]), 3)
+  t.false(GlobalFonts.has(name))
+})
+
+// Two declarations whose 32-bit hashes are equal (a twin key seeded from a
+// hash of its declaration would start at one key): a removed twin's key is
+// never issued again (skia_c.hpp NextTwinKey), to the other one or to the
+// same declaration made again, so a stale key removes nothing.
+test('a removed twin key does not go to a twin whose declaration hashes alike', (t) => {
+  const dir = mkdtempSync(join(tmpdir(), 'canvas-twin-collision-'))
+  t.teardown(() => rmSync(dir, { recursive: true, force: true }))
+  const path = join(dir, 'TwinCollision.ttf')
+  copyFileSync(join(__dirname, 'fonts', 'RobotoMono-VariableFont_wght.ttf'), path)
+  const data = Buffer.concat([robotoMono, Buffer.alloc(480)])
+  // computePathHash (FNV-1a) of the bytes' hash, the folded name and the
+  // descriptors.
+  const fnv = (text: string) => {
+    let hash = 2166136261
+    for (const byte of Buffer.from(text, 'latin1')) hash = Math.imul(hash ^ byte, 16777619) >>> 0
+    return hash || 1
+  }
+  const range = (min: number, max: number, auto = false) => `:${min.toFixed(6)},${max.toFixed(6)}${auto ? 'a' : ''}`
+  const seed = (contentHash: number, name: string, weight: number, angle: number) =>
+    fnv(`\x01twin:${contentHash}:${name.toLowerCase()}${range(weight, weight)}${range(angle, angle)}`)
+  const styles = (name: string) => GlobalFonts.families.find((f) => f.family === name)?.styles.length ?? 0
+  const cases: [string, (descriptors?: FontFaceDescriptors) => ReturnType<typeof GlobalFonts.register>][] = [
+    ['Twin Collision', (descriptors) => GlobalFonts.register(data, 'Twin Collision', descriptors)],
+    ['Path Twin Collision', (descriptors) => GlobalFonts.registerFromPath(path, 'Path Twin Collision', descriptors)],
+  ]
+  for (const [name, declareAs] of cases) {
+    const first = declareAs()
+    t.truthy(first, name)
+    const contentHash = first!.typefaceId
+    const seen = new Map<number, [number, number]>()
+    let pair: [[number, number], [number, number]] | undefined
+    for (let weight = 1; weight <= 1000 && !pair; ++weight) {
+      for (let quarter = -360; quarter <= 360; ++quarter) {
+        const key = seed(contentHash, name, weight, quarter / 4)
+        const other = seen.get(key)
+        if (other) {
+          pair = [other, [weight, quarter / 4]]
+          break
+        }
+        seen.set(key, [weight, quarter / 4])
+      }
+    }
+    t.truthy(pair, name)
+    const [[weightA, angleA], [weightB, angleB]] = pair!
+    const declarationA = { weight: weightA, style: `oblique ${angleA}deg` }
+    const keyA = declareAs(declarationA)
+    t.truthy(keyA, name)
+    t.true(GlobalFonts.remove(keyA!), name)
+    const keyB = declareAs({ weight: weightB, style: `oblique ${angleB}deg` })
+    t.truthy(keyB, name)
+    t.not(keyB!.typefaceId, keyA!.typefaceId, name)
+    t.is(styles(name), 2, name)
+    t.false(GlobalFonts.remove(keyA!), name)
+    t.is(GlobalFonts.removeBatch([keyA!]), 0, name)
+    t.is(styles(name), 2, name)
+    // The same declaration again is a new FontFace: a new key.
+    const againA = declareAs(declarationA)
+    t.truthy(againA, name)
+    t.not(againA!.typefaceId, keyA!.typefaceId, name)
+    t.not(againA!.typefaceId, keyB!.typefaceId, name)
+    t.false(GlobalFonts.remove(keyA!), name)
+    t.is(styles(name), 3, name)
+    t.is(GlobalFonts.removeBatch([first!, againA!, keyB!]), 3, name)
+    t.false(GlobalFonts.has(name), name)
+  }
+})
+
+// A child process (removeAll drops every font): the twin keys removeAll
+// removed are never issued again, as the key of a removed twin, so a
+// declaration that hashes alike, or the same one made again, gets another
+// key and the old one removes nothing.
+const REMOVE_ALL_TWIN_PROBE = `
+  const { readFileSync } = require('fs')
+  const { GlobalFonts } = require(process.env.PROBE_INDEX)
+  const { PROBE_FONTS, PROBE_PATH, PROBE_MODE } = process.env
+  const name = 'Remove All Twin'
+  const data = Buffer.concat([readFileSync(PROBE_FONTS + '/RobotoMono-VariableFont_wght.ttf'), Buffer.alloc(480)])
+  const declareAs = (descriptors) =>
+    PROBE_MODE === 'path'
+      ? GlobalFonts.registerFromPath(PROBE_PATH, name, descriptors)
+      : GlobalFonts.register(data, name, descriptors)
+  const fnv = (text) => {
+    let hash = 2166136261
+    for (const byte of Buffer.from(text, 'latin1')) hash = Math.imul(hash ^ byte, 16777619) >>> 0
+    return hash || 1
+  }
+  const range = (min, max) => ':' + min.toFixed(6) + ',' + max.toFixed(6)
+  const seed = (contentHash, weight, angle) =>
+    fnv('\\x01twin:' + contentHash + ':' + name.toLowerCase() + range(weight, weight) + range(angle, angle))
+  const styles = () => GlobalFonts.families.find((f) => f.family === name)?.styles.length ?? 0
+  const out = {}
+  const first = declareAs()
+  const contentHash = first.typefaceId
+  const seen = new Map()
+  let pair
+  for (let weight = 1; weight <= 1000 && !pair; ++weight) {
+    for (let quarter = -360; quarter <= 360; ++quarter) {
+      const key = seed(contentHash, weight, quarter / 4)
+      const other = seen.get(key)
+      if (other) {
+        pair = [other, [weight, quarter / 4]]
+        break
+      }
+      seen.set(key, [weight, quarter / 4])
+    }
+  }
+  const [[weightA, angleA], [weightB, angleB]] = pair
+  const declarationA = { weight: weightA, style: 'oblique ' + angleA + 'deg' }
+  const keyA = declareAs(declarationA)
+  GlobalFonts.removeAll()
+  out.firstAgain = declareAs().typefaceId === contentHash
+  const keyB = declareAs({ weight: weightB, style: 'oblique ' + angleB + 'deg' })
+  out.keysDiffer = keyB.typefaceId !== keyA.typefaceId
+  out.styles = [styles()]
+  out.removed = GlobalFonts.remove(keyA)
+  out.removedBatch = GlobalFonts.removeBatch([keyA])
+  out.styles.push(styles())
+  // The same declaration again is a new FontFace: a new key.
+  const againA = declareAs(declarationA)
+  out.newAgain = againA.typefaceId !== keyA.typefaceId && againA.typefaceId !== keyB.typefaceId
+  out.removedAgain = GlobalFonts.remove(keyA)
+  out.styles.push(styles())
+  console.log(JSON.stringify(out))`
+
+for (const mode of ['buffer', 'path'] as const) {
+  test(`a twin key removeAll removed does not go to a twin whose declaration hashes alike (${mode})`, (t) => {
+    const dir = mkdtempSync(join(tmpdir(), 'canvas-remove-all-twin-'))
+    t.teardown(() => rmSync(dir, { recursive: true, force: true }))
+    const path = join(dir, 'RemoveAllTwin.ttf')
+    copyFileSync(join(__dirname, 'fonts', 'RobotoMono-VariableFont_wght.ttf'), path)
+    const child = spawnSync(process.execPath, ['-e', REMOVE_ALL_TWIN_PROBE], {
+      encoding: 'utf8',
+      timeout: 60_000,
+      env: {
+        ...process.env,
+        PROBE_MODE: mode,
+        PROBE_PATH: path,
+        PROBE_FONTS: join(__dirname, 'fonts'),
+        PROBE_INDEX: join(__dirname, '..', 'index.js'),
+      },
+    })
+    t.is(child.status, 0, child.stderr)
+    t.deepEqual(JSON.parse(child.stdout), {
+      firstAgain: true,
+      keysDiffer: true,
+      styles: [2, 2, 3],
+      removed: false,
+      removedBatch: 0,
+      newAgain: true,
+      removedAgain: false,
+    })
+  })
+}
+
+// A child process: a file loadFontsFromDir loaded is an installed font and
+// takes no descriptors, so registerFromPath of it with descriptors makes a
+// twin (one more face of its family); without them it is the installed
+// registration, as before. Path twins keep their FontKeys across a rebuild
+// (an unrelated remove) and a renderer switch.
+const PATH_TWIN_PROBE = `
+  const { GlobalFonts, setTextRenderer } = require(process.env.PROBE_INDEX)
+  const { RENDERER, PROBE_DIR, PROBE_TWIN, PROBE_FONTS } = process.env
+  setTextRenderer(RENDERER)
+  const styles = (name) => {
+    const family = JSON.parse(GlobalFonts.getFamilies().toString()).find((f) => f.family === name)
+    return family ? family.styles.length : 0
+  }
+  const out = {}
+  // The separator loadFontsFromDir's walk gives (\\ on Windows): path
+  // registrations dedup by the path string.
+  const preloaded = require('path').join(PROBE_DIR, 'RobotoMono-VariableFont_wght.ttf')
+  out.loaded = GlobalFonts.loadFontsFromDir(PROBE_DIR)
+  const before = styles('Roboto Mono')
+  const plain = GlobalFonts.registerFromPath(preloaded)
+  out.plainStyles = styles('Roboto Mono') - before
+  const twin = GlobalFonts.registerFromPath(preloaded, undefined, { weight: 400 })
+  out.twinStyles = styles('Roboto Mono') - before
+  out.twinKey = twin !== null && twin.typefaceId !== plain.typefaceId
+  out.twinAgain = GlobalFonts.registerFromPath(preloaded, undefined, { weight: 400 }).typefaceId === twin.typefaceId
+  out.plainAgain = GlobalFonts.registerFromPath(preloaded).typefaceId === plain.typefaceId
+  const path = PROBE_TWIN
+  const key400 = GlobalFonts.registerFromPath(path, 'PT', { weight: 400 })
+  const key700 = GlobalFonts.registerFromPath(path, 'PT', { weight: 700 })
+  out.keysDiffer = key400.typefaceId !== key700.typefaceId
+  out.styles = [styles('PT')]
+  GlobalFonts.remove(GlobalFonts.registerFromPath(PROBE_FONTS + '/Lato-Regular.ttf', 'Unrelated'))
+  out.styles.push(styles('PT'))
+  setTextRenderer(RENDERER === 'system' ? 'portable' : 'system')
+  setTextRenderer(RENDERER)
+  out.styles.push(styles('PT'))
+  out.sameAgain = [
+    GlobalFonts.registerFromPath(path, 'PT', { weight: 400 }).typefaceId === key400.typefaceId,
+    GlobalFonts.registerFromPath(path, 'PT', { weight: 700 }).typefaceId === key700.typefaceId,
+    GlobalFonts.registerFromPath(preloaded, undefined, { weight: 400 }).typefaceId === twin.typefaceId,
+  ]
+  out.removedTwin = GlobalFonts.remove(twin)
+  out.afterRemove = styles('Roboto Mono') - before
+  console.log(JSON.stringify(out))`
+
+for (const renderer of ['portable', 'system'] as const) {
+  test(`registerFromPath of a preloaded file with descriptors makes a twin (${renderer})`, (t) => {
+    const dir = mkdtempSync(join(tmpdir(), 'canvas-path-descriptors-'))
+    const twinDir = mkdtempSync(join(tmpdir(), 'canvas-path-twin-'))
+    t.teardown(() => {
+      rmSync(dir, { recursive: true, force: true })
+      rmSync(twinDir, { recursive: true, force: true })
+    })
+    const mono = join(__dirname, 'fonts', 'RobotoMono-VariableFont_wght.ttf')
+    copyFileSync(mono, join(dir, 'RobotoMono-VariableFont_wght.ttf'))
+    // Another family: the twin's count stays its own.
+    copyFileSync(join(__dirname, 'fonts', 'Oswald.ttf'), join(twinDir, 'PathTwin.ttf'))
+    const child = spawnSync(process.execPath, ['-e', PATH_TWIN_PROBE], {
+      encoding: 'utf8',
+      timeout: 60_000,
+      env: {
+        ...process.env,
+        RENDERER: renderer,
+        PROBE_DIR: dir,
+        PROBE_TWIN: join(twinDir, 'PathTwin.ttf'),
+        PROBE_FONTS: join(__dirname, 'fonts'),
+        PROBE_INDEX: join(__dirname, '..', 'index.js'),
+      },
+    })
+    t.is(child.status, 0, child.stderr)
+    t.deepEqual(JSON.parse(child.stdout), {
+      loaded: 1,
+      plainStyles: 0,
+      twinStyles: 1,
+      twinKey: true,
+      twinAgain: true,
+      plainAgain: true,
+      keysDiffer: true,
+      styles: [2, 2, 2],
+      sameAgain: [true, true, true],
+      removedTwin: true,
+      afterRemove: 0,
+    })
+  })
+}
+
+// A child process: a face a register / registerFromPath call gave the name
+// of a family loadFontsFromDir loaded is a FontFace of that name. Chrome
+// asks FontFaceCache first for a non-generic name and the font cache only
+// when it has no face (CSSFontSelector::GetFontData), so the explicit name
+// draws the registered face alone, with its descriptors, whatever installed
+// faces the family has; after remove the installed faces draw again. The
+// own family a call with another alias lists the face under is no FontFace
+// (FontFaceCache keeps a face in the one family it was given), so it does
+// not shadow the installed faces.
+const CALL_NAME_PROBE = `
+  const { readFileSync } = require('fs')
+  const { createCanvas, GlobalFonts, setTextRenderer } = require(process.env.PROBE_INDEX)
+  const { RENDERER, PROBE_DIR, PROBE_FONTS } = process.env
+  setTextRenderer(RENDERER)
+  const font = (name) => readFileSync(PROBE_FONTS + '/' + name)
+  const pixels = (font) => {
+    const ctx = createCanvas(420, 60).getContext('2d')
+    ctx.font = font
+    ctx.fillText('Hamburgefonts', 10, 42)
+    return Buffer.from(ctx.getImageData(0, 0, 420, 60).data).toString('base64')
+  }
+  const out = { loaded: GlobalFonts.loadFontsFromDir(PROBE_DIR) }
+  const MONO = 'bold 32px "Roboto Mono"'
+  const installedMono = pixels(MONO)
+  const installedStatic = pixels('40px RMStatic')
+  const mono = font('RobotoMono-VariableFont_wght.ttf')
+  const bold = font('RMStatic-Bold.ttf')
+  const states = {}
+  // register(sameBytes, undefined, {weight: 400}).
+  let key = GlobalFonts.register(mono, undefined, { weight: 400 })
+  states.buffer = pixels(MONO)
+  out.removed = [GlobalFonts.remove(key)]
+  out.bufferAfter = pixels(MONO) === installedMono
+  // registerFromPath(sameFile, undefined, {weight: 400}): its twin.
+  key = GlobalFonts.registerFromPath(PROBE_DIR + '/RobotoMono-VariableFont_wght.ttf', undefined, { weight: 400 })
+  states.path = pixels(MONO)
+  out.removed.push(GlobalFonts.remove(key))
+  out.pathAfter = pixels(MONO) === installedMono
+  // No descriptors: the Bold file of the family, no alias.
+  key = GlobalFonts.register(bold)
+  states.plain = pixels('40px RMStatic')
+  states.plainBold = pixels('bold 40px RMStatic')
+  // ... across a rebuild (an unrelated remove) and a renderer switch.
+  GlobalFonts.remove(GlobalFonts.register(font('Lato-Regular.ttf'), 'Unrelated'))
+  setTextRenderer(RENDERER === 'system' ? 'portable' : 'system')
+  setTextRenderer(RENDERER)
+  states.plainRebuilt = pixels('40px RMStatic')
+  out.removed.push(GlobalFonts.remove(key))
+  out.plainAfter = pixels('40px RMStatic') === installedStatic
+  // Guard: the Bold file under another name.
+  key = GlobalFonts.register(bold, 'Brand')
+  out.guard = pixels('40px RMStatic') === installedStatic
+  const brand = pixels('40px Brand')
+  const brandBold = pixels('bold 40px Brand')
+  out.removed.push(GlobalFonts.remove(key))
+  // References: the same faces under a name no installed font has.
+  GlobalFonts.register(mono, 'Ref 400', { weight: 400 })
+  const ref400 = pixels('bold 32px "Ref 400"')
+  out.refs = [ref400 !== installedMono, brand !== installedStatic]
+  out.buffer = states.buffer === ref400
+  out.path = states.path === ref400
+  out.plain = [states.plain === brand, states.plainBold === brandBold, states.plainRebuilt === brand]
+  console.log(JSON.stringify(out))`
+
+for (const renderer of ['portable', 'system'] as const) {
+  test(`a registered face is a FontFace of the installed family name its call gave (${renderer})`, (t) => {
+    const dir = mkdtempSync(join(tmpdir(), 'canvas-call-name-'))
+    t.teardown(() => rmSync(dir, { recursive: true, force: true }))
+    copyFileSync(
+      join(__dirname, 'fonts', 'RobotoMono-VariableFont_wght.ttf'),
+      join(dir, 'RobotoMono-VariableFont_wght.ttf'),
+    )
+    copyFileSync(join(__dirname, 'fonts', 'RMStatic-Regular.ttf'), join(dir, 'RMStatic-Regular.ttf'))
+    const child = spawnSync(process.execPath, ['-e', CALL_NAME_PROBE], {
+      encoding: 'utf8',
+      timeout: 60_000,
+      env: {
+        ...process.env,
+        RENDERER: renderer,
+        PROBE_DIR: dir,
+        PROBE_FONTS: join(__dirname, 'fonts'),
+        PROBE_INDEX: join(__dirname, '..', 'index.js'),
+      },
+    })
+    t.is(child.status, 0, child.stderr)
+    t.deepEqual(JSON.parse(child.stdout), {
+      loaded: 2,
+      removed: [true, true, true, true],
+      bufferAfter: true,
+      pathAfter: true,
+      plainAfter: true,
+      guard: true,
+      refs: [true, true],
+      // bold "Roboto Mono" is the {400} FontFace drawn bold, not wght 700.
+      buffer: true,
+      path: true,
+      // "RMStatic" is the Bold FontFace for every request.
+      plain: [true, true, true],
+    })
+  })
+}
+
+// A family that declares descriptors chooses its faces by them, as Blink's
+// FontFaceCache does: a face's capabilities are its descriptors (`auto` the
+// normal value, never the file's style), faces with the same ones are one
+// CSSSegmentedFontFace (newest first), and the request takes the nearest
+// (FontSelectionAlgorithm). RMStatic: the static wght 400 / 700 instances of
+// Roboto Mono.
+const rmRegular = font('RMStatic-Regular.ttf')
+const rmBold = font('RMStatic-Bold.ttf')
+GlobalFonts.register(rmRegular, 'Cap Ref Regular')
+GlobalFonts.register(rmRegular, 'Cap Ref R700', { weight: 700 })
+GlobalFonts.register(rmBold, 'Cap Ref Bold')
+
+test('declared weights choose the face, not the file', (t) => {
+  declare(t, rmRegular, 'Cap Swapped', { weight: 700 })
+  declare(t, rmBold, 'Cap Swapped', { weight: 400 })
+  const regular = draw('32px "Cap Ref Regular"').pixels
+  t.notDeepEqual(regular, draw('bold 32px "Cap Ref Regular"').pixels)
+  t.deepEqual(draw('32px "Cap Swapped"').pixels, draw('32px "Cap Ref Bold"').pixels)
+  // Declared 700: not emboldened.
+  t.deepEqual(draw('bold 32px "Cap Swapped"').pixels, regular)
+})
+
+test('auto and 400 are one segment, newest face first', (t) => {
+  declare(t, rmRegular, 'Cap 400 Auto', { weight: 400 })
+  t.truthy(GlobalFonts.register(rmBold, 'Cap 400 Auto'))
+  const boldFile = draw('32px "Cap Ref Bold"').pixels
+  t.deepEqual(draw('32px "Cap 400 Auto"').pixels, boldFile)
+  t.deepEqual(draw('bold 32px "Cap 400 Auto"').pixels, boldFile)
+  t.truthy(GlobalFonts.register(rmBold, 'Cap Auto 400'))
+  declare(t, rmRegular, 'Cap Auto 400', { weight: 400 })
+  // The Regular face, emboldened: the segment's maximum is under 600.
+  t.deepEqual(draw('bold 32px "Cap Auto 400"').pixels, draw('bold 32px "Cap Ref Regular"').pixels)
+})
+
+test('one buffer declared twice draws each declaration for its weight', (t) => {
+  const v400 = draw('32px "Descriptors 400"').pixels
+  const v700 = draw('32px "Descriptors 700"').pixels
+  const first = Buffer.concat([robotoMono, Buffer.alloc(256)])
+  declare(t, first, 'Cap Twin', { weight: 400 })
+  declare(t, first, 'Cap Twin', { weight: 700 })
+  const second = Buffer.concat([robotoMono, Buffer.alloc(320)])
+  declare(t, second, 'Cap Twin Reversed', { weight: 700 })
+  declare(t, second, 'Cap Twin Reversed', { weight: 400 })
+  for (const name of ['Cap Twin', 'Cap Twin Reversed']) {
+    t.deepEqual(draw(`32px "${name}"`).pixels, v400, name)
+    t.deepEqual(draw(`bold 32px "${name}"`).pixels, v700, name)
+  }
+})
+
+test('a character the matched segment lacks comes from the next family', (t) => {
+  // The {700} face has the Greek, the {400} one not: Blink's fallback walks
+  // the matched segment's faces only, then the next family.
+  declare(t, robotoMono, 'Cap Segment', { weight: 700 })
+  declare(t, font('Lato-Regular.ttf'), 'Cap Segment', { weight: 400 })
+  t.deepEqual(
+    draw('32px "Cap Segment", "Descriptors Auto"', GREEK).pixels,
+    draw('32px "Descriptors Auto"', GREEK).pixels,
+  )
+  t.deepEqual(draw('32px "Cap Segment"').pixels, draw('32px "Descriptors Lato"').pixels)
+})
+
+test('an older face of the matched segment draws what the newest lacks', (t) => {
+  // Both declared 400: one segment, whatever the files' weights.
+  declare(t, rmBold, 'Cap Older', { weight: 400 })
+  declare(t, font('Lato-Regular.ttf'), 'Cap Older', { weight: 400 })
+  t.deepEqual(draw('32px "Cap Older"', GREEK).pixels, draw('32px "Cap Ref Bold"', GREEK).pixels)
+  t.deepEqual(draw('32px "Cap Older"').pixels, draw('32px "Descriptors Lato"').pixels)
+})
+
+test('SVG text: a declared family chooses its faces like canvas text', (t) => {
+  // svgPixels draws font-weight bold: the face declared 700.
+  t.deepEqual(svgPixels("'Cap Swapped'", 'Ham'), svgPixels("'Cap Ref R700'", 'Ham'))
+  t.notDeepEqual(svgPixels("'Cap Swapped'", 'Ham'), svgPixels("'Cap Ref Bold'", 'Ham'))
+})
+
+test('measureText follows the face the descriptors choose', (t) => {
+  declare(t, font('Oswald.ttf'), 'Cap Width', { weight: 400 })
+  declare(t, font('Lato-Regular.ttf'), 'Cap Width', { weight: 700 })
+  const ctx = createCanvas(10, 10).getContext('2d')
+  const width = (font: string) => {
+    ctx.font = font
+    return ctx.measureText('Hamburgefonts').width
+  }
+  t.not(width('32px "Descriptors Oswald"'), width('32px "Descriptors Lato"'))
+  t.is(width('32px "Cap Width"'), width('32px "Descriptors Oswald"'))
+  t.is(width('bold 32px "Cap Width"'), width('32px "Descriptors Lato"'))
+})
+
+// The request weight is a FontSelectionValue (quarter steps, truncated), not
+// an integer: FontSelectionAlgorithm::WeightDistance. Chrome 159, FontFace
+// R{400} + B{400.5}: 400.4 and 400.25 draw B, 400.2 R; R{599.6} + B{600}:
+// 599.7 R, 599.9 B.
+test('a fractional request weight matches in quarter steps', (t) => {
+  declare(t, rmRegular, 'Cap Fraction', { weight: 400 })
+  declare(t, rmBold, 'Cap Fraction', { weight: '400.5' })
+  declare(t, rmRegular, 'Cap Fraction 600', { weight: '599.6' })
+  declare(t, rmBold, 'Cap Fraction 600', { weight: 600 })
+  const rows: [string, string, boolean][] = [
+    ['400.4', 'Cap Fraction', true],
+    ['400.25', 'Cap Fraction', true],
+    ['400.2', 'Cap Fraction', false],
+    ['400', 'Cap Fraction', false],
+    ['599.7', 'Cap Fraction 600', false],
+    ['599.9', 'Cap Fraction 600', true],
+  ]
+  for (const [weight, family, bold] of rows) {
+    const ref = bold ? 'Cap Ref Bold' : 'Cap Ref Regular'
+    t.deepEqual(
+      draw(`${weight} 32px "${family}"`).pixels,
+      draw(`${weight} 32px "${ref}"`).pixels,
+      `${weight} ${family}`,
+    )
+  }
+  // An older face of the segment the quarter weight matches.
+  declare(t, rmRegular, 'Cap Fraction Older', { weight: 400 })
+  declare(t, rmBold, 'Cap Fraction Older', { weight: '400.5' })
+  declare(t, font('Lato-Regular.ttf'), 'Cap Fraction Older', { weight: '400.5' })
+  t.deepEqual(draw('400.4 32px "Cap Fraction Older"', GREEK).pixels, draw('400.4 32px "Cap Ref Bold"', GREEK).pixels)
+  t.deepEqual(draw('400.4 32px "Cap Fraction Older"').pixels, draw('400.4 32px "Descriptors Lato"').pixels)
+  // font-size-adjust sizes the face the quarter weight matches.
+  declare(t, rmRegular, 'Cap Fraction Lato', { weight: 400 })
+  declare(t, font('Lato-Regular.ttf'), 'Cap Fraction Lato', { weight: '400.5' })
+  const adjusted = (family: string) => {
+    const ctx = createCanvas(420, 60).getContext('2d')
+    ctx.font = `400.4 32px ${family}, "Descriptors Oswald"`
+    ctx.fontSizeAdjust = '0.5'
+    ctx.fillText(`Ham${DIGRAPHS}`, 10, 42)
+    return Buffer.from(ctx.getImageData(0, 0, 420, 60).data)
+  }
+  t.deepEqual(adjusted('"Cap Fraction Lato"'), adjusted('"Descriptors Lato"'))
+})
+
+// The request slope is the font-style angle (FontSelectionRequest from
+// ConvertFontStyle), not 14deg for every oblique: StyleDistance. Chrome 159,
+// FontFace U {style: normal} + A {oblique 2deg 6deg} + B {oblique 12deg
+// 18deg}, each face found by its width, in a child process per renderer.
+const OBLIQUE_ANGLE_PROBE = `
+  const { readFileSync } = require('fs')
+  const { createCanvas, GlobalFonts, setTextRenderer } = require(process.env.PROBE_INDEX)
+  const { RENDERER, PROBE_FONTS } = process.env
+  setTextRenderer(RENDERER)
+  const font = (name) => readFileSync(PROBE_FONTS + '/' + name)
+  const [u, a, b] = ['RMStatic-Regular.ttf', 'Lato-Regular.ttf', 'Oswald.ttf'].map(font)
+  GlobalFonts.register(u, 'Angle Three', { style: 'normal' })
+  GlobalFonts.register(a, 'Angle Three', { style: 'oblique 2deg 6deg' })
+  GlobalFonts.register(b, 'Angle Three', { style: 'oblique 12deg 18deg' })
+  GlobalFonts.register(a, 'Angle Two', { style: 'oblique 2deg 6deg' })
+  GlobalFonts.register(b, 'Angle Two', { style: 'oblique 12deg 18deg' })
+  GlobalFonts.register(u, 'Angle U')
+  GlobalFonts.register(a, 'Angle A')
+  GlobalFonts.register(b, 'Angle B')
+  const ctx = createCanvas(10, 10).getContext('2d')
+  const width = (font) => { ctx.font = font; return ctx.measureText('Hamburgefonts').width }
+  const refs = { U: width('32px "Angle U"'), A: width('32px "Angle A"'), B: width('32px "Angle B"') }
+  const face = (font) => { const w = width(font); return Object.keys(refs).find((k) => refs[k] === w) || String(w) }
+  const STYLES = JSON.parse(process.env.STYLES)
+  const out = {}
+  for (const family of ['Angle Three', 'Angle Two']) {
+    out[family] = Object.fromEntries(STYLES.map((s) => [s, face(s + ' 32px "' + family + '"')]))
+  }
+  // A warm cache, other angles in turn.
+  out.warm = JSON.parse(process.env.WARM).map((s) => face(s + ' 32px "Angle Three"'))
+  console.log(JSON.stringify(out))`
+
+const OBLIQUE_CHROME: Record<string, [string, string]> = {
+  normal: ['U', 'A'],
+  'oblique 4deg': ['A', 'A'],
+  'oblique 8deg': ['A', 'A'],
+  'oblique 10deg': ['A', 'A'],
+  'oblique 11deg': ['A', 'A'],
+  'oblique 13deg': ['B', 'B'],
+  'oblique 15deg': ['B', 'B'],
+  italic: ['B', 'B'],
+  oblique: ['B', 'B'],
+  'oblique -4deg': ['U', 'A'],
+}
+const OBLIQUE_WARM: [string, string][] = [
+  ['oblique 4deg', 'A'],
+  ['oblique 15deg', 'B'],
+  ['oblique 4deg', 'A'],
+  ['italic', 'B'],
+  ['oblique 10deg', 'A'],
+  ['oblique -4deg', 'U'],
+]
+
+for (const renderer of ['portable', 'system'] as const) {
+  test(`an oblique request angle chooses the face (${renderer})`, (t) => {
+    const child = spawnSync(process.execPath, ['-e', OBLIQUE_ANGLE_PROBE], {
+      encoding: 'utf8',
+      timeout: 60_000,
+      env: {
+        ...process.env,
+        RENDERER: renderer,
+        PROBE_FONTS: join(__dirname, 'fonts'),
+        PROBE_INDEX: join(__dirname, '..', 'index.js'),
+        STYLES: JSON.stringify(Object.keys(OBLIQUE_CHROME)),
+        WARM: JSON.stringify(OBLIQUE_WARM.map(([style]) => style)),
+      },
+    })
+    t.is(child.status, 0, child.stderr)
+    t.deepEqual(JSON.parse(child.stdout), {
+      'Angle Three': Object.fromEntries(Object.entries(OBLIQUE_CHROME).map(([s, [three]]) => [s, three])),
+      'Angle Two': Object.fromEntries(Object.entries(OBLIQUE_CHROME).map(([s, [, two]]) => [s, two])),
+      warm: OBLIQUE_WARM.map(([, face]) => face),
+    })
+  })
+}
+
+// A computed oblique angle under -90deg (a literal is limited by its
+// written number, calc() not at all: IsAngleWithinLimits) is a request
+// slope too: Chrome 159 draws the declared {style: normal} face for each,
+// never the next family.
+const OBLIQUE_RANGE_PROBE = `
+  const { readFileSync } = require('fs')
+  const { createCanvas, GlobalFonts, setTextRenderer } = require(process.env.PROBE_INDEX)
+  const { RENDERER, PROBE_FONTS } = process.env
+  setTextRenderer(RENDERER)
+  const font = (name) => readFileSync(PROBE_FONTS + '/' + name)
+  GlobalFonts.register(font('Lato-Regular.ttf'), 'Angle Range', { style: 'normal' })
+  GlobalFonts.register(font('Oswald.ttf'), 'Angle Range Next')
+  const ctx = createCanvas(10, 10).getContext('2d')
+  const width = (font) => { ctx.font = font; return ctx.measureText('Hamburgefonts').width }
+  const refs = { declared: width('40px "Angle Range"'), next: width('40px "Angle Range Next"') }
+  const face = (font) => { const w = width(font); return Object.keys(refs).find((k) => refs[k] === w) || String(w) }
+  const STYLES = JSON.parse(process.env.STYLES)
+  console.log(JSON.stringify(Object.fromEntries(STYLES.map((s) => [s, face(s + ' 40px "Angle Range", "Angle Range Next"')]))))`
+
+const OBLIQUE_RANGE_STYLES = [
+  'oblique -2rad',
+  'oblique calc(-100deg)',
+  'oblique calc(-90.25deg)',
+  'oblique -1turn',
+  // FontSelectionValue saturates there (int16 quarters).
+  'oblique calc(-8192deg)',
+  'oblique -90deg',
+  'oblique 2rad',
+]
+
+for (const renderer of ['portable', 'system'] as const) {
+  test(`an oblique angle under -90deg keeps the declared family (${renderer})`, (t) => {
+    const child = spawnSync(process.execPath, ['-e', OBLIQUE_RANGE_PROBE], {
+      encoding: 'utf8',
+      timeout: 60_000,
+      env: {
+        ...process.env,
+        RENDERER: renderer,
+        PROBE_FONTS: join(__dirname, 'fonts'),
+        PROBE_INDEX: join(__dirname, '..', 'index.js'),
+        STYLES: JSON.stringify(OBLIQUE_RANGE_STYLES),
+      },
+    })
+    t.is(child.status, 0, child.stderr)
+    t.deepEqual(JSON.parse(child.stdout), Object.fromEntries(OBLIQUE_RANGE_STYLES.map((s) => [s, 'declared'])))
+  })
+}
+
+// A child process (its own caches): each distinct quarter weight and
+// oblique angle is a tagged family name (AtRequest), kept in the provider's
+// tagged sets and FontCollection's caches even when each picks the same
+// static face. Past a budget of distinct tags they are dropped after the
+// layout, as the font argument lists are, and the faces stay the same.
+const REQUEST_TAGS_PROBE = `
+  const { readFileSync } = require('fs')
+  const { createCanvas, GlobalFonts, setTextRenderer } = require(process.env.PROBE_INDEX)
+  const { RENDERER, PROBE_FONTS } = process.env
+  setTextRenderer(RENDERER)
+  GlobalFonts.register(readFileSync(PROBE_FONTS + '/RMStatic-Regular.ttf'), 'Guard Tags', { weight: 400 })
+  const ctx = createCanvas(10, 10).getContext('2d')
+  const fontAt = (i) => 'oblique ' + ((i % 40) + 1) + 'deg ' + (100.25 + i) + ' 32px "Guard Tags"'
+  const width = (i) => { ctx.font = fontAt(i); return ctx.measureText('Hamburgefonts').width }
+  const counters = () => { ctx.font = fontAt(0); return JSON.parse(ctx.__debugTextLine('Counters')) }
+  ;(async () => {
+    const first = []
+    for (let i = 0; i < 10; ++i) first.push(width(i))
+    let most = 0
+    for (let i = 0; i < 600; ++i) {
+      width(i)
+      if (i % 100 === 99) {
+        most = Math.max(most, counters().splitFamilies)
+        await new Promise(setImmediate)
+      }
+    }
+    const again = []
+    for (let i = 0; i < 10; ++i) again.push(width(i))
+    console.log(JSON.stringify({ most, same: JSON.stringify(first) === JSON.stringify(again) }))
+  })()`
+
+for (const renderer of ['portable', 'system'] as const) {
+  test(`distinct request weights and angles keep a bounded number of tagged sets (${renderer})`, (t) => {
+    const child = spawnSync(process.execPath, ['-e', REQUEST_TAGS_PROBE], {
+      encoding: 'utf8',
+      timeout: 120_000,
+      env: {
+        ...process.env,
+        RENDERER: renderer,
+        PROBE_FONTS: join(__dirname, 'fonts'),
+        PROBE_INDEX: join(__dirname, '..', 'index.js'),
+      },
+    })
+    t.is(child.status, 0, child.stderr)
+    const out = JSON.parse(child.stdout)
+    t.true(out.most > 0, `most ${out.most}`)
+    t.true(out.most <= 300, `most ${out.most}`)
+    t.true(out.same)
+  })
+}
+
+function svgWeightPixels(family: string, weight: string) {
+  const img = new Image()
+  img.src = Buffer.from(
+    `<svg xmlns="http://www.w3.org/2000/svg" width="200" height="60"><text x="10" y="44" font-family="${family}" font-weight="${weight}" font-size="32">Ham</text></svg>`,
+  )
+  const ctx = createCanvas(200, 60).getContext('2d')
+  ctx.drawImage(img, 0, 0)
+  return Buffer.from(ctx.getImageData(0, 0, 60, 60).data)
+}
+
+// SVG text's Font is canvas text's (LayoutSVGInlineText::
+// ComputeNewScaledFontForStyle): the computed weight, not SkSVG's 100s.
+// Chrome 159, SVG @font-face R{400} + B{420}: 420 and 449 draw B.
+test('SVG text: a declared family matches the computed font-weight', (t) => {
+  declare(t, rmRegular, 'Cap SVG Weight', { weight: 400 })
+  declare(t, rmBold, 'Cap SVG Weight', { weight: 420 })
+  for (const weight of ['420', '449']) {
+    const bold = svgWeightPixels("'Cap Ref Bold'", weight)
+    t.notDeepEqual(bold, svgWeightPixels("'Cap Ref Regular'", weight), weight)
+    t.deepEqual(svgWeightPixels("'Cap SVG Weight'", weight), bold, weight)
+  }
+  // Quarter steps, as canvas text.
+  declare(t, rmRegular, 'Cap Fraction SVG', { weight: 400 })
+  declare(t, rmBold, 'Cap Fraction SVG', { weight: '400.5' })
+  for (const [weight, ref] of [
+    ['400.4', 'Cap Ref Bold'],
+    ['400.2', 'Cap Ref Regular'],
+  ]) {
+    t.deepEqual(svgWeightPixels("'Cap Fraction SVG'", weight), svgWeightPixels(`'${ref}'`, weight), weight)
+  }
+})
+
+// A child process (no other face of RMStatic listed): the own family a call
+// with another alias lists the face under is no FontFace of a declared
+// family either (FontFaceCache::SegmentedFacesByFamily::AddFontFace keys a
+// face by its FontFace's family): Chrome 159, FontFace('Brand', Regular) +
+// FontFace('RMStatic', Bold, {weight: '700'}): "40px RMStatic" is Bold.
+const IMPLICIT_LISTING_PROBE = `
+  const { readFileSync } = require('fs')
+  const { createCanvas, GlobalFonts, setTextRenderer } = require(process.env.PROBE_INDEX)
+  const { RENDERER, PROBE_FONTS } = process.env
+  setTextRenderer(RENDERER)
+  const font = (name) => readFileSync(PROBE_FONTS + '/' + name)
+  const pixels = (font) => {
+    const ctx = createCanvas(420, 60).getContext('2d')
+    ctx.font = font
+    ctx.fillText('Hamburgefonts', 10, 42)
+    return Buffer.from(ctx.getImageData(0, 0, 420, 60).data).toString('base64')
+  }
+  const regular = font('RMStatic-Regular.ttf')
+  const bold = font('RMStatic-Bold.ttf')
+  GlobalFonts.register(regular, 'Brand')
+  GlobalFonts.register(bold, undefined, { weight: 700 })
+  const drawn = [pixels('40px RMStatic'), pixels('bold 40px RMStatic'), pixels('40px Brand')]
+  // References, registered after the draws: the same faces under names of
+  // their own.
+  GlobalFonts.register(regular, 'Ref Regular')
+  GlobalFonts.register(bold, 'Ref Bold')
+  const refs = [pixels('40px "Ref Regular"'), pixels('40px "Ref Bold"')]
+  console.log(JSON.stringify({
+    refs: refs[0] !== refs[1],
+    normal: drawn[0] === refs[1],
+    bold: drawn[1] === refs[1],
+    brand: drawn[2] === refs[0],
+  }))`
+
+for (const renderer of ['portable', 'system'] as const) {
+  test(`a declared family has no face its name only lists implicitly (${renderer})`, (t) => {
+    const child = spawnSync(process.execPath, ['-e', IMPLICIT_LISTING_PROBE], {
+      encoding: 'utf8',
+      timeout: 60_000,
+      env: {
+        ...process.env,
+        RENDERER: renderer,
+        PROBE_FONTS: join(__dirname, 'fonts'),
+        PROBE_INDEX: join(__dirname, '..', 'index.js'),
+      },
+    })
+    t.is(child.status, 0, child.stderr)
+    // "RMStatic" has one FontFace, Bold {700}; the Regular file is a Brand one.
+    t.deepEqual(JSON.parse(child.stdout), { refs: true, normal: true, bold: true, brand: true })
+  })
+}
+
+// A child process: two declared faces under the name of a family
+// loadFontsFromDir loaded are FontFaces of that name ("\x01w\x01"): they
+// choose by their descriptors, across a rebuild and a renderer switch; after
+// remove the installed face draws again.
+const INSTALLED_NAME_PROBE = `
+  const { readFileSync } = require('fs')
+  const { createCanvas, GlobalFonts, setTextRenderer } = require(process.env.PROBE_INDEX)
+  const { RENDERER, PROBE_DIR, PROBE_FONTS } = process.env
+  setTextRenderer(RENDERER)
+  const font = (name) => readFileSync(PROBE_FONTS + '/' + name)
+  const pixels = (font) => {
+    const ctx = createCanvas(420, 60).getContext('2d')
+    ctx.font = font
+    ctx.fillText('Hamburgefonts', 10, 42)
+    return Buffer.from(ctx.getImageData(0, 0, 420, 60).data).toString('base64')
+  }
+  const out = { loaded: GlobalFonts.loadFontsFromDir(PROBE_DIR) }
+  const installed = pixels('40px RMStatic')
+  const regular = font('RMStatic-Regular.ttf')
+  const bold = font('RMStatic-Bold.ttf')
+  const keys = [
+    GlobalFonts.register(regular, 'RMStatic', { weight: 700 }),
+    GlobalFonts.register(bold, 'RMStatic', { weight: 400 }),
+  ]
+  const states = [[pixels('40px RMStatic'), pixels('bold 40px RMStatic')]]
+  GlobalFonts.remove(GlobalFonts.register(font('Lato-Regular.ttf'), 'Unrelated'))
+  setTextRenderer(RENDERER === 'system' ? 'portable' : 'system')
+  setTextRenderer(RENDERER)
+  states.push([pixels('40px RMStatic'), pixels('bold 40px RMStatic')])
+  out.removed = keys.map((key) => GlobalFonts.remove(key))
+  out.after = pixels('40px RMStatic') === installed
+  // References under names no installed font has.
+  GlobalFonts.register(regular, 'Ref Regular')
+  GlobalFonts.register(bold, 'Ref Bold')
+  const refs = [pixels('40px "Ref Bold"'), pixels('40px "Ref Regular"')]
+  out.refs = refs[0] !== installed && refs[1] === installed
+  out.states = states.map(([normal, boldText]) => [normal === refs[0], boldText === refs[1]])
+  console.log(JSON.stringify(out))`
+
+for (const renderer of ['portable', 'system'] as const) {
+  test(`declared faces under an installed family name choose by their descriptors (${renderer})`, (t) => {
+    const dir = mkdtempSync(join(tmpdir(), 'canvas-installed-name-'))
+    t.teardown(() => rmSync(dir, { recursive: true, force: true }))
+    copyFileSync(join(__dirname, 'fonts', 'RMStatic-Regular.ttf'), join(dir, 'RMStatic-Regular.ttf'))
+    const child = spawnSync(process.execPath, ['-e', INSTALLED_NAME_PROBE], {
+      encoding: 'utf8',
+      timeout: 60_000,
+      env: {
+        ...process.env,
+        RENDERER: renderer,
+        PROBE_DIR: dir,
+        PROBE_FONTS: join(__dirname, 'fonts'),
+        PROBE_INDEX: join(__dirname, '..', 'index.js'),
+      },
+    })
+    t.is(child.status, 0, child.stderr)
+    t.deepEqual(JSON.parse(child.stdout), {
+      loaded: 1,
+      removed: [true, true],
+      after: true,
+      refs: true,
+      // normal: the Bold file declared 400; bold: the Regular file declared 700.
+      states: [
+        [true, true],
+        [true, true],
+      ],
+    })
+  })
+}
+
+// Faces registered with no descriptors are FontFaces with `auto`
+// capabilities, the normal values (font_face.cc), so a family of them is one
+// CSSSegmentedFontFace and its newest face draws every request
+// (css_segmented_font_face.cc ForEachReverse), made bold or italic when the
+// segment's maximum is under the request and the file is not
+// (FontCustomPlatformData: !isBold(), !isItalic()). Installed fonts are no
+// FontFaces and keep their files' styles. A child process per mode: each
+// "order request" names the one-face family that draws the same pixels.
+// Chrome 159, FontFace(..., {weight, style, stretch: 'auto'}), canvas and
+// inline SVG text: the same table (impl/step7/chrome-step7.json).
+const AUTO_FAMILY_PROBE = `
+  const { copyFileSync, readFileSync } = require('fs')
+  const { convertSVGTextToPath, createCanvas, GlobalFonts, Image, setTextRenderer } = require(process.env.PROBE_INDEX)
+  const { RENDERER, PROBE_DIR, PROBE_FONTS, PROBE_MODE } = process.env
+  setTextRenderer(RENDERER)
+  const FILES = { R: 'RMStatic-Regular.ttf', B: 'RMStatic-Bold.ttf', I: 'RMStatic-Italic.ttf', BI: 'RMStatic-BoldItalic.ttf', L: 'Lato-Regular.ttf' }
+  const REQUESTS = { n: '', b: 'bold ', i: 'italic ', bi: 'italic bold ' }
+  const path = (file) => PROBE_FONTS + '/' + FILES[file]
+  const data = (file) => readFileSync(path(file))
+  const ctx = createCanvas(420, 60).getContext('2d')
+  const pixels = (font, text = 'Hamburgefonts', adjust = 'none') => {
+    ctx.clearRect(0, 0, 420, 60)
+    ctx.font = font
+    ctx.fontSizeAdjust = adjust
+    ctx.fillText(text, 10, 42)
+    return Buffer.from(ctx.getImageData(0, 0, 420, 60).data).toString('base64')
+  }
+  const svg = (family, weight) => {
+    const img = new Image()
+    img.src = Buffer.from('<svg xmlns="http://www.w3.org/2000/svg" width="300" height="60"><text x="10" y="44" font-family="' + family + '" font-weight="' + weight + '" font-size="32">Hamburgefonts</text></svg>')
+    const c = createCanvas(300, 60).getContext('2d')
+    c.drawImage(img, 0, 0)
+    return Buffer.from(c.getImageData(0, 0, 300, 60).data).toString('base64')
+  }
+  const svgPath = (family) => convertSVGTextToPath(Buffer.from('<svg xmlns="http://www.w3.org/2000/svg" width="300" height="60"><text x="10" y="44" font-family="' + family + '" font-size="32">Ham</text></svg>')).toString().replace(/font-family="[^"]*"/g, '')
+  const width = (font) => {
+    ctx.font = font
+    return ctx.measureText('Hamburgefonts').width
+  }
+  // Draws first, references after: a reference names its file's own family
+  // too, implicitly (no FontFace, but a face of the plain family).
+  const drawn = {}
+  const draw = (id, family, files = ['R', 'B', 'I', 'BI']) => {
+    for (const [k, r] of Object.entries(REQUESTS)) {
+      drawn[id + ' ' + k] = { pixels: pixels(r + '40px ' + family), files, request: r }
+    }
+  }
+  const out = {}
+  if (PROBE_MODE === 'web') {
+    for (const order of ['R,B', 'B,R', 'R,B,I,BI', 'BI,I,B,R', 'R,B,BI,I', 'R,I', 'BI,B']) {
+      const family = 'F ' + order.replaceAll(',', '-')
+      for (const file of order.split(',')) GlobalFonts.register(data(file), family)
+      draw(order, '"' + family + '"')
+    }
+    // registerFromPath with an alias, and an alias of the family.
+    GlobalFonts.registerFromPath(path('R'), 'P R-B')
+    GlobalFonts.registerFromPath(path('B'), 'P R-B')
+    draw('path R,B', '"P R-B"')
+    GlobalFonts.setAlias('F R-B', 'Alias R-B')
+    draw('alias R,B', '"Alias R-B"')
+    GlobalFonts.register(data('B'), 'F B-L')
+    GlobalFonts.register(data('L'), 'F B-L')
+    const greek = pixels('40px "F B-L"', 'ΑΒΓΔ')
+    const latin = pixels('40px "F B-L"')
+    const adjusted = pixels('bold 40px "F B-L"', 'Hamburgefonts', '0.5')
+    const widths = [width('40px "F B-L"'), width('bold 40px "F B-L"')]
+    const svgs = ['normal', 'bold'].map((weight) => svg('F B-L', weight))
+    const svgRB = ['normal', 'bold'].map((weight) => svg('F R-B', weight))
+    const paths = [svgPath('F R-B'), svgPath('Alias R-B')]
+    out.descriptorLookups = JSON.parse(ctx.__debugTextLine('Ham')).descriptorLookups
+    for (const file of Object.keys(FILES)) GlobalFonts.register(data(file), 'Ref ' + file)
+    out.greek = greek === pixels('40px "Ref B"', 'ΑΒΓΔ')
+    out.latin = latin === pixels('40px "Ref L"')
+    out.adjusted = adjusted === pixels('bold 40px "Ref L"', 'Hamburgefonts', '0.5')
+    out.widths = [widths[0] === width('40px "Ref L"'), widths[1] === width('bold 40px "Ref L"'), widths[1] !== width('bold 40px "Ref B"')]
+    out.svg = svgs.map((s, i) => s === svg('Ref L', ['normal', 'bold'][i]))
+    out.svgRB = svgRB.map((s, i) => s === svg('Ref B', ['normal', 'bold'][i]))
+    out.paths = paths.map((p) => p === svgPath('Ref B'))
+  } else if (PROBE_MODE === 'own') {
+    // No alias: the files' own family, "RMStatic".
+    GlobalFonts.registerFromPath(path('R'))
+    GlobalFonts.registerFromPath(path('B'))
+    draw('own path R,B', 'RMStatic')
+    GlobalFonts.register(data('I'))
+    GlobalFonts.register(data('BI'))
+    draw('own R,B,I,BI', 'RMStatic')
+  } else {
+    // Installed: the files' styles.
+    for (const file of ['R', 'B', 'I', 'BI']) copyFileSync(path(file), PROBE_DIR + '/' + FILES[file])
+    out.loaded = GlobalFonts.loadFontsFromDir(PROBE_DIR)
+    draw('installed', 'RMStatic')
+  }
+  const refs = {}
+  for (const file of ['R', 'B', 'I', 'BI']) GlobalFonts.register(data(file), 'Ref ' + file)
+  for (const [id, { pixels: p, files, request }] of Object.entries(drawn)) {
+    out[id] = files.filter((file) => p === pixels(request + '40px "Ref ' + file + '"')).join('|')
+  }
+  console.log(JSON.stringify(out))`
+
+function autoFamilyProbe(t: import('ava').ExecutionContext, renderer: string, mode: string) {
+  const dir = mkdtempSync(join(tmpdir(), 'canvas-auto-family-'))
+  t.teardown(() => rmSync(dir, { recursive: true, force: true }))
+  const child = spawnSync(process.execPath, ['-e', AUTO_FAMILY_PROBE], {
+    encoding: 'utf8',
+    timeout: 60_000,
+    env: {
+      ...process.env,
+      RENDERER: renderer,
+      PROBE_DIR: dir,
+      PROBE_MODE: mode,
+      PROBE_FONTS: join(__dirname, 'fonts'),
+      PROBE_INDEX: join(__dirname, '..', 'index.js'),
+    },
+  })
+  t.is(child.status, 0, child.stderr)
+  return JSON.parse(child.stdout)
+}
+
+// Every request draws `file` (made bold or italic as that face alone is).
+const allDraw = (id: string, file: string) =>
+  Object.fromEntries(['n', 'b', 'i', 'bi'].map((request) => [`${id} ${request}`, file]))
+
+for (const renderer of ['portable', 'system'] as const) {
+  test(`faces with no descriptors: the newest face draws every request (${renderer})`, (t) => {
+    t.deepEqual(autoFamilyProbe(t, renderer, 'web'), {
+      ...allDraw('R,B', 'B'),
+      ...allDraw('B,R', 'R'),
+      ...allDraw('R,B,I,BI', 'BI'),
+      ...allDraw('BI,I,B,R', 'R'),
+      ...allDraw('R,B,BI,I', 'I'),
+      ...allDraw('R,I', 'I'),
+      ...allDraw('BI,B', 'B'),
+      ...allDraw('path R,B', 'B'),
+      ...allDraw('alias R,B', 'B'),
+      // B then Lato: the older face of the segment draws the Greek Lato
+      // lacks; measureText, font-size-adjust and SVG text take Lato.
+      greek: true,
+      latin: true,
+      adjusted: true,
+      widths: [true, true, true],
+      svg: [true, true],
+      svgRB: [true, true],
+      paths: [true, true],
+      // One segment of auto faces: no descriptor lookup.
+      descriptorLookups: 0,
+    })
+  })
+
+  test(`faces with no descriptors under their own family name: the newest draws (${renderer})`, (t) => {
+    t.deepEqual(autoFamilyProbe(t, renderer, 'own'), {
+      ...allDraw('own path R,B', 'B'),
+      ...allDraw('own R,B,I,BI', 'BI'),
+    })
+  })
+
+  test(`installed faces keep their files' styles (${renderer})`, (t) => {
+    t.deepEqual(autoFamilyProbe(t, renderer, 'installed'), {
+      loaded: 4,
+      'installed n': 'R',
+      'installed b': 'B',
+      'installed i': 'I',
+      'installed bi': 'BI',
+    })
+  })
+}
+
+// FontVariableItalicAxis (ResolveVariations, font_custom_platform_data.cc):
+// on a registered face with an ital axis, the `italic` keyword draws ital 1,
+// slnt at the axis default and no synthetic italic, before the declared
+// slope; any other style draws ital 0, not the axis default; the request's
+// variations win. FontStyleTest-ital: ital 0..1; FontStyleTest-slnt_ital:
+// slnt -15..0, ital 0..1 (default 0.5). Chrome 159 draws each pair alike
+// (one FontFace per draw: its CacheKey has no StyleSyntax).
+const italFont = font('FontStyleTest-ital-VF.woff2')
+const slntItalFont = font('FontStyleTest-slnt_ital-VF.woff2')
+GlobalFonts.register(italFont, 'Ital Auto')
+GlobalFonts.register(italFont, 'Ital 700', { weight: 700 })
+GlobalFonts.register(slntItalFont, 'Slnt Ital Auto')
+GlobalFonts.register(slntItalFont, 'Slnt Ital Normal', { style: 'normal' })
+GlobalFonts.register(slntItalFont, 'Slnt Ital Italic', { style: 'italic' })
+
+const ITAL_TEXT = 'varfont Hamb'
+type ItalDraw = [font: string, variations?: string]
+const ITAL_1: ItalDraw = ['40px "Ital Auto"', '"ital" 1']
+const SLNT_ITAL_0_SLANTED: ItalDraw = ['40px "Slnt Ital Auto"', '"ital" 0, "slnt" -14']
+const SLNT_ITAL_1: ItalDraw = ['40px "Slnt Ital Auto"', '"ital" 1, "slnt" 0']
+// [title, drawn, reference]: equal pixels and widths.
+const ITAL_CASES: [string, ItalDraw, ItalDraw][] = [
+  ['italic is ital 1, unskewed', ['italic 40px "Ital Auto"'], ITAL_1],
+  ['the request variations set ital last', ['italic 40px "Ital Auto"', '"ital" 0'], ['40px "Ital Auto"']],
+  ['oblique is ital 0 (not the default) at the slnt', ['oblique 40px "Slnt Ital Auto"'], SLNT_ITAL_0_SLANTED],
+  ['italic sets slnt to the axis default', ['italic 40px "Slnt Ital Auto"'], SLNT_ITAL_1],
+  ['declared normal: italic is still ital 1, unskewed', ['italic 40px "Slnt Ital Normal"'], SLNT_ITAL_1],
+  ['declared italic: a normal request is ital 0 at the slope', ['40px "Slnt Ital Italic"'], SLNT_ITAL_0_SLANTED],
+  ['declared 700: bold italic is ital 1, not emboldened', ['bold italic 40px "Ital 700"'], ITAL_1],
+]
+
+function drawItal([font, variations]: ItalDraw) {
+  const { pixels } = draw(font, ITAL_TEXT, variations)
+  const ctx = createCanvas(10, 10).getContext('2d')
+  ctx.font = font
+  ctx.fontVariationSettings = variations || 'normal'
+  return { pixels, width: ctx.measureText(ITAL_TEXT).width }
+}
+
+for (const [title, drawn, reference] of ITAL_CASES) {
+  test(`ital axis: ${title}`, (t) => {
+    const ref = drawItal(reference)
+    const got = drawItal(drawn)
+    t.deepEqual(got.pixels, ref.pixels)
+    t.is(got.width, ref.width)
+  })
+}
+
+test('ital axis: italic and oblique differ', (t) => {
+  t.notDeepEqual(drawItal(['italic 40px "Ital Auto"']).pixels, drawItal(['oblique 40px "Ital Auto"']).pixels)
+})
+
+// A child process per renderer: the cases above, and an installed face with
+// an ital axis (loadFontsFromDir) that gets no ital coordinate (FontCache
+// sets none): italic stays the skewed default instance, as oblique.
+const ITAL_PROBE = `
+  const { readFileSync } = require('fs')
+  const { createCanvas, GlobalFonts, setTextRenderer } = require(process.env.PROBE_INDEX)
+  const { RENDERER, PROBE_DIR, PROBE_FONTS, ITAL_CASES, ITAL_TEXT } = process.env
+  setTextRenderer(RENDERER)
+  const font = (name) => readFileSync(PROBE_FONTS + '/' + name)
+  const pixels = ([font, variations]) => {
+    const ctx = createCanvas(420, 60).getContext('2d')
+    ctx.font = font
+    ctx.fontVariationSettings = variations || 'normal'
+    ctx.fillText(ITAL_TEXT, 10, 42)
+    return Buffer.from(ctx.getImageData(0, 0, 420, 60).data).toString('base64')
+  }
+  const out = { loaded: GlobalFonts.loadFontsFromDir(PROBE_DIR) }
+  const installedItalic = pixels(['italic 40px FontStyleTest'])
+  out.installed = [
+    installedItalic === pixels(['oblique 40px FontStyleTest']),
+    installedItalic !== pixels(['40px FontStyleTest']),
+  ]
+  const ital = font('FontStyleTest-ital-VF.woff2')
+  const keys = [GlobalFonts.register(ital, 'Ital Auto'), GlobalFonts.register(ital, 'Ital 700', { weight: 700 })]
+  // The same file registered: its name draws ital 1, the installed family
+  // keeps the installed face. (Before the slnt_ital file, whose family is
+  // also FontStyleTest.)
+  out.registered = pixels(['italic 40px "Ital Auto"']) !== installedItalic
+  out.installedAfter = pixels(['italic 40px FontStyleTest']) === installedItalic
+  const slntItal = font('FontStyleTest-slnt_ital-VF.woff2')
+  keys.push(
+    GlobalFonts.register(slntItal, 'Slnt Ital Auto'),
+    GlobalFonts.register(slntItal, 'Slnt Ital Normal', { style: 'normal' }),
+    GlobalFonts.register(slntItal, 'Slnt Ital Italic', { style: 'italic' }),
+  )
+  out.keys = keys.every((key) => key !== null)
+  out.cases = JSON.parse(ITAL_CASES).map(([, drawn, reference]) => pixels(drawn) === pixels(reference))
+  console.log(JSON.stringify(out))`
+
+for (const renderer of ['portable', 'system'] as const) {
+  test(`ital axis: registered faces only (${renderer})`, (t) => {
+    const dir = mkdtempSync(join(tmpdir(), 'canvas-ital-'))
+    t.teardown(() => rmSync(dir, { recursive: true, force: true }))
+    copyFileSync(join(__dirname, 'fonts', 'FontStyleTest-ital-VF.woff2'), join(dir, 'FontStyleTest-ital-VF.woff2'))
+    const child = spawnSync(process.execPath, ['-e', ITAL_PROBE], {
+      encoding: 'utf8',
+      timeout: 60_000,
+      env: {
+        ...process.env,
+        RENDERER: renderer,
+        PROBE_DIR: dir,
+        PROBE_FONTS: join(__dirname, 'fonts'),
+        PROBE_INDEX: join(__dirname, '..', 'index.js'),
+        ITAL_CASES: JSON.stringify(ITAL_CASES),
+        ITAL_TEXT,
+      },
+    })
+    t.is(child.status, 0, child.stderr)
+    t.deepEqual(JSON.parse(child.stdout), {
+      loaded: 1,
+      installed: [true, true],
+      keys: true,
+      cases: ITAL_CASES.map(() => true),
+      registered: true,
+      installedAfter: true,
+    })
+  })
+}
+
+// SVG text draws the instances canvas text draws: Blink makes SVG text's Font
+// from the same FontDescription and font selector
+// (LayoutSVGInlineText::ComputeNewScaledFontForStyle), so ResolveVariations
+// runs for it: wght, slnt and ital from the style, opsz at the font-size, a
+// declared face's own coordinates, the request's for a fallback run and for
+// an installed face. Chrome 159 (an SVG image with @font-face) draws bold
+// RobotoMono as wght 700 and 300 as wght 300, italic ScienceGothic as slnt
+// -10 (= oblique), italic FontStyleTest-ital as ital 1 (not oblique),
+// Newsreader at font-size 32 as opsz 32, and declared {weight: 400} 300 as
+// normal. Each case is drawn per glyph at fixed x, as SVG text and as canvas
+// text, in a child process per renderer: the convertSVGTextToPath outlines
+// against the SVG canvas export of canvas text (both renderers), and the
+// pixels with the system renderer, which draws SVG text with canvas text's
+// draw font.
+const SVG_VARIATIONS_PROBE = `
+  const { readFileSync } = require('fs')
+  const { createHash } = require('crypto')
+  const { convertSVGTextToPath, createCanvas, GlobalFonts, Image, Path2D, setTextRenderer, SvgExportFlag } =
+    require(process.env.PROBE_INDEX)
+  const { RENDERER, PROBE_DIR, PROBE_FONTS } = process.env
+  setTextRenderer(RENDERER)
+  const font = (name) => readFileSync(PROBE_FONTS + '/' + name)
+  const out = { loaded: GlobalFonts.loadFontsFromDir(PROBE_DIR), keys: [] }
+  const mono = font('RobotoMono-VariableFont_wght.ttf')
+  out.keys.push(
+    GlobalFonts.register(mono, 'SV Rm'),
+    GlobalFonts.register(mono, 'SV Rm 400', { weight: 400 }),
+    GlobalFonts.register(font('Oswald.ttf'), 'SV Oswald'),
+    GlobalFonts.register(font('ScienceGothic-VariableFont.ttf'), 'SV Sg'),
+    GlobalFonts.register(font('FontStyleTest-ital-VF.woff2'), 'SV It'),
+    GlobalFonts.register(font('Newsreader-opsz-only.ttf'), 'SV Nw'),
+  )
+  const XS = [4, 40.5, 77.25, 113.75]
+  const W = 160
+  const ATTRS = { n: ['normal', 400], b: ['normal', 700], w300: ['normal', 300], i: ['italic', 400], o: ['oblique', 400] }
+  const CASES = JSON.parse(process.env.SVG_CASES)
+  const svgOf = (family, s, text, head = '') =>
+    head + '<svg xmlns="http://www.w3.org/2000/svg" width="' + W + '" height="60"><text x="' +
+    XS.slice(0, [...text].length).join(' ') + '" y="44" font-family="' + family + '" font-size="32" font-style="' +
+    ATTRS[s][0] + '" font-weight="' + ATTRS[s][1] + '">' + text + '</text></svg>'
+  const cssOf = (family, s) =>
+    ATTRS[s][0] + ' ' + ATTRS[s][1] + ' 32px ' + family.split(',').map((f) => '"' + f.trim().replace(/'/g, '') + '"').join(', ')
+  const sha1 = (data) => createHash('sha1').update(data).digest('hex')
+  const svgPixels = (svg) => {
+    const img = new Image()
+    img.src = Buffer.from(svg)
+    const ctx = createCanvas(W, 60).getContext('2d')
+    ctx.drawImage(img, 0, 0)
+    return ctx.getImageData(0, 0, W, 60).data
+  }
+  const canvasText = (ctx, family, s, text) => {
+    ctx.font = cssOf(family, s)
+    ;[...text].forEach((ch, k) => ctx.fillText(ch, XS[k], 44))
+  }
+  const canvasPixels = (family, s, text) => {
+    const ctx = createCanvas(W, 60).getContext('2d')
+    canvasText(ctx, family, s, text)
+    return ctx.getImageData(0, 0, W, 60).data
+  }
+  const bounds = (xml) => {
+    let b = [Infinity, Infinity, -Infinity, -Infinity]
+    for (const m of xml.matchAll(/<path([^>]*)>/g)) {
+      const d = (m[1].match(/ d="([^"]*)"/) || [])[1]
+      if (!d) continue
+      const t = (m[1].match(/translate\\(([-\\d.e]+)[ ,]+([-\\d.e]+)\\)/) || [0, 0, 0]).slice(1).map(Number)
+      const p = new Path2D(d).computeTightBounds()
+      b = [Math.min(b[0], p[0] + t[0]), Math.min(b[1], p[1] + t[1]), Math.max(b[2], p[2] + t[0]), Math.max(b[3], p[3] + t[1])]
+    }
+    return b.map((v) => Math.round(v * 1000) / 1000)
+  }
+  const canvasPaths = (family, s, text) => {
+    const canvas = createCanvas(W, 60, SvgExportFlag.ConvertTextToPaths)
+    canvasText(canvas.getContext('2d'), family, s, text)
+    return bounds(canvas.getContent().toString())
+  }
+  const alphaDiff = (a, b) => {
+    let n = 0
+    for (let i = 3; i < a.length; i += 4) if (a[i] !== b[i]) n++
+    return n
+  }
+  out.sha = {}
+  out.oracle = {}
+  out.paths = {}
+  for (const [id, family, s, text] of CASES) {
+    const svg = svgOf(family, s, text)
+    out.sha[id] = sha1(svgPixels(svg))
+    out.oracle[id] = alphaDiff(svgPixels(svg), canvasPixels(family, s, text))
+    out.paths[id] = { svg: bounds(convertSVGTextToPath(svg).toString()), canvas: canvasPaths(family, s, text) }
+  }
+  // A document only SkSVG reads (Latin-1): its font-family is one name
+  // (MatchNamedFamily).
+  const latin1 = svgOf('SV Rm', 'b', 'Hag', '<?xml version="1.0" encoding="ISO-8859-1"?><!-- \\xe9 -->')
+  out.named = bounds(convertSVGTextToPath(Buffer.from(latin1, 'latin1')).toString())
+  // The instances' font arguments count toward the caches' budget, and the
+  // drop runs after the render: a line laid out before is cold again.
+  const ctx = createCanvas(10, 10).getContext('2d')
+  ctx.font = '32px "SV Rm"'
+  const requests = () => JSON.parse(ctx.__debugTextLine('Budget line')).requestInstanceFaces
+  const cold = requests()
+  const warm = requests()
+  let sizes = ''
+  for (let i = 0; i < 300; ++i) sizes += '<text x="0" y="' + (i + 10) + '" font-family="SV Nw" font-size="' + (10 + i / 4) + '">H</text>'
+  const many = new Image()
+  many.src = Buffer.from('<svg xmlns="http://www.w3.org/2000/svg" width="40" height="320">' + sizes + '</svg>')
+  createCanvas(40, 320).getContext('2d').drawImage(many, 0, 0)
+  out.budget = { warm: warm - cold, after: requests() - warm }
+  console.log(JSON.stringify(out))`
+
+// [id, font-family, style, text]. SkSVG's Primitive shaper applies no GSUB,
+// so the texts leave out the glyphs these fonts swap by their axes (rvrn:
+// FontStyleTest's and ScienceGothic's 'a').
+const SVG_CASES: [string, string, string, string][] = [
+  ['rm.n', 'SV Rm', 'n', 'Hag'],
+  ['rm.b', 'SV Rm', 'b', 'Hag'],
+  ['rm.w300', 'SV Rm', 'w300', 'Hag'],
+  ['rm400.n', "'SV Rm 400'", 'n', 'Hag'],
+  ['rm400.w300', "'SV Rm 400'", 'w300', 'Hag'],
+  ['rm400.b', "'SV Rm 400'", 'b', 'Hag'],
+  ['sg.n', 'SV Sg', 'n', 'Hbg'],
+  ['sg.i', 'SV Sg', 'i', 'Hbg'],
+  ['sg.o', 'SV Sg', 'o', 'Hbg'],
+  ['sg.b', 'SV Sg', 'b', 'Hbg'],
+  ['it.i', 'SV It', 'i', 'opst'],
+  ['it.o', 'SV It', 'o', 'opst'],
+  ['nw.n', 'SV Nw', 'n', 'Hag'],
+  ['oswald.b', 'SV Oswald', 'b', 'Hbg'],
+  // Roboto Mono has no digraphs: the Oswald run, at the request's wght, as
+  // Oswald alone draws them. (Canvas text decomposes them: Oswald's ccmp.)
+  ['fallback.n', "'SV Rm', 'SV Oswald'", 'n', 'ǅǄ'],
+  ['fallback.b', "'SV Rm', 'SV Oswald'", 'b', 'ǅǄ'],
+  ['oswald.dg.n', 'SV Oswald', 'n', 'ǅǄ'],
+  ['oswald.dg.b', 'SV Oswald', 'b', 'ǅǄ'],
+  // loadFontsFromDir: an installed variable face takes the request's wght.
+  ['installed.b', 'Roboto Mono', 'b', 'Hag'],
+]
+
+interface SvgVariations {
+  loaded: number
+  keys: (string | null)[]
+  sha: Record<string, string>
+  oracle: Record<string, number>
+  paths: Record<string, { svg: number[]; canvas: number[] }>
+  named: number[]
+  budget: { warm: number; after: number }
+}
+
+const svgVariations = new Map<string, SvgVariations>()
+function svgVariationsOf(renderer: string): SvgVariations {
+  if (!svgVariations.has(renderer)) {
+    const dir = mkdtempSync(join(tmpdir(), 'canvas-svg-variations-'))
+    try {
+      copyFileSync(
+        join(__dirname, 'fonts', 'RobotoMono-VariableFont_wght.ttf'),
+        join(dir, 'RobotoMono-VariableFont_wght.ttf'),
+      )
+      const child = spawnSync(process.execPath, ['-e', SVG_VARIATIONS_PROBE], {
+        encoding: 'utf8',
+        timeout: 60_000,
+        env: {
+          ...process.env,
+          RENDERER: renderer,
+          PROBE_DIR: dir,
+          PROBE_FONTS: join(__dirname, 'fonts'),
+          PROBE_INDEX: join(__dirname, '..', 'index.js'),
+          SVG_CASES: JSON.stringify(SVG_CASES),
+        },
+      })
+      if (child.status !== 0) throw new Error(child.stderr)
+      svgVariations.set(renderer, JSON.parse(child.stdout))
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  }
+  return svgVariations.get(renderer)!
+}
+
+for (const renderer of ['portable', 'system'] as const) {
+  test(`SVG text: wght, slnt, ital and opsz as canvas text (${renderer})`, (t) => {
+    const { loaded, keys, sha, paths } = svgVariationsOf(renderer)
+    t.is(loaded, 1)
+    t.true(
+      keys.every((key) => key !== null),
+      `keys ${keys}`,
+    )
+    // Synthetic bold outlines differ in width between the two exports
+    // (svg-synthetic-style.spec.ts), so rm400.b is checked by pixels only.
+    for (const [id] of SVG_CASES.filter(([id]) => id !== 'rm400.b')) {
+      const { svg, canvas } = paths[id]
+      t.true(
+        svg.every((v, k) => Math.abs(v - canvas[k]) < 0.01),
+        `${id} outlines ${JSON.stringify(svg)} vs ${JSON.stringify(canvas)}`,
+      )
+    }
+    t.not(sha['rm.b'], sha['rm.n'])
+    t.not(sha['rm.w300'], sha['rm.n'])
+    // Declared 400: 300 clamps to 400.
+    t.is(sha['rm400.w300'], sha['rm400.n'])
+    t.not(sha['sg.i'], sha['sg.n'])
+    t.is(sha['sg.o'], sha['sg.i'])
+    t.not(sha['sg.b'], sha['sg.n'])
+    t.not(sha['it.i'], sha['it.o'])
+    t.not(sha['fallback.b'], sha['fallback.n'])
+    t.is(sha['fallback.n'], sha['oswald.dg.n'])
+    t.is(sha['fallback.b'], sha['oswald.dg.b'])
+  })
+
+  test(`SVG text: a document only SkSVG reads draws the same instances (${renderer})`, (t) => {
+    const { named, paths } = svgVariationsOf(renderer)
+    t.true(
+      named.every((v, k) => Math.abs(v - paths['rm.b'].canvas[k]) < 0.01),
+      `${JSON.stringify(named)} vs ${JSON.stringify(paths['rm.b'].canvas)}`,
+    )
+  })
+
+  test(`SVG text: the instances count toward the font argument budget (${renderer})`, (t) => {
+    const { budget } = svgVariationsOf(renderer)
+    t.is(budget.warm, 0)
+    // The SVG's 300 opsz instances dropped the caches after its render.
+    t.true(budget.after > 0, `${budget.after} request instances`)
+  })
+}
+
+const svgPixelTest = process.platform === 'darwin' || process.platform === 'linux' ? test : test.skip
+svgPixelTest('SVG text draws the pixels canvas text draws (system)', (t) => {
+  const { oracle } = svgVariationsOf('system')
+  for (const [id, , , text] of SVG_CASES) {
+    if (text !== 'ǅǄ') t.is(oracle[id], 0, `${id}: ${oracle[id]} px differ from canvas text`)
+  }
+})
+
+// A child process per renderer: a document only SkSVG reads (Latin-1)
+// converted after a register replaced the face its family names draws the
+// instance canvas text draws, as a UTF-8 one does: the font caches are
+// flushed before the named family is looked up, warm or not.
+const RAW_SVG_FLUSH_PROBE = `
+  const { readFileSync } = require('fs')
+  const { convertSVGTextToPath, createCanvas, GlobalFonts, setTextRenderer } = require(process.env.PROBE_INDEX)
+  const { RENDERER, PROBE_FONTS } = process.env
+  setTextRenderer(RENDERER)
+  const font = (name) => readFileSync(PROBE_FONTS + '/' + name)
+  const svg = (encoding) =>
+    '<?xml version="1.0" encoding="' + encoding + '"?><svg xmlns="http://www.w3.org/2000/svg" width="300" height="60">' +
+    '<!-- caf\\xe9 --><text x="5" y="40" font-family="Raw Flush" font-size="30" font-weight="bold">HHmm</text></svg>'
+  const latin1 = Buffer.from(svg('ISO-8859-1'), 'latin1')
+  const utf8 = Buffer.from(svg('UTF-8'), 'utf8')
+  const paths = (doc) => JSON.stringify(convertSVGTextToPath(doc).toString().match(/ d="[^"]*"/g))
+  GlobalFonts.register(font('RMStatic-Regular.ttf'), 'Raw Flush')
+  const out = {}
+  const before = paths(latin1)
+  GlobalFonts.register(font('RobotoMono-VariableFont_wght.ttf'), 'Raw Flush')
+  const after = paths(latin1)
+  const prepared = paths(utf8)
+  const ctx = createCanvas(10, 10).getContext('2d')
+  ctx.font = 'bold 30px "Raw Flush"'
+  ctx.measureText('HHmm')
+  out.changed = after !== before
+  out.afterRegister = after === prepared
+  out.afterMeasure = paths(latin1) === prepared
+  console.log(JSON.stringify(out))`
+
+for (const renderer of ['portable', 'system'] as const) {
+  test(`SVG text: a document only SkSVG reads sees a face registered after a conversion (${renderer})`, (t) => {
+    const child = spawnSync(process.execPath, ['-e', RAW_SVG_FLUSH_PROBE], {
+      encoding: 'utf8',
+      timeout: 60_000,
+      env: {
+        ...process.env,
+        RENDERER: renderer,
+        PROBE_FONTS: join(__dirname, 'fonts'),
+        PROBE_INDEX: join(__dirname, '..', 'index.js'),
+      },
+    })
+    t.is(child.status, 0, child.stderr)
+    t.deepEqual(JSON.parse(child.stdout), { changed: true, afterRegister: true, afterMeasure: true })
+  })
+}

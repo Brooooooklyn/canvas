@@ -615,6 +615,14 @@ void skiac_debug_text_line(skiac_font_collection* c_collection,
   out += std::to_string(c_collection->installed_fallback_reads);
   out += ",\"familyInstanceFaces\":";
   out += std::to_string(c_collection->family_instance_faces);
+  out += ",\"requestInstanceFaces\":";
+  out += std::to_string(c_collection->request_instance_faces);
+  out += ",\"descriptorLookups\":";
+  out += std::to_string(c_collection->descriptor_lookups);
+  out += ",\"fontFaceCores\":";
+  out += std::to_string(c_collection->font_face_cores);
+  out += ",\"splitFamilies\":";
+  out += std::to_string(c_collection->assets->splitFamilyCount());
   out += ",\"runs\":[";
   for (size_t r = 0; r < line->blink.runs.size(); ++r) {
     const BlinkRun& run = line->blink.runs[r];

@@ -174,41 +174,55 @@ fn set_system_font_renderer(enabled: bool) -> napi::Result<()> {
   Ok(())
 }
 
-/// The descriptors `register` declares, checked as Chrome's FontFace parses
-/// them (an invalid one makes the face's status "error", never used): a
-/// weight in [1, 1000], a style `normal`, `italic` or `oblique [<angle>]`
-/// (font::parse_font_face_style). A missing field is the FontFace default,
-/// 400 or normal. ConsumeFontWeight checks the double; then
-/// GetFontSelectionCapabilities keeps FontSelectionValue(float) (quarter
-/// steps).
-fn face_descriptors(
-  weight: Option<f64>,
-  style: Option<&str>,
-) -> Option<crate::sk::ffi::skiac_face_descriptors> {
-  let weight = weight.unwrap_or(400.0);
-  if !(1.0..=1000.0).contains(&weight) {
-    return None;
-  }
-  let slope = match style {
-    Some(style) => crate::font::parse_font_face_style(style)?,
-    None => 0.0,
+/// What a FontFaceDescriptors object declares.
+enum Declared {
+  /// A descriptor that does not parse: the FontFace's status is "error".
+  Invalid,
+  /// Every field `auto` (also after the calc reset): the same capabilities
+  /// as no descriptors, so none are stored (`describes()` stays false).
+  Auto,
+  Explicit(crate::sk::ffi::skiac_face_descriptors),
+}
+
+/// The descriptors `register` declares, parsed as Chrome's FontFace does
+/// (FontFace::SetPropertyFromString, then GetFontSelectionCapabilities): a
+/// missing member is the IDL default "normal". A weight math function
+/// outside [1, 1000] makes every descriptor `auto` (`normal_capabilities`).
+fn face_descriptors(weight: Option<&str>, style: Option<&str>) -> Declared {
+  use crate::font::{FaceWeight, parse_font_face_style, parse_font_face_weight};
+  use crate::sk::ffi::{skiac_face_descriptors, skiac_face_range};
+  let (Some(weight), Some(slope)) = (
+    parse_font_face_weight(weight.unwrap_or("normal")),
+    parse_font_face_style(style.unwrap_or("normal")),
+  ) else {
+    return Declared::Invalid;
   };
-  Some(crate::sk::ffi::skiac_face_descriptors {
-    weight: crate::font::font_selection_value((weight as f32).into()),
-    slope,
+  let FaceWeight::Range(weight) = weight else {
+    return Declared::Auto;
+  };
+  if weight.from_auto && slope.from_auto {
+    return Declared::Auto;
+  }
+  let range = |r: crate::font::FaceRange| skiac_face_range {
+    min: r.min,
+    max: r.max,
+    from_auto: r.from_auto,
+  };
+  Declared::Explicit(skiac_face_descriptors {
+    weight: range(weight),
+    slope: range(slope),
   })
 }
 
 /// FontFaceDescriptors (font_face_descriptors.idl): `descriptors` must be an
 /// object, else a TypeError, as the FontFace constructor throws. Its members
 /// are DOMStrings, converted in IDL order (style, then weight); a conversion
-/// may throw (a Symbol). Ok(None) when one is invalid: a weight that is not
-/// a number (a string such as '700' is not parsed) or face_descriptors.
+/// may throw (a Symbol). A number weight is ToString'd too (`700.5` is
+/// "700.5", `1e21` "1e+21").
 fn read_face_descriptors(
   env: napi::sys::napi_env,
   value: napi::sys::napi_value,
-) -> napi::Result<Option<crate::sk::ffi::skiac_face_descriptors>> {
-  use napi::bindgen_prelude::FromNapiValue;
+) -> napi::Result<Declared> {
   if !matches!(
     webidl::type_of(env, value)?,
     ValueType::Object | ValueType::Function
@@ -220,21 +234,15 @@ fn read_face_descriptors(
   }
   let prefix =
     |key: &str| format!("Failed to read the '{key}' property from 'FontFaceDescriptors': ");
-  let style = match webidl::member(env, value, "style")? {
-    Some(style) => Some(webidl::to_dom_string(env, style, &prefix("style"))?),
-    None => None,
-  };
-  let weight = match webidl::member(env, value, "weight")? {
-    Some(weight) if webidl::type_of(env, weight)? == ValueType::Number => {
-      Some(unsafe { f64::from_napi_value(env, weight)? })
+  let read = |key: &str| -> napi::Result<Option<String>> {
+    match webidl::member(env, value, key)? {
+      Some(member) => Ok(Some(webidl::to_dom_string(env, member, &prefix(key))?)),
+      None => Ok(None),
     }
-    Some(weight) => {
-      webidl::to_dom_string(env, weight, &prefix("weight"))?;
-      return Ok(None);
-    }
-    None => None,
   };
-  Ok(face_descriptors(weight, style.as_deref()))
+  let style = read("style")?;
+  let weight = read("weight")?;
+  Ok(face_descriptors(weight.as_deref(), style.as_deref()))
 }
 
 #[napi(js_name = "GlobalFonts")]
@@ -248,7 +256,7 @@ pub mod global_fonts {
 
   /// `descriptors`: the face's @font-face descriptors
   /// (super::read_face_descriptors); an invalid one registers nothing and
-  /// gives null. Without them, `auto`.
+  /// gives null. Without them, or all `auto`, none.
   ///
   /// `font_data` (a Uint8Array) is read after the descriptors convert, as
   /// FontFace::Create takes the source's ByteSpan() after its bindings
@@ -267,8 +275,9 @@ pub mod global_fonts {
     let maybe_name_alias = name_alias.filter(|s| !s.is_empty());
     let descriptors = match descriptors {
       Some(d) => match super::read_face_descriptors(env.raw(), d.raw())? {
-        Some(descriptors) => Some(descriptors),
-        None => return Ok(None),
+        super::Declared::Invalid => return Ok(None),
+        super::Declared::Auto => None,
+        super::Declared::Explicit(descriptors) => Some(descriptors),
       },
       None => None,
     };
@@ -289,6 +298,8 @@ pub mod global_fonts {
   /// Fonts registered via path are deduplicated by the path string itself, not by file contents.
   /// This means:
   /// - Registering the same path multiple times returns the existing registration
+  ///   (a call declaring a name it already has with other descriptors makes a
+  ///   twin with a FontKey of its own, as register does for the same bytes)
   /// - If the font file is modified on disk and `registerFromPath` is called again,
   ///   the new contents will NOT be loaded - it returns the existing registration
   ///
@@ -302,18 +313,31 @@ pub mod global_fonts {
   ///
   /// Note: The `register()` function (buffer-based) deduplicates by content hash,
   /// so it will detect when font data has changed.
+  ///
+  /// `descriptors`: as register's. A file loadFontsFromDir loaded takes
+  /// none (an installed font): with them, the call registers the file again.
   // TODO: Do file extensions in font_path need to be converted to lowercase?
   // Windows and macOS are case-insensitive, Linux is not.
   // See: https://github.com/Brooooooklyn/canvas/actions/runs/5893418006/job/15985737723
   #[napi]
   pub fn register_from_path(
+    env: &Env,
     font_path: String,
     name_alias: Option<String>,
+    descriptors: Option<Unknown>,
   ) -> Result<Option<FontKey>> {
     let maybe_name_alias = name_alias.filter(|s| !s.is_empty());
+    let descriptors = match descriptors {
+      Some(d) => match super::read_face_descriptors(env.raw(), d.raw())? {
+        super::Declared::Invalid => return Ok(None),
+        super::Declared::Auto => None,
+        super::Declared::Explicit(descriptors) => Some(descriptors),
+      },
+      None => None,
+    };
     let font = get_font().map_err(into_napi_error)?;
     let result = font
-      .register_from_path(font_path.as_str(), maybe_name_alias)
+      .register_from_path(font_path.as_str(), maybe_name_alias, descriptors.as_ref())
       .map(|typeface_id| FontKey { typeface_id });
     if result.is_some() {
       super::note_font_collection_mutation();
