@@ -632,9 +632,11 @@ test('alpha:false resets the whole clip after a draw under a filter that adds no
 
 GlobalFonts.registerFromPath(join(fileURLToPath(import.meta.url), '..', 'fonts', 'Lato-Regular.ttf'), 'AlphaFalseLato')
 
-// Chrome's macOS values were measured on macOS 27. CoreText ships with the OS,
-// so on another macOS version the fringe pixels are not compared.
-const PIXEL_PINS = process.platform !== 'darwin' || Number.parseInt(release(), 10) === 27
+// Chrome's macOS values were measured on macOS 27 and Linux values on Fontations.
+// Windows uses DirectWrite and other macOS versions ship another CoreText, so
+// exact fringe counts are pinned only where Chrome was measured.
+const PIXEL_PINS =
+  process.platform === 'linux' || (process.platform === 'darwin' && Number.parseInt(release(), 10) === 27)
 
 // Text bounds are the glyph bounds (base_rendering_context_2d.cc:1019,
 // 1076-1113). On Linux Chrome hints the box to whole pixels (Lato 16px
@@ -656,6 +658,7 @@ test('alpha:false text resets alpha inside the glyph bounds only', (t) => {
     // Without the reset about 150 glyph pixels stay below 255.
     const fringe = process.platform !== 'darwin' ? 0 : op === 'copy' && process.arch === 'arm64' ? 4 : 5
     if (PIXEL_PINS) t.is(below, fringe, `${op}: ${below} pixels below alpha 255`)
+    else t.true(below < 20, `${op}: ${below} pixels below alpha 255`)
     t.deepEqual(px(ctx, 38, 2), op === 'copy' ? [0, 0, 0, 255] : [200, 100, 50, 255], op)
   }
 })

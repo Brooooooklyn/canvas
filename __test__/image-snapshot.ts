@@ -16,9 +16,9 @@ const jpeg = JPEG()
 const ARCH_NAME = arch()
 
 // With the system font renderer, text is drawn by each OS's own font scaler,
-// as in Chrome (CoreText on macOS, Fontations on Linux, FreeType elsewhere), so
-// a snapshot under snapshots/<os>/ wins over the shared one in snapshots/.
-// Otherwise only the shared one is used.
+// as in Chrome (CoreText on macOS, DirectWrite on Windows, Fontations on Linux,
+// FreeType elsewhere), so a snapshot under snapshots/<os>/ wins over the shared
+// one in snapshots/. Otherwise only the shared one is used.
 export function snapshotPath(
   title: string,
   ext: string,

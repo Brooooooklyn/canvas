@@ -1,3 +1,4 @@
+import { spawnSync } from 'node:child_process'
 import { readFileSync } from 'node:fs'
 import { createRequire } from 'node:module'
 import { join } from 'node:path'
@@ -43,8 +44,13 @@ function gnArgDefines(args: Map<string, string>) {
   )
 }
 
+// buildGnArgs runs `clang --version` for Windows targets; minimal Linux test
+// containers do not ship clang.
+const HAS_CLANG = spawnSync('clang', ['--version'], { stdio: 'ignore' }).status === 0
+
 for (const { rust, ...context } of TARGETS) {
-  test(`scripts/libskia.flags has libskia's GN defines for ${rust}`, (t) => {
+  const run = context.platformName === 'win32' && !HAS_CLANG ? test.skip : test
+  run(`scripts/libskia.flags has libskia's GN defines for ${rust}`, (t) => {
     const { args } = buildGnArgs({ ...context, env: {} })
     // The same flags; the order only matters for -USK_R32_SHIFT, which both
     // put before -DSK_R32_SHIFT=0.

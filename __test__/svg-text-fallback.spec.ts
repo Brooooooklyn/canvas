@@ -49,7 +49,7 @@ type Box = [number, number, number, number] | null
 interface Probe {
   paths: Record<string, Glyph[]>
   ink: Record<string, Box>
-  // Pixels at x >= 25 of the list row "A中" and of SHSReg "中" at 23.76.
+  // Pixels at x >= 26 of the list row "A中" and of SHSReg "中" at 23.76.
   right: { list: string; shs: string }
   nested: { top: string; nested: string; right: string }
   svgCanvas: { png: string; pngRight: string; raster: string; fillText: string }
@@ -141,14 +141,14 @@ for (const [id, [family, text]] of Object.entries(rows)) {
 }
 out.color['lato.A😀'] = colored(raster(svgOf(textOf('MyLatoOnly', 'A😀'))))
 const list = raster(svgOf(textOf(LIST, 'A中')))
-out.right = { list: columns(list, 25), shs: columns(raster(svgOf(textOf('SHSReg', '中', 23.76))), 25) }
+out.right = { list: columns(list, 26), shs: columns(raster(svgOf(textOf('SHSReg', '中', 23.76))), 26) }
 // The list row inside an <image> of an SVG image.
 const inner = svgOf(textOf(LIST, 'A中'))
 const outer = raster(
   svgOf(textOf(LIST, 'A中') + '<image y="60" width="200" height="60" href="data:image/svg+xml,' + encodeURIComponent(inner) + '"/>', 120),
   120,
 )
-out.nested = { top: columns(outer, 0, 0, 60), nested: columns(outer, 0, 60, 120), right: columns(outer, 25, 60, 120) }
+out.nested = { top: columns(outer, 0, 0, 60), nested: columns(outer, 0, 60, 120), right: columns(outer, 26, 60, 120) }
 // The SVG image drawn on an SVG canvas is a PNG of its raster.
 const svgCanvas = createCanvas(200, 60, SvgExportFlag.NoPrettyXML)
 svgCanvas.getContext('2d').drawImage(image(inner), 0, 0)
@@ -162,7 +162,7 @@ fill.font = 'bold 32px MyLatoOnly, SHSReg'
 fill.fillText('A中', 2, 40)
 out.svgCanvas = {
   png: columns(pngCtx.getImageData(0, 0, 200, 60).data, 0),
-  pngRight: columns(pngCtx.getImageData(0, 0, 200, 60).data, 25),
+  pngRight: columns(pngCtx.getImageData(0, 0, 200, 60).data, 26),
   raster: columns(list, 0),
   fillText: fillCanvas.getContent().toString(),
 }

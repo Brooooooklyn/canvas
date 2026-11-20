@@ -37,9 +37,12 @@ interface Fixture {
 const RAW = JSON.parse(readFileSync(join(__dirname, 'fixtures', 'text-fonts', 'small-caps.json'), 'utf8'))
 const FIXTURE: Fixture = process.platform === 'darwin' ? { ...RAW, ...RAW.darwin } : RAW
 
-// Chrome's macOS rows were measured on macOS 27. CoreText ships with the OS,
-// so on another macOS version the painted pixels are not compared.
-const PIXEL_PINS = process.platform !== 'darwin' || Number.parseInt(release(), 10) === 27
+// Chrome's macOS rows were measured on macOS 27 and Linux rows on Fontations.
+// Windows uses DirectWrite (no Chrome Windows capture here), so painted pixels
+// are pinned only on Linux and macOS 27.
+const PIXEL_PINS =
+  process.platform === 'linux' || (process.platform === 'darwin' && Number.parseInt(release(), 10) === 27)
+const DWRITE = process.platform === 'win32'
 
 const FONTS: Record<string, string> = {
   LatoT: 'Lato-Regular.ttf',
@@ -93,17 +96,18 @@ function draw([font, caps, text, options]: Draw) {
 // On Windows, which keeps FreeType, these glyph boxes and pixels are a pixel
 // off Chrome's (Fontations): the small caps glyphs of the fonts that have
 // them, and Oswald's Turkish i. macOS and Linux draw with Chrome's scalers.
-const FREETYPE = process.platform !== 'darwin' && process.platform !== 'linux'
+const FREETYPE = process.platform !== 'darwin' && process.platform !== 'linux' && process.platform !== 'win32'
 const ENGINE_GAPS = /^(SerifProT|GothicT|RobotoMonoT|IosevkaT|VirgilT) |^OswaldT tr-TR unicase$/
 
 // The fields of a draw that differ from Chrome: the width by more than
-// 1/1000; the box and the ink by more than 1/1000, or than a pixel where the
-// glyph engines differ.
+// 1/1000 (or 0.01 on DirectWrite vs Chrome Linux); the box and the ink by more
+// than 1/1000, or than a pixel where the glyph engines differ.
 function mismatches(key: string, d: Draw, chrome: Row) {
   const { box, width, ink } = draw(d)
-  const tolerance = FREETYPE && ENGINE_GAPS.test(key) ? 1 + 1e-3 : 1e-3
+  const widthTolerance = DWRITE ? 0.01 : 1e-3
+  const tolerance = DWRITE || (FREETYPE && ENGINE_GAPS.test(key)) ? 1 + 1e-3 : 1e-3
   const out: string[] = []
-  if (!(Math.abs(width - chrome[0]) <= 1e-3)) out.push(`${key} width: ${width} (Chrome ${chrome[0]})`)
+  if (!(Math.abs(width - chrome[0]) <= widthTolerance)) out.push(`${key} width: ${width} (Chrome ${chrome[0]})`)
   if (!box.every((v, i) => Math.abs(v - chrome[i + 1]) <= tolerance)) {
     out.push(`${key} box: ${box} (Chrome ${chrome.slice(1, 5)})`)
   }

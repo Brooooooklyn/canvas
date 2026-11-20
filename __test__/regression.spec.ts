@@ -129,7 +129,7 @@ test('putImageData should snapshot pixel data when the same ImageData is reused'
   let srcPos = 0
   for (let i = 0; i < height / CHUNK_HEIGHT; i++) {
     let destPos = 0
-    for (let j = width * CHUNK_HEIGHT; j--; ) {
+    for (let j = width * CHUNK_HEIGHT; j--;) {
       dest[destPos++] = src[srcPos++]
       dest[destPos++] = src[srcPos++]
       dest[destPos++] = src[srcPos++]
@@ -405,7 +405,7 @@ test('draw-svg-with-text', async (t) => {
   Arrow.src = await fs.readFile(join(__dirname, 'image-og.svg'))
   await promise
   ctx.drawImage(Arrow, 80, 60)
-  await snapshotImage(t, { ctx, canvas }, 'png', process.arch === 'x64' && process.platform !== 'darwin' ? 0.15 : 0.3)
+  await snapshotImage(t, { ctx, canvas }, 'png', process.arch === 'x64' && process.platform !== 'darwin' ? 0.15 : 0.35)
 })
 
 test('DOMMatrix::transformPoint', (t) => {

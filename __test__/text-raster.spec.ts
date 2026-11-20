@@ -114,8 +114,8 @@ test('measureText widths and glyph boxes equal Chrome', (t) => {
     if (OS) {
       t.deepEqual(got, row[OS], key)
     } else {
-      // Windows: FreeType's widths equal Chrome Linux's.
-      t.is(got[0], row.linux[0], key)
+      // Windows: DirectWrite's advances round slightly differently from Linux's.
+      t.true(Math.abs(got[0] - row.linux[0]) <= 0.02, `${key}: ${got[0]} vs ${row.linux[0]}`)
     }
   }
 })
