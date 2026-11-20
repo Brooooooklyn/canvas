@@ -18,7 +18,7 @@ const __dirname = dirname(fileURLToPath(import.meta.url))
 const require = createRequire(import.meta.url)
 
 // Where the system renderer draws with another gamma than the default one.
-const GAMMA_OS = process.platform === 'darwin' || process.platform === 'linux'
+const GAMMA_OS = process.platform === 'darwin' || process.platform === 'linux' || process.platform === 'win32'
 const macTest = process.platform === 'darwin' ? test.serial : test.serial.skip
 
 GlobalFonts.registerFromPath(join(__dirname, 'fonts', 'Lato-Regular.ttf'), 'UsLato')

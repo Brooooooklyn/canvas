@@ -599,6 +599,12 @@ pub mod ffi {
       modifiers = "+bundle,+whole-archive"
     )
   )]
+  #[cfg_attr(
+    target_os = "windows",
+    link(name = "skiac_fontations", kind = "static")
+  )]
+  // Skia's DirectWrite font manager and scaler on Windows (build.rs).
+  #[cfg_attr(target_os = "windows", link(name = "skiac_dwrite", kind = "static"))]
   unsafe extern "C" {
 
     pub fn skiac_clear_all_cache();

@@ -10,7 +10,7 @@ const { buildGnArgs } = require('../skia-gn-args.cjs')
 
 const ROOT = join(fileURLToPath(import.meta.url), '..', '..', '..')
 
-// The macOS and Linux targets build.rs compiles Skia's Fontations C++ for,
+// The targets build.rs compiles Skia's Fontations / DirectWrite C++ for,
 // with the arguments scripts/build-skia.js builds their libskia with.
 const TARGETS = [
   { rust: 'x86_64-unknown-linux-gnu', platformName: 'linux', targetTriple: '', hostArch: 'x64', hostLibc: 'glibc' },
@@ -21,6 +21,8 @@ const TARGETS = [
   { rust: 'riscv64gc-unknown-linux-gnu', platformName: 'linux', targetTriple: 'riscv64gc-unknown-linux-gnu' },
   { rust: 'aarch64-apple-darwin', platformName: 'darwin', targetTriple: 'aarch64-apple-darwin' },
   { rust: 'x86_64-apple-darwin', platformName: 'darwin', targetTriple: 'x86_64-apple-darwin' },
+  { rust: 'x86_64-pc-windows-msvc', platformName: 'win32', targetTriple: '', hostArch: 'x64' },
+  { rust: 'aarch64-pc-windows-msvc', platformName: 'win32', targetTriple: 'aarch64-pc-windows-msvc' },
 ]
 
 // build.rs libskia_flags: the "*" lines and the target's own. A Windows
@@ -37,7 +39,7 @@ function flagsFileDefines(target: string) {
 // The -D / -U flags of libskia's extra_cflags (C and C++) and extra_cflags_cc.
 function gnArgDefines(args: Map<string, string>) {
   return ['extra_cflags', 'extra_cflags_cc'].flatMap((name) =>
-    [...(args.get(name) ?? '').matchAll(/"(-[DU][^"]*)"/g)].map((match) => match[1]),
+    [...(args.get(name) ?? '').matchAll(/"(-[DU][^"\\]*)\\?"/g)].map((match) => match[1]),
   )
 }
 

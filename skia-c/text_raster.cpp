@@ -9,6 +9,10 @@
 //   macOS      subpixel AA edging, normal hinting      sRGB / 0
 //              (none for geometricPrecision),          (skia/BUILD.gn
 //              subpixel, linear metrics, no bitmaps     SK_GAMMA_SRGB)
+//   Windows    subpixel AA edging, normal hinting      sRGB / 1.0
+//              (none + linear metrics for              (skia/BUILD.gn
+//              geometricPrecision), subpixel,          SK_GAMMA_SRGB,
+//              embedded bitmaps                         SK_GAMMA_CONTRAST=1.0)
 //   Linux      AA edging, slight hinting (none +       1.2 / 0.2
 //              linear metrics for geometricPrecision),
 //              subpixel, embedded bitmaps
@@ -56,6 +60,9 @@ SkSurfaceProps CanvasSurfaceProps() {
 #if defined(__APPLE__)
   // Chrome's skia/BUILD.gn for mac: SK_GAMMA_SRGB, SK_GAMMA_CONTRAST=0.0.
   return SkSurfaceProps(0, kUnknown_SkPixelGeometry, 0.0f, 0.0f);
+#elif defined(_WIN32)
+  // Chrome's skia/BUILD.gn for Windows: SK_GAMMA_SRGB, SK_GAMMA_CONTRAST=1.0.
+  return SkSurfaceProps(0, kUnknown_SkPixelGeometry, 1.0f, 0.0f);
 #elif defined(__linux__) && !defined(__ANDROID__)
   // Chrome's skia/BUILD.gn for Linux: SK_GAMMA_EXPONENT=1.2,
   // SK_GAMMA_CONTRAST=0.2.
@@ -75,6 +82,15 @@ SkFont MetricsFont(sk_sp<SkTypeface> typeface, float size) {
     font.setSubpixel(true);
     font.setLinearMetrics(true);
     font.setEmbeddedBitmaps(false);
+    return font;
+  }
+#elif defined(_WIN32)
+  if (SystemFontRenderer()) {
+    // font_platform_data_win.cc FontPlatformData::CreateSkFont.
+    font.setEdging(SkFont::Edging::kSubpixelAntiAlias);
+    font.setHinting(SkFontHinting::kNormal);
+    font.setSubpixel(true);
+    font.setEmbeddedBitmaps(true);
     return font;
   }
 #endif
@@ -103,7 +119,7 @@ void TextRasterPolicy::ApplyShapingFlags(SkFont* font) const {
   if (!system_) {
     return;
   }
-#if defined(__APPLE__)
+#if defined(__APPLE__) || defined(_WIN32)
   font->setEdging(SkFont::Edging::kSubpixelAntiAlias);
   font->setHinting(SkFontHinting::kNormal);
 #endif
@@ -162,6 +178,16 @@ SkFont TextRasterPolicy::DrawFont(const SkFont& shaped,
       geometric_precision_ && !(device && UsesLcdText(font, *device) &&
                                 SkTypeface_GetCTFontRef(font.getTypeface()));
   font.setHinting(unhinted ? SkFontHinting::kNone : SkFontHinting::kNormal);
+#elif defined(_WIN32)
+  // font_platform_data_win.cc FontPlatformData::CreateSkFont.
+  (void)device;
+  font.setEdging(SkFont::Edging::kSubpixelAntiAlias);
+  font.setEmbeddedBitmaps(true);
+  font.setForceAutoHinting(false);
+  font.setSubpixel(true);
+  font.setHinting(geometric_precision_ ? SkFontHinting::kNone
+                                       : SkFontHinting::kNormal);
+  font.setLinearMetrics(geometric_precision_);
 #elif defined(__linux__) && !defined(__ANDROID__)
   // font_platform_data.cc CreateSkFont, WebFontRenderStyle::ApplyToSkFont
   // with Chrome's defaults (web_font_render_style.cc), and

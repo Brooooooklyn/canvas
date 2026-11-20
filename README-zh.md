@@ -144,7 +144,7 @@ ctx.lang = 'en'
 
 ### `setTextRenderer()`
 
-`setTextRenderer('system')` 让文字按 Chrome 在各个系统上的方式绘制：macOS 上用 CoreText（以及 CoreText 的已安装字体和回退），Linux 上用 Fontations，Windows 上用 FreeType；再加上各系统的文字 gamma、macOS 不透明 canvas 上的 LCD 文字、Chrome 各系统的字体族设置和 macOS 的度量规则。这是 1.0.12 和 1.0.13 的默认行为。默认值是 `'portable'`。
+`setTextRenderer('system')` 让文字按 Chrome 在各个系统上的方式绘制：macOS 上用 CoreText（以及 CoreText 的已安装字体和回退），Linux 上用 Fontations，Windows 上用 DirectWrite（彩色/CFF2/avar2 Web 字体用 Fontations）；再加上各系统的文字 gamma、macOS 不透明 canvas 上的 LCD 文字、Chrome 各系统的字体族设置和 macOS 的度量规则。macOS 和 Linux 在 1.0.12 和 1.0.13 中默认使用该行为。默认值是 `'portable'`。
 
 ```js
 const { setTextRenderer, getTextRenderer } = require('@napi-rs/canvas')

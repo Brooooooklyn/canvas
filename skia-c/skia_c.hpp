@@ -146,6 +146,9 @@ sk_sp<SkFontMgr> MakeSystemUiFontManager(std::set<SkTypefaceID>* ids);
 // (CTFontCreateCopyWithSymbolicTraits) and its instances has only the italic
 // trait: upright 400 to Skia.
 SkFontStyle CoreTextFontStyle(SkTypeface* face);
+#elif defined(_WIN32)
+// Every unsimulated font DirectWrite lists, by name.
+sk_sp<SkFontMgr> MakeDirectWriteFontManager();
 #endif
 // text_raster.cpp: the text gamma and contrast of Chrome's canvas surfaces
 // with the system renderer, else Skia's defaults.
@@ -1410,7 +1413,7 @@ struct skiac_font_collection {
   // The FontFaceCores built (font_families.cpp MakeFontFaceCore), for
   // skiac_debug_text_line's fontFaceCores: one per web family and flush.
   uint64_t font_face_cores = 0;
-#if defined(__APPLE__)
+#if defined(__APPLE__) || defined(_WIN32)
   // loadSystemFonts turned the installed fonts on (kept across renderer
   // switches); they are registered the first time a font is looked up or
   // registered.
@@ -1421,13 +1424,18 @@ struct skiac_font_collection {
   bool installed_lookup = false;
   uint32_t installed_font_count = 0;
   // The installed font files (Rust's FONT_PATH and user folders), in order.
-  // Without the system renderer face 0 of each is registered, as
-  // loadSystemFonts does elsewhere.
+  // Without the system renderer every face of each file is registered.
   std::vector<std::string> installed_files;
   // The installed faces each mode listed ([0] portable, [1] system), so a
   // switch back registers the same faces again instead of new ones. Dropped
   // when installed_files grows.
   std::vector<sk_sp<SkTypeface>> installed_faces[2];
+  // Each mode's installed font managers, made once: a new one per switch
+  // would scan the installed fonts again and make new faces for them.
+  sk_sp<SkFontMgr> portable_font_mgr;
+  sk_sp<SkFontMgr> system_font_mgr;
+#endif
+#if defined(__APPLE__)
   // font_families.cpp MatchCoreText: CoreText's family for a case-folded
   // name it does not list, empty for none.
   std::map<std::string, std::string> coretext_families;
@@ -1437,10 +1445,6 @@ struct skiac_font_collection {
   // fonts; FontCollection asks it after them (its test font manager).
   sk_sp<SkFontMgr> system_ui;
   std::set<SkTypefaceID> system_ui_ids;
-  // Each mode's installed font managers, made once: a new one per switch
-  // would scan the installed fonts again and make new faces for them.
-  sk_sp<SkFontMgr> portable_font_mgr;
-  sk_sp<SkFontMgr> coretext_font_mgr;
   sk_sp<SkFontMgr> coretext_system_ui;
   std::set<SkTypefaceID> coretext_system_ui_ids;
 #endif
@@ -1457,17 +1461,16 @@ struct skiac_font_collection {
     // paragraph: skparagraph's own cache stays off.
     collection->getParagraphCache()->turnOn(false);
     assets->setSplitFamilies(this);
-#if defined(__APPLE__)
+#if defined(__APPLE__) || defined(_WIN32)
     portable_font_mgr = font_mgr;
 #endif
   }
 
-#if defined(__APPLE__)
+#if defined(__APPLE__) || defined(_WIN32)
   // `paths` (count of them) are the installed font files; new ones are kept.
-  // With the system renderer, Chrome's font set on macOS is every font
-  // CoreText lists, and CoreText picks the fallback font for a character.
-  // Without loadSystemFonts (DISABLE_SYSTEM_FONTS_LOAD) only registered
-  // fonts resolve then.
+  // With the system renderer, Chrome's font set on macOS / Windows is every
+  // font CoreText / DirectWrite lists. Without loadSystemFonts
+  // (DISABLE_SYSTEM_FONTS_LOAD) only registered fonts resolve then.
   void enableInstalledFonts(const char* const* paths, size_t count) {
     for (size_t i = 0; i < count; ++i) {
       std::string path(paths[i]);
@@ -1527,6 +1530,9 @@ struct skiac_font_collection {
   // The installed faces of the current mode, in listing order.
   void listInstalledFaces(std::vector<sk_sp<SkTypeface>>* faces) {
     if (SystemFontRenderer()) {
+      if (!font_mgr) {
+        return;
+      }
       const int families = font_mgr->countFamilies();
       for (int i = 0; i < families; ++i) {
         sk_sp<SkFontStyleSet> set = font_mgr->createStyleSet(i);
@@ -1569,7 +1575,7 @@ struct skiac_font_collection {
 
   // Before a lookup: the installed fonts loadSystemFonts turned on.
   void prepareLookup() {
-#if defined(__APPLE__)
+#if defined(__APPLE__) || defined(_WIN32)
     registerInstalledFonts();
 #endif
   }
@@ -1723,7 +1729,7 @@ struct skiac_font_collection {
         continue;
       }
       if (kind == kSetAlias) {
-#if defined(__APPLE__)
+#if defined(__APPLE__) || defined(_WIN32)
         // setAlias lists the installed fonts first (prepareLookup).
         if (relist_installed && !relisted) {
           relisted = true;
@@ -1794,7 +1800,7 @@ struct skiac_font_collection {
       }
       const RegisteredFont& font_info = old_fonts.at(id);
       if (font_info.installed && relist_installed) {
-#if defined(__APPLE__)
+#if defined(__APPLE__) || defined(_WIN32)
         if (!relisted) {
           relisted = true;
           registerInstalledFonts(new_assets.get(), &kept_system_font_ids);
@@ -1889,7 +1895,7 @@ struct skiac_font_collection {
                                     font_info.call_names[index]);
       }
     }
-#if defined(__APPLE__)
+#if defined(__APPLE__) || defined(_WIN32)
     // None was registered yet: they are listed after the replay, as at the
     // next lookup.
     if (relist_installed && !relisted) {
@@ -1917,7 +1923,7 @@ struct skiac_font_collection {
     }
     // Typefaces made from here on are made in the new mode.
     SetSystemFontRenderer(enabled);
-#if defined(__APPLE__)
+#if defined(__APPLE__) || defined(_WIN32)
     // The installed fonts belong to the mode they were listed in: the
     // rebuild puts the new mode's in their place.
     bool listed = false;
@@ -1933,10 +1939,12 @@ struct skiac_font_collection {
       font_mgr = portable_font_mgr;
     }
     collection->setAssetFontManager(font_mgr);
+#if defined(__APPLE__)
     system_ui = nullptr;
     system_ui_ids.clear();
     collection->setTestFontManager(nullptr);
     coretext_families.clear();
+#endif
     installed_fonts_pending = false;
     installed_font_count = 0;
     // Registered installed fonts are listed now, so they keep their place
@@ -1953,7 +1961,7 @@ struct skiac_font_collection {
     }
 #endif
     rebuildAssets(/*relist_installed=*/true);
-#if defined(__APPLE__)
+#if defined(__APPLE__) || defined(_WIN32)
     if (installed_fonts_enabled && !eager) {
       startInstalledFonts();
     }
@@ -1962,7 +1970,7 @@ struct skiac_font_collection {
   }
 
  private:
-#if defined(__APPLE__)
+#if defined(__APPLE__) || defined(_WIN32)
   // The installed fonts of the current mode resolve by name, and are
   // registered at the next lookup.
   void startInstalledFonts() {
@@ -1971,19 +1979,26 @@ struct skiac_font_collection {
     markCachesDirty();
   }
 
-  // With the system renderer, CoreText's installed fonts resolve by name.
+  // With the system renderer, CoreText's / DirectWrite's installed fonts
+  // resolve by name.
   void useInstalledLookup() {
     if (SystemFontRenderer()) {
-      if (!coretext_font_mgr) {
-        coretext_font_mgr = MakeCoreTextFontManager();
+      if (!system_font_mgr) {
+#if defined(__APPLE__)
+        system_font_mgr = MakeCoreTextFontManager();
         coretext_system_ui = MakeSystemUiFontManager(&coretext_system_ui_ids);
+#else
+        system_font_mgr = MakeDirectWriteFontManager();
+#endif
       }
-      font_mgr = coretext_font_mgr;
+      font_mgr = system_font_mgr;
       collection->setAssetFontManager(font_mgr);
+#if defined(__APPLE__)
       system_ui = coretext_system_ui;
       system_ui_ids = coretext_system_ui_ids;
       collection->setTestFontManager(system_ui);
       coretext_families.clear();
+#endif
     }
   }
 #endif

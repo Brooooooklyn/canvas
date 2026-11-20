@@ -18,7 +18,7 @@ const FONT_PATH: &str = "/system/fonts";
 #[cfg(target_os = "macos")]
 const FONT_PATH: &str = "/System/Library/Fonts/";
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(not(any(target_os = "macos", target_os = "windows")))]
 static FONT_DIR: OnceLock<napi::Result<u32>> = OnceLock::new();
 
 static GLOBAL_FONT_COLLECTION: OnceLock<Mutex<FontCollection>> = OnceLock::new();
@@ -259,7 +259,7 @@ fn read_face_descriptors(
 pub mod global_fonts {
   use napi::bindgen_prelude::*;
 
-  #[cfg(not(target_os = "macos"))]
+  #[cfg(not(any(target_os = "macos", target_os = "windows")))]
   use super::FONT_DIR;
   use super::{FontKey, get_font, into_napi_error};
 
@@ -360,19 +360,19 @@ pub mod global_fonts {
     Ok(serde_json::to_vec(&font.get_families())?.into())
   }
 
-  /// Registers the installed fonts and returns how many. On macOS they are
-  /// the faces CoreText lists (Chrome's font set there), user fonts included,
-  /// with the system font renderer; else face 0 of each file in
-  /// /System/Library/Fonts.
+  /// Registers the installed fonts and returns how many. On macOS and Windows
+  /// they are the faces CoreText / DirectWrite list (Chrome's font set there),
+  /// user fonts included, with the system font renderer; else the files under
+  /// the OS and user font folders.
   #[napi]
   pub fn load_system_fonts() -> Result<u32> {
-    // The installed fonts follow the renderer mode, so macOS asks each time
-    // (they are listed once per mode).
-    #[cfg(target_os = "macos")]
+    // The installed fonts follow the renderer mode, so macOS and Windows ask
+    // each time (they are listed once per mode).
+    #[cfg(any(target_os = "macos", target_os = "windows"))]
     {
       super::load_system_fonts()
     }
-    #[cfg(not(target_os = "macos"))]
+    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
     {
       FONT_DIR
         .get_or_init(super::load_system_fonts)
@@ -382,14 +382,14 @@ pub mod global_fonts {
     }
   }
 
-  /// What index.js runs at startup, with the user font folders. macOS lists
-  /// the installed fonts at the first font lookup instead, as listing them
-  /// takes about 150 ms; elsewhere this is `loadSystemFonts`, then
-  /// `loadFontsFromDir` for each folder.
+  /// What index.js runs at startup, with the user font folders. macOS and
+  /// Windows list the installed fonts at the first font lookup instead;
+  /// elsewhere this is `loadSystemFonts`, then `loadFontsFromDir` for each
+  /// folder.
   #[napi]
   pub fn enable_system_fonts(user_font_dirs: Option<Vec<String>>) -> Result<()> {
     let user_font_dirs = user_font_dirs.unwrap_or_default();
-    #[cfg(target_os = "macos")]
+    #[cfg(any(target_os = "macos", target_os = "windows"))]
     {
       let mut files = super::font_files(super::FONT_PATH);
       for dir in &user_font_dirs {
@@ -400,7 +400,7 @@ pub mod global_fonts {
       super::note_font_collection_mutation();
       Ok(())
     }
-    #[cfg(not(target_os = "macos"))]
+    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
     {
       load_system_fonts()?;
       for dir in &user_font_dirs {
@@ -505,7 +505,7 @@ pub mod global_fonts {
   }
 }
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(not(any(target_os = "macos", target_os = "windows")))]
 fn load_system_fonts() -> napi::Result<u32> {
   load_fonts_from_dir(FONT_PATH)
 }
@@ -518,6 +518,22 @@ fn load_system_fonts() -> napi::Result<u32> {
   files.extend(font_files("/Library/Fonts"));
   if let Some(home) = std::env::var_os("HOME") {
     files.extend(font_files(path::Path::new(&home).join("Library/Fonts")));
+  }
+  let font_collection = get_font().map_err(into_napi_error)?;
+  let count = font_collection.load_installed_fonts(&files);
+  note_font_collection_mutation();
+  Ok(count)
+}
+
+#[cfg(target_os = "windows")]
+fn load_system_fonts() -> napi::Result<u32> {
+  // DirectWrite's installed fonts also include the per-user font folder,
+  // which index.js passes at startup.
+  let mut files = font_files(FONT_PATH);
+  if let Some(home) = std::env::var_os("USERPROFILE") {
+    files.extend(font_files(
+      path::Path::new(&home).join("AppData/Local/Microsoft/Windows/Fonts"),
+    ));
   }
   let font_collection = get_font().map_err(into_napi_error)?;
   let count = font_collection.load_installed_fonts(&files);
@@ -538,7 +554,7 @@ fn is_font_file(p: &path::Path) -> bool {
 }
 
 /// The font files under `dir`, in the order load_fonts_from_dir visits them.
-#[cfg(target_os = "macos")]
+#[cfg(any(target_os = "macos", target_os = "windows"))]
 fn font_files<P: AsRef<path::Path>>(dir: P) -> Vec<String> {
   let mut files = Vec::new();
   if let Ok(dir) = read_dir(dir) {
@@ -548,8 +564,10 @@ fn font_files<P: AsRef<path::Path>>(dir: P) -> Vec<String> {
         if meta.is_dir() {
           files.extend(font_files(p));
         } else if is_font_file(&p) {
-          // A symlink (e.g. /Library/Fonts/Arial Unicode.ttf) names its
-          // target, so a file linked from two folders is listed once.
+          // A symlink on macOS (e.g. /Library/Fonts/Arial Unicode.ttf) names
+          // its target, so a file linked from two folders is listed once.
+          // Skip canonicalize on Windows, where it adds a `\\?\` prefix.
+          #[cfg(target_os = "macos")]
           let p = std::fs::canonicalize(&p).unwrap_or(p);
           if let Some(p) = p.to_str() {
             files.push(p.to_owned());

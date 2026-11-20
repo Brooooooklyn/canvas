@@ -4757,7 +4757,7 @@ size_t skiac_font_collection_unregister_all(
   // The installed fonts loadSystemFonts turned on go too, as if registered.
   c_font_collection->prepareLookup();
   size_t removed_count = c_font_collection->assets->removeAllTypefaces();
-#if defined(__APPLE__)
+#if defined(__APPLE__) || defined(_WIN32)
   c_font_collection->disableInstalledFonts();
 #endif
   if (removed_count > 0) {
@@ -4838,7 +4838,7 @@ void skiac_font_collection_enable_installed_fonts(
     skiac_font_collection* c_font_collection,
     const char* const* paths,
     size_t count) {
-#if defined(__APPLE__)
+#if defined(__APPLE__) || defined(_WIN32)
   c_font_collection->enableInstalledFonts(paths, count);
 #else
   (void)c_font_collection;
@@ -4851,7 +4851,7 @@ uint32_t skiac_font_collection_load_installed_fonts(
     skiac_font_collection* c_font_collection,
     const char* const* paths,
     size_t count) {
-#if defined(__APPLE__)
+#if defined(__APPLE__) || defined(_WIN32)
   c_font_collection->enableInstalledFonts(paths, count);
   return c_font_collection->registerInstalledFonts();
 #else

@@ -31,7 +31,7 @@ thiserror        = "2"
 
 # Skia's Fontations font scaler (build.rs compiles its C++ half). build.rs
 # links the C++ runtime per target, so cxx's link-cplusplus links none.
-[target.'cfg(any(target_os = "macos", target_os = "linux"))'.dependencies]
+[target.'cfg(any(target_os = "macos", target_os = "linux", target_os = "windows"))'.dependencies]
 link-cplusplus  = { version = "1", features = ["nothing"] }
 skia-fontations = { path = "crates/skia-fontations" }
 
