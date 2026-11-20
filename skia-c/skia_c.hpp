@@ -222,12 +222,14 @@ struct skiac_face_range {
 };
 
 // The @font-face descriptors GlobalFonts.register declares a name with:
-// font-weight (normal {400, 400}), and font-style as Blink's slope (normal
-// {0, 0}, italic and oblique {14, 14}, `oblique <a> <b>` the angles). Never
-// both fields from auto: that is no descriptors.
+// font-weight (normal {400, 400}), font-style as Blink's slope (normal
+// {0, 0}, italic and oblique {14, 14}, `oblique <a> <b>` the angles), and
+// font-stretch as percentage (normal {100, 100}). Never all fields from
+// auto: that is no descriptors.
 struct skiac_face_descriptors {
   skiac_face_range weight;
   skiac_face_range slope;
+  skiac_face_range width;
 };
 
 // Stores font data needed to recreate a typeface after rebuild
@@ -343,6 +345,14 @@ struct FontFaceCore;
 // registered ones), null for no face.
 sk_sp<SkFontStyleSet> MakeSplitFamily(skiac_font_collection* c_collection,
                                       std::string_view tagged);
+// font_families.cpp: CSS Fonts L4 style matching (fixes Skia's
+// SkFontStyleSet::matchStyleCSS3 width > normal exact-match bug and
+// slant/weight bit-shift overflow) and wrappers applying it to style sets
+// and font managers.
+sk_sp<SkTypeface> MatchStyleCSS3(SkFontStyleSet* set,
+                                 const SkFontStyle& pattern);
+sk_sp<SkFontStyleSet> WrapCss3StyleSet(sk_sp<SkFontStyleSet> set);
+sk_sp<SkFontMgr> WrapCss3FontMgr(sk_sp<SkFontMgr> mgr);
 // font_families.cpp: the face of `family` that text naming it in a font
 // list uses (the named family path: a name registered over an installed
 // family gives its registered faces), from `assets`. `matched`, when given,
@@ -420,7 +430,10 @@ class TypefaceFontProviderCustom : public TypefaceFontProvider {
       }
       return it->second;
     }
-    return TypefaceFontProvider::onMatchFamily(name);
+    return WrapCss3StyleSet(TypefaceFontProvider::onMatchFamily(name));
+  }
+  sk_sp<SkFontStyleSet> onCreateStyleSet(int index) const override {
+    return WrapCss3StyleSet(TypefaceFontProvider::onCreateStyleSet(index));
   }
 
   // Get registered fonts for rebuild
@@ -1154,7 +1167,8 @@ class TypefaceFontProviderCustom : public TypefaceFontProvider {
       return a.min == b.min && a.max == b.max && a.from_auto == b.from_auto;
     };
     return same(it->second.weight, descriptors->weight) &&
-           same(it->second.slope, descriptors->slope);
+           same(it->second.slope, descriptors->slope) &&
+           same(it->second.width, descriptors->width);
   }
 
   void forgetDescribedName(const std::string& folded) {

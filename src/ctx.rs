@@ -2766,8 +2766,8 @@ impl Context {
   }
 
   pub fn set_font_stretch(&mut self, stretch: String) -> result::Result<(), SkError> {
-    // CanvasFontStretch is an enum of the nine keywords: a percentage, which
-    // the font shorthand takes, is not one of its values.
+    // CanvasFontStretch is an enum of the nine keywords: a percentage is not
+    // one of its values.
     if stretch.ends_with('%') {
       return Ok(());
     }

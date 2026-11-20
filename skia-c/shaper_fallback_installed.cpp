@@ -201,7 +201,7 @@ std::string ReadFaceIdentity(SkTypeface* face) {
 }
 
 // The faces of one installed family that have a character, matched to the
-// request's style by the CSS3 rule (SkFontStyleSet::matchStyleCSS3).
+// request's style by the CSS3/L4 rule (MatchStyleCSS3).
 class FaceSet final : public SkFontStyleSet {
  public:
   explicit FaceSet(std::vector<sk_sp<SkTypeface>> faces)
@@ -217,7 +217,7 @@ class FaceSet final : public SkFontStyleSet {
   }
   sk_sp<SkTypeface> createTypeface(int index) override { return faces_[index]; }
   sk_sp<SkTypeface> matchStyle(const SkFontStyle& pattern) override {
-    return matchStyleCSS3(pattern);
+    return MatchStyleCSS3(this, pattern);
   }
 
  private:

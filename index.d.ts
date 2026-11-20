@@ -42,22 +42,23 @@ export function setTextRenderer(renderer: TextRenderer): void
 export function getTextRenderer(): TextRenderer
 
 interface CanvasRenderingContext2D
-  extends CanvasCompositing,
-  CanvasDrawPath,
-  CanvasFillStrokeStyles,
-  CanvasFilters,
-  CanvasImageData,
-  CanvasImageSmoothing,
-  CanvasPath,
-  CanvasPathDrawingStyles,
-  CanvasRect,
-  CanvasSettings,
-  CanvasShadowStyles,
-  CanvasState,
-  CanvasText,
-  CanvasTextDrawingStyles,
-  CanvasTransform,
-  CanvasPDFAnnotations { }
+  extends
+    CanvasCompositing,
+    CanvasDrawPath,
+    CanvasFillStrokeStyles,
+    CanvasFilters,
+    CanvasImageData,
+    CanvasImageSmoothing,
+    CanvasPath,
+    CanvasPathDrawingStyles,
+    CanvasRect,
+    CanvasSettings,
+    CanvasShadowStyles,
+    CanvasState,
+    CanvasText,
+    CanvasTextDrawingStyles,
+    CanvasTransform,
+    CanvasPDFAnnotations {}
 
 interface CanvasState {
   isContextLost(): boolean
@@ -289,13 +290,7 @@ type CanvasFontStretch =
   | 'ultra-condensed'
   | 'ultra-expanded'
 type CanvasFontVariantCaps =
-  | 'all-petite-caps'
-  | 'all-small-caps'
-  | 'normal'
-  | 'petite-caps'
-  | 'small-caps'
-  | 'titling-caps'
-  | 'unicase'
+  'all-petite-caps' | 'all-small-caps' | 'normal' | 'petite-caps' | 'small-caps' | 'titling-caps' | 'unicase'
 type CanvasTextAlign = 'center' | 'end' | 'left' | 'right' | 'start'
 type CanvasTextBaseline = 'alphabetic' | 'bottom' | 'hanging' | 'ideographic' | 'middle' | 'top'
 type CanvasTextRendering = 'auto' | 'geometricPrecision' | 'optimizeLegibility' | 'optimizeSpeed'
@@ -533,7 +528,7 @@ type OmitNeverOfMatrix = OmitMatrixMethod[keyof OmitMatrixMethod]
 
 export const DOMMatrix: {
   prototype: DOMMatrix
-  new(init?: string | number[]): DOMMatrix
+  new (init?: string | number[]): DOMMatrix
   fromFloat32Array(array32: Float32Array): DOMMatrix
   fromFloat64Array(array64: Float64Array): DOMMatrix
   fromMatrix(other?: DOMMatrixInit): DOMMatrix
@@ -560,7 +555,7 @@ export interface DOMRect extends DOMRectReadOnly {
 
 export const DOMRect: {
   prototype: DOMRect
-  new(x?: number, y?: number, width?: number, height?: number): DOMRect
+  new (x?: number, y?: number, width?: number, height?: number): DOMRect
   fromRect(other?: DOMRectInit): DOMRect
 }
 
@@ -582,7 +577,7 @@ export interface DOMPoint extends DOMPointReadOnly {
 
 export const DOMPoint: {
   prototype: DOMPoint
-  new(x?: number, y?: number, z?: number, w?: number): DOMPoint
+  new (x?: number, y?: number, z?: number, w?: number): DOMPoint
   fromPoint(other?: DOMPointInit): DOMPoint
 }
 
@@ -1196,6 +1191,18 @@ export interface FontFaceDescriptors {
    * invalid).
    */
   style?: 'normal' | 'italic' | 'oblique' | 'auto' | `oblique ${string}`
+  /**
+   * `normal` (default), `auto`, one of the eight stretch keywords
+   * (`ultra-condensed`, `extra-condensed`, `condensed`, `semi-condensed`,
+   * `semi-expanded`, `expanded`, `extra-expanded`, `ultra-expanded`), a
+   * non-negative CSS percentage or `calc()` percentage, or a two-value
+   * percentage range `<a> <b>` (a reversed one is swapped), in any ASCII
+   * case. `normal` and `auto` keep the font's own `wdth` axis unclamped;
+   * `100%` and the other keywords/percentages clamp it. A value that is not
+   * a string is converted with `String()` first (`null` is 'null',
+   * invalid).
+   */
+  stretch?: CanvasFontStretch | 'auto' | `${number}%` | `${number}% ${number}%` | (string & {})
 }
 
 interface IGlobalFonts {
@@ -1206,12 +1213,12 @@ interface IGlobalFonts {
    * value, throws a TypeError). `descriptors`: the font's descriptors under
    * this name; a text font list uses them where this name matches the font.
    * Without them (or with every one `auto`), `auto`: the face is picked as
-   * `normal` (weight 400, upright), and the font's own weight and style axis
-   * ranges are kept for variations (no clamping).
+   * `normal` (weight 400, upright, width 100%), and the font's own weight,
+   * style and width axis ranges are kept for variations (no clamping).
    * Faces of one family are chosen by their descriptors, as with
    * `@font-face`. Without descriptors every face is `auto` and the newest
-   * face wins; give `{ weight, style }` for each file of a family, or use
-   * `loadFontsFromDir` (installed fonts match by the file's own style).
+   * face wins; give `{ weight, style, stretch }` for each file of a family,
+   * or use `loadFontsFromDir` (installed fonts match by the file's own style).
    * A font registered under a generic keyword (`serif`, `sans-serif`, ...):
    * for that keyword written unquoted, each face is matched by the file's
    * own style and descriptors are ignored (bold is made from weight 600, as

@@ -219,14 +219,14 @@ void SetSystemFontRenderer(bool enabled) {
 
 sk_sp<SkFontMgr> MakeInstalledFontManager() {
   if (!SystemFontRenderer()) {
-    return SkFontMgr_New_Custom_Directory(SK_FONT_FILE_PREFIX);
+    return WrapCss3FontMgr(SkFontMgr_New_Custom_Directory(SK_FONT_FILE_PREFIX));
   }
 #if defined(__APPLE__)
   // CoreText's installed fonts come with loadSystemFonts
   // (skiac_font_collection::enableInstalledFonts).
   return nullptr;
 #else
-  return SkFontMgr_New_Custom_Directory(SK_FONT_FILE_PREFIX);
+  return WrapCss3FontMgr(SkFontMgr_New_Custom_Directory(SK_FONT_FILE_PREFIX));
 #endif
 }
 
@@ -281,7 +281,7 @@ bool IsCollectionFile(const char* path) {
 
 #if defined(__APPLE__)
 sk_sp<SkFontMgr> MakeCoreTextFontManager() {
-  return SkFontMgr_New_CoreText(nullptr);
+  return WrapCss3FontMgr(SkFontMgr_New_CoreText(nullptr));
 }
 
 SkFontStyle CoreTextFontStyle(SkTypeface* face) {

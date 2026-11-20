@@ -19,10 +19,13 @@
 #include <math.h>
 #include <string.h>
 #include <algorithm>
+#include <array>
+#include <cmath>
 #include <memory>
 #include <optional>
 #include <string>
 #include <string_view>
+#include <tuple>
 #include <vector>
 
 #include <src/core/SkUTF.h>
@@ -1316,6 +1319,21 @@ namespace {
 // FontSelectionAlgorithm::IsBetterMatchForRequest). A tie keeps the
 // segment of the newer face (Chrome's is hash order). `rank` k: face k of
 // that segment, or none, as SegmentStyleSet for "\x01s\x01" k.
+int NearestStyleWidth(float width_pct) {
+  static constexpr float kWidths[] = {50,     62.5f, 75,  87.5f, 100,
+                                      112.5f, 125,   150, 200};
+  int best = 1;
+  float best_diff = std::fabs(width_pct - kWidths[0]);
+  for (int i = 1; i < 9; ++i) {
+    const float diff = std::fabs(width_pct - kWidths[i]);
+    if (diff < best_diff) {
+      best_diff = diff;
+      best = i + 1;
+    }
+  }
+  return best;
+}
+
 class FontFaceStyleSet : public SkFontStyleSet {
  public:
   FontFaceStyleSet(std::shared_ptr<const FontFaceCore> core,
@@ -1335,7 +1353,7 @@ class FontFaceStyleSet : public SkFontStyleSet {
                           caps.slope.maximum == font_selection::Value(14);
       *style =
           SkFontStyle(static_cast<int>(lroundf(caps.weight.minimum.ToFloat())),
-                      SkFontStyle::kNormal_Width,
+                      NearestStyleWidth(caps.width.minimum.ToFloat()),
                       upright  ? SkFontStyle::kUpright_Slant
                       : italic ? SkFontStyle::kItalic_Slant
                                : SkFontStyle::kOblique_Slant);
@@ -1406,8 +1424,8 @@ bool DeclaresFaces(skiac_font_collection* c_collection, std::string_view name) {
 
 // The FontFaceCore of `faces` (newest first) of the family `name`, each
 // with FontFace::GetFontSelectionCapabilities of its descriptors under the
-// name (DescriptorsUnder): an `auto` field is the normal value, the width
-// (no descriptor) 100%. A family no face of which declares any is one
+// name (DescriptorsUnder): an `auto` field is the normal value (width 100%,
+// weight 400, slope 0). A family no face of which declares any is one
 // segment, with no lookup.
 std::shared_ptr<const FontFaceCore> MakeFontFaceCore(
     skiac_font_collection* c_collection,
@@ -1426,7 +1444,9 @@ std::shared_ptr<const FontFaceCore> MakeFontFaceCore(
             ? DescriptorsUnder(c_collection, faces[i]->uniqueID(), folded, seen)
             : std::nullopt;
     font_selection::Capabilities caps;
-    caps.width = {font_selection::Value(100), font_selection::Value(100)};
+    caps.width = {
+        font_selection::Value(declared ? declared->width.min : 100),
+        font_selection::Value(declared ? declared->width.max : 100)};
     caps.weight = {
         font_selection::Value(declared ? declared->weight.min : 400),
         font_selection::Value(declared ? declared->weight.max : 400)};
@@ -1585,8 +1605,17 @@ std::vector<SkString> ResolveFontFamilies(skiac_font_collection* c_collection,
       // faces of one style, less one. Not per style, as the resolved
       // families are cached per family list.
       if (web && !name.empty() && name.front() == '\x01') {
-        const int depth =
-            SameStyleDepth(c_collection->assets->matchFamily(name.c_str()));
+        sk_sp<SkFontStyleSet> set =
+            c_collection->assets->matchFamily(name.c_str());
+        int depth = 0;
+        if (std::shared_ptr<const FontFaceCore> core =
+                c_collection->assets->fontFaceCore(name)) {
+          for (const auto& segment : core->segments) {
+            depth = std::max(depth, static_cast<int>(segment.size()));
+          }
+        } else {
+          depth = SameStyleDepth(set);
+        }
         for (int k = 1; k < depth; ++k) {
           add(kSiblingTag + std::to_string(k) + "\x01" + name, false);
         }
@@ -2029,10 +2058,198 @@ sk_sp<SkFontStyleSet> MakeSplitFamilyAt(
   for (auto& face : faces) {
     set->appendTypeface(std::move(face));
   }
-  return set;
+  return WrapCss3StyleSet(std::move(set));
 }
 
+class Css3StyleSet final : public SkFontStyleSet {
+ public:
+  explicit Css3StyleSet(sk_sp<SkFontStyleSet> base) : base_(std::move(base)) {}
+  int count() override { return base_->count(); }
+  void getStyle(int index, SkFontStyle* style, SkString* name) override {
+    base_->getStyle(index, style, name);
+  }
+  sk_sp<SkTypeface> createTypeface(int index) override {
+    return base_->createTypeface(index);
+  }
+  sk_sp<SkTypeface> matchStyle(const SkFontStyle& pattern) override {
+    return MatchStyleCSS3(base_.get(), pattern);
+  }
+
+ private:
+  sk_sp<SkFontStyleSet> base_;
+};
+
+class Css3FontMgr final : public SkFontMgr {
+ public:
+  explicit Css3FontMgr(sk_sp<SkFontMgr> mgr) : mgr_(std::move(mgr)) {}
+
+ protected:
+  int onCountFamilies() const override { return mgr_->countFamilies(); }
+  void onGetFamilyName(int index, SkString* familyName) const override {
+    mgr_->getFamilyName(index, familyName);
+  }
+  sk_sp<SkFontStyleSet> onCreateStyleSet(int index) const override {
+    return WrapCss3StyleSet(mgr_->createStyleSet(index));
+  }
+  sk_sp<SkFontStyleSet> onMatchFamily(const char familyName[]) const override {
+    return WrapCss3StyleSet(mgr_->matchFamily(familyName));
+  }
+  sk_sp<SkTypeface> onMatchFamilyStyle(
+      const char familyName[],
+      const SkFontStyle& style) const override {
+    sk_sp<SkFontStyleSet> set = this->onMatchFamily(familyName);
+    return set ? set->matchStyle(style) : nullptr;
+  }
+  sk_sp<SkTypeface> onMatchFamilyStyleCharacter(
+      const char familyName[],
+      const SkFontStyle& style,
+      const char* bcp47[],
+      int bcp47Count,
+      SkUnichar character) const override {
+    return mgr_->matchFamilyStyleCharacter(familyName, style, bcp47, bcp47Count,
+                                           character);
+  }
+  sk_sp<SkTypeface> onMakeFromData(sk_sp<SkData> data,
+                                   int ttcIndex) const override {
+    return mgr_->makeFromData(std::move(data), ttcIndex);
+  }
+  sk_sp<SkTypeface> onMakeFromStreamIndex(std::unique_ptr<SkStreamAsset> stream,
+                                          int ttcIndex) const override {
+    return mgr_->makeFromStream(std::move(stream), ttcIndex);
+  }
+  sk_sp<SkTypeface> onMakeFromStreamArgs(
+      std::unique_ptr<SkStreamAsset> stream,
+      const SkFontArguments& args) const override {
+    return mgr_->makeFromStream(std::move(stream), args);
+  }
+  sk_sp<SkTypeface> onMakeFromFile(const char path[],
+                                   int ttcIndex) const override {
+    return mgr_->makeFromFile(path, ttcIndex);
+  }
+  sk_sp<SkTypeface> onLegacyMakeTypeface(const char familyName[],
+                                         SkFontStyle style) const override {
+    if (familyName) {
+      if (sk_sp<SkTypeface> matched =
+              this->onMatchFamilyStyle(familyName, style)) {
+        return matched;
+      }
+    }
+    sk_sp<SkTypeface> fallback = mgr_->legacyMakeTypeface(nullptr, style);
+    if (!fallback) {
+      return nullptr;
+    }
+    SkString defaultFamily;
+    fallback->getFamilyName(&defaultFamily);
+    if (!defaultFamily.isEmpty()) {
+      if (sk_sp<SkTypeface> matched =
+              this->onMatchFamilyStyle(defaultFamily.c_str(), style)) {
+        return matched;
+      }
+    }
+    return fallback;
+  }
+
+ private:
+  sk_sp<SkFontMgr> mgr_;
+};
+
 }  // namespace
+
+sk_sp<SkTypeface> MatchStyleCSS3(SkFontStyleSet* set,
+                                 const SkFontStyle& pattern) {
+  if (!set) {
+    return nullptr;
+  }
+  const int count = set->count();
+  if (count <= 0) {
+    return nullptr;
+  }
+
+  const int p_width = std::clamp(pattern.width(), 1, 9);
+  const int p_slant = std::clamp(static_cast<int>(pattern.slant()), 0, 2);
+  const int p_weight = std::clamp(pattern.weight(), 0, 1000);
+
+  static_assert(SkFontStyle::kUpright_Slant == 0 &&
+                    SkFontStyle::kItalic_Slant == 1 &&
+                    SkFontStyle::kOblique_Slant == 2,
+                "SkFontStyle::Slant values not as required.");
+  static constexpr std::array<std::array<int, 3>, 3> kSlantScore = {{
+      //              Upright  Italic  Oblique  [current]
+      /* Upright */ {3, 1, 2},
+      /* Italic  */ {1, 3, 2},
+      /* Oblique */ {1, 2, 3},
+      // [pattern]
+  }};
+
+  int best_index = 0;
+  std::tuple<int, int, int> best_score{0, 0, 0};
+  for (int i = 0; i < count; ++i) {
+    SkFontStyle current;
+    set->getStyle(i, &current, nullptr);
+    const int c_width = std::clamp(current.width(), 1, 9);
+    const int c_slant = std::clamp(static_cast<int>(current.slant()), 0, 2);
+    const int c_weight = std::clamp(current.weight(), 0, 1000);
+
+    int width_score = 0;
+    if (p_width <= SkFontStyle::kNormal_Width) {
+      if (c_width <= p_width) {
+        width_score = 10 - p_width + c_width;
+      } else {
+        width_score = 10 - c_width;
+      }
+    } else {
+      if (c_width >= p_width) {
+        width_score = 10 + p_width - c_width;
+      } else {
+        width_score = c_width;
+      }
+    }
+
+    const int slant_score = kSlantScore[p_slant][c_slant];
+
+    int weight_score = 0;
+    if (c_weight == p_weight) {
+      weight_score = 1000;
+    } else if (p_weight < 400) {
+      if (c_weight <= p_weight) {
+        weight_score = 1000 - p_weight + c_weight;
+      } else {
+        weight_score = 1000 - c_weight;
+      }
+    } else if (p_weight <= 500) {
+      if (c_weight >= p_weight && c_weight <= 500) {
+        weight_score = 1000 + p_weight - c_weight;
+      } else if (c_weight < p_weight) {
+        weight_score = 500 + c_weight;
+      } else {
+        weight_score = 1000 - c_weight;
+      }
+    } else {
+      if (c_weight > p_weight) {
+        weight_score = 1000 + p_weight - c_weight;
+      } else {
+        weight_score = c_weight;
+      }
+    }
+
+    const std::tuple<int, int, int> current_score{width_score, slant_score,
+                                                  weight_score};
+    if (i == 0 || best_score < current_score) {
+      best_score = current_score;
+      best_index = i;
+    }
+  }
+
+  return set->createTypeface(best_index);
+}
+
+sk_sp<SkFontStyleSet> WrapCss3StyleSet(sk_sp<SkFontStyleSet> set) {
+  return set ? sk_make_sp<Css3StyleSet>(std::move(set)) : nullptr;
+}
+
+sk_sp<SkFontMgr> WrapCss3FontMgr(sk_sp<SkFontMgr> mgr) {
+  return mgr ? sk_make_sp<Css3FontMgr>(std::move(mgr)) : nullptr;
+}
 
 sk_sp<SkFontStyleSet> MakeSplitFamily(skiac_font_collection* c_collection,
                                       std::string_view tagged) {
