@@ -352,6 +352,60 @@ fn consume_face_weight_value<'i>(p: &mut Parser<'i>, lengths: &Lengths) -> Optio
   }
 }
 
+/// The `@font-face` stretch descriptor (ConsumeFontStretch in
+/// kCSSFontFaceRuleMode, then GetFontSelectionCapabilities): `normal` and
+/// `auto` (100 from auto), the eight stretch keywords, a non-negative
+/// percentage or a percentage range. None when it is invalid.
+pub(crate) fn parse_font_face_stretch(input: &str) -> Option<FaceRange> {
+  let mut p = Parser::new(input);
+  p.set_nested_block_limit(u8::MAX);
+  let p = &mut p;
+  let keyword = p.try_parse(|p| match next_ident(p).as_deref() {
+    Some("normal" | "auto") => Ok(FaceRange::auto(100.0)),
+    Some("ultra-condensed") => Ok(FaceRange::explicit(50.0, 50.0)),
+    Some("extra-condensed") => Ok(FaceRange::explicit(62.5, 62.5)),
+    Some("condensed") => Ok(FaceRange::explicit(75.0, 75.0)),
+    Some("semi-condensed") => Ok(FaceRange::explicit(87.5, 87.5)),
+    Some("semi-expanded") => Ok(FaceRange::explicit(112.5, 112.5)),
+    Some("expanded") => Ok(FaceRange::explicit(125.0, 125.0)),
+    Some("extra-expanded") => Ok(FaceRange::explicit(150.0, 150.0)),
+    Some("ultra-expanded") => Ok(FaceRange::explicit(200.0, 200.0)),
+    _ => Err(()),
+  });
+  let range = match keyword {
+    Ok(range) => range,
+    Err(()) => {
+      let lengths = font_face_lengths();
+      let start = consume_face_stretch_value(p, &lengths)?;
+      if p.is_exhausted() {
+        // Blink converts a single computed percentage to float before
+        // quarter-step quantization (GetFontSelectionCapabilities), while
+        // range endpoints stay f64.
+        let width = font_selection_value((start as f32).into());
+        FaceRange::explicit(width, width)
+      } else {
+        let end = consume_face_stretch_value(p, &lengths)?;
+        FaceRange::swapped(start, end)
+      }
+    }
+  };
+  p.is_exhausted().then_some(range)
+}
+
+/// ConsumeFontStretch's ConsumePercent (kNonNegative): a non-negative
+/// percentage literal, or a <percentage> math function (computed, NaN 0,
+/// then clamped to 0 and up).
+fn consume_face_stretch_value<'i>(p: &mut Parser<'i>, lengths: &Lengths) -> Option<f64> {
+  if let Ok(node) = p.try_parse(|p| consume_math(p, true, |c| c == Category::Percent)) {
+    return Some(compute(&node, lengths).max(0.0));
+  }
+  let t = next_token(p).ok()?;
+  match t.token {
+    Token::Percentage { .. } if t.value >= 0.0 => Some(t.value),
+    _ => None,
+  }
+}
+
 fn next_ident<'i>(p: &mut Parser<'i>) -> Option<String> {
   match p.next() {
     Ok(Token::Ident(ident)) => Some(ident.to_ascii_lowercase()),
@@ -994,6 +1048,123 @@ mod tests {
     assert_eq!(parse_font_stretch("CONDENSED"), None);
     assert_eq!(parse_font_stretch("50%"), None);
     assert_eq!(parse_font_stretch("ultra"), None);
+  }
+
+  #[test]
+  fn font_face_stretch() {
+    // normal and auto keep from_auto: true (wdth unclamped).
+    for input in ["normal", "NORMAL", "auto", "Auto", " normal "] {
+      assert_eq!(
+        parse_font_face_stretch(input),
+        Some(FaceRange::auto(100.0)),
+        "{input}"
+      );
+    }
+
+    // All 8 non-normal keywords (case-insensitive, from_auto: false).
+    for (input, width) in [
+      ("ultra-condensed", 50.0),
+      ("ULTRA-CONDENSED", 50.0),
+      ("extra-condensed", 62.5),
+      ("Extra-Condensed", 62.5),
+      ("condensed", 75.0),
+      ("CONDENSED", 75.0),
+      ("semi-condensed", 87.5),
+      ("Semi-Condensed", 87.5),
+      ("semi-expanded", 112.5),
+      ("SEMI-EXPANDED", 112.5),
+      ("expanded", 125.0),
+      ("Expanded", 125.0),
+      ("extra-expanded", 150.0),
+      ("EXTRA-EXPANDED", 150.0),
+      ("ultra-expanded", 200.0),
+      ("Ultra-Expanded", 200.0),
+    ] {
+      assert_eq!(
+        parse_font_face_stretch(input),
+        Some(FaceRange::explicit(width, width)),
+        "{input}"
+      );
+    }
+
+    // Explicit 100% is distinct from normal (from_auto: false).
+    assert_eq!(
+      parse_font_face_stretch("100%"),
+      Some(FaceRange::explicit(100.0, 100.0))
+    );
+    assert_ne!(
+      parse_font_face_stretch("100%"),
+      parse_font_face_stretch("normal")
+    );
+
+    // Single percentages and quarter-step / int16 saturation.
+    for (input, width) in [
+      ("0%", 0.0),
+      ("50%", 50.0),
+      ("75.24%", 75.0),
+      ("75.25%", 75.25),
+      ("10000%", 8191.75),
+    ] {
+      assert_eq!(
+        parse_font_face_stretch(input),
+        Some(FaceRange::explicit(width, width)),
+        "{input}"
+      );
+    }
+
+    // Ranges (including reversed and calc endpoints).
+    for (input, min, max) in [
+      ("50% 200%", 50.0, 200.0),
+      ("200% 50%", 50.0, 200.0),
+      ("calc(-10%) 125%", 0.0, 125.0),
+      ("125% calc(-10%)", 0.0, 125.0),
+    ] {
+      assert_eq!(
+        parse_font_face_stretch(input),
+        Some(FaceRange::explicit(min, max)),
+        "{input}"
+      );
+    }
+
+    // Math functions.
+    for (input, width) in [
+      ("calc(50% + 25%)", 75.0),
+      ("calc(-10%)", 0.0),
+      ("calc(NaN * 1%)", 0.0),
+      ("calc(infinity * 1%)", 8191.75),
+      ("calc(100% / 0.19 * 0.19)", 100.0),
+      ("min(50%, 75%)", 50.0),
+      ("clamp(50%, 80%, 100%)", 80.0),
+    ] {
+      assert_eq!(
+        parse_font_face_stretch(input),
+        Some(FaceRange::explicit(width, width)),
+        "{input}"
+      );
+    }
+    // Range endpoints stay f64 before quarter-step truncation, matching Blink.
+    assert_eq!(
+      parse_font_face_stretch("calc(100% / 0.19 * 0.19) calc(100% / 0.19 * 0.19)"),
+      Some(FaceRange::explicit(99.75, 99.75)),
+    );
+
+    // Rejections.
+    for input in [
+      "",
+      "-10%",
+      "50",
+      "50px",
+      "normal normal",
+      "auto auto",
+      "condensed expanded",
+      "condensed 150%",
+      "50% 100% 150%",
+      "inherit",
+      "calc(10px)",
+      "calc(50% + 10px)",
+    ] {
+      assert_eq!(parse_font_face_stretch(input), None, "{input}");
+    }
   }
 
   #[test]

@@ -188,19 +188,22 @@ enum Declared {
 /// (FontFace::SetPropertyFromString, then GetFontSelectionCapabilities): a
 /// missing member is the IDL default "normal". A weight math function
 /// outside [1, 1000] makes every descriptor `auto` (`normal_capabilities`).
-fn face_descriptors(weight: Option<&str>, style: Option<&str>) -> Declared {
-  use crate::font::{FaceWeight, parse_font_face_style, parse_font_face_weight};
+fn face_descriptors(weight: Option<&str>, style: Option<&str>, stretch: Option<&str>) -> Declared {
+  use crate::font::{
+    FaceWeight, parse_font_face_stretch, parse_font_face_style, parse_font_face_weight,
+  };
   use crate::sk::ffi::{skiac_face_descriptors, skiac_face_range};
-  let (Some(weight), Some(slope)) = (
+  let (Some(weight), Some(slope), Some(width)) = (
     parse_font_face_weight(weight.unwrap_or("normal")),
     parse_font_face_style(style.unwrap_or("normal")),
+    parse_font_face_stretch(stretch.unwrap_or("normal")),
   ) else {
     return Declared::Invalid;
   };
   let FaceWeight::Range(weight) = weight else {
     return Declared::Auto;
   };
-  if weight.from_auto && slope.from_auto {
+  if weight.from_auto && slope.from_auto && width.from_auto {
     return Declared::Auto;
   }
   let range = |r: crate::font::FaceRange| skiac_face_range {
@@ -211,14 +214,15 @@ fn face_descriptors(weight: Option<&str>, style: Option<&str>) -> Declared {
   Declared::Explicit(skiac_face_descriptors {
     weight: range(weight),
     slope: range(slope),
+    width: range(width),
   })
 }
 
 /// FontFaceDescriptors (font_face_descriptors.idl): `descriptors` must be an
 /// object, else a TypeError, as the FontFace constructor throws. Its members
-/// are DOMStrings, converted in IDL order (style, then weight); a conversion
-/// may throw (a Symbol). A number weight is ToString'd too (`700.5` is
-/// "700.5", `1e21` "1e+21").
+/// are DOMStrings, converted in IDL order (stretch, style, weight); a
+/// conversion may throw (a Symbol). A number weight is ToString'd too (`700.5`
+/// is "700.5", `1e21` "1e+21").
 fn read_face_descriptors(
   env: napi::sys::napi_env,
   value: napi::sys::napi_value,
@@ -240,9 +244,14 @@ fn read_face_descriptors(
       None => Ok(None),
     }
   };
+  let stretch = read("stretch")?;
   let style = read("style")?;
   let weight = read("weight")?;
-  Ok(face_descriptors(weight.as_deref(), style.as_deref()))
+  Ok(face_descriptors(
+    weight.as_deref(),
+    style.as_deref(),
+    stretch.as_deref(),
+  ))
 }
 
 #[napi(js_name = "GlobalFonts")]

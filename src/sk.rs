@@ -45,6 +45,7 @@ pub mod ffi {
   pub struct skiac_face_descriptors {
     pub weight: skiac_face_range,
     pub slope: skiac_face_range,
+    pub width: skiac_face_range,
   }
 
   #[repr(C)]

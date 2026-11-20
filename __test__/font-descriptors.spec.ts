@@ -15,7 +15,7 @@ import test from 'ava'
 
 import { convertSVGTextToPath, createCanvas, type FontFaceDescriptors, GlobalFonts, Image } from '../index'
 
-import { withoutGlyf } from './font-fixtures'
+import { withoutGlyf, withStaticStyle } from './font-fixtures'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const font = (name: string) => readFileSync(join(__dirname, 'fonts', name))
@@ -381,8 +381,15 @@ test('weight strings are CSS: keywords, numbers, calc(); numbers are ToString-ed
     t.deepEqual(px(`${request} "${name}"`), px(same), String(weight))
   }
   // An all-auto object is no descriptors.
-  declare(t, robotoMono, 'Weight All Auto', { weight: 'auto', style: 'auto' })
+  declare(t, robotoMono, 'Weight All Auto', { weight: 'auto', style: 'auto', stretch: 'auto' })
   t.deepEqual(px('bold 32px "Weight All Auto"'), px('bold 32px "Descriptors Auto"'))
+  const inconsolata = font('Inconsolata-VariableFont_wdth,wght.woff2')
+  GlobalFonts.register(inconsolata, 'Stretch All Auto Ref')
+  declare(t, inconsolata, 'Stretch All Auto', { weight: 'auto', style: 'auto', stretch: 'auto' })
+  declare(t, inconsolata, 'Stretch Auto 100%', { weight: 'auto', style: 'auto', stretch: '100%' })
+  t.deepEqual(px('expanded 32px "Stretch All Auto"'), px('expanded 32px "Stretch All Auto Ref"'))
+  t.deepEqual(px('expanded 32px "Stretch Auto 100%"'), px('32px "Stretch All Auto Ref"'))
+  t.notDeepEqual(px('expanded 32px "Stretch Auto 100%"'), px('expanded 32px "Stretch All Auto"'))
 })
 
 test('descriptors that are not an object throw a TypeError and register nothing', (t) => {
@@ -397,7 +404,7 @@ test('descriptors that are not an object throw a TypeError and register nothing'
   }
 })
 
-test('members convert as DOMStrings, style then weight; a Symbol throws a TypeError', (t) => {
+test('members convert as DOMStrings, stretch then style then weight; a Symbol throws a TypeError', (t) => {
   const garamond = font('EBGaramond-Regular.ttf')
   const read: string[] = []
   const descriptors = {
@@ -407,14 +414,19 @@ test('members convert as DOMStrings, style then weight; a Symbol throws a TypeEr
     },
     get style() {
       read.push('style')
-      return { toString: () => (read.push('toString'), 'italic') }
+      return { toString: () => (read.push('styleToString'), 'italic') }
+    },
+    get stretch() {
+      read.push('stretch')
+      return { toString: () => (read.push('stretchToString'), 'condensed') }
     },
   }
   t.truthy(GlobalFonts.register(garamond, 'Descriptors Getters', descriptors as unknown as FontFaceDescriptors))
-  t.deepEqual(read, ['style', 'toString', 'weight'])
+  t.deepEqual(read, ['stretch', 'stretchToString', 'style', 'styleToString', 'weight'])
   for (const [key, i] of [
-    ['style', 0],
-    ['weight', 1],
+    ['stretch', 0],
+    ['style', 1],
+    ['weight', 2],
   ] as const) {
     const name = `Descriptors Symbol ${i}`
     t.throws(() => GlobalFonts.register(garamond, name, { [key]: Symbol('x') } as unknown as FontFaceDescriptors), {
@@ -2873,3 +2885,318 @@ for (const renderer of ['portable', 'system'] as const) {
     t.deepEqual(JSON.parse(child.stdout), { changed: true, afterRegister: true, afterMeasure: true })
   })
 }
+
+const inconsolata = font('Inconsolata-VariableFont_wdth,wght.woff2')
+GlobalFonts.register(inconsolata, 'Stretch Auto')
+GlobalFonts.register(scienceGothic, 'SG Stretch Auto')
+
+test('stretch normal and auto leave wdth unclamped; 100% clamps wdth to 100%', (t) => {
+  declare(t, inconsolata, 'Stretch Normal', { stretch: 'normal' })
+  declare(t, inconsolata, 'Stretch Auto Desc', { stretch: 'auto' })
+  declare(t, inconsolata, 'Stretch Auto Upper', { stretch: 'AUTO' as FontFaceDescriptors['stretch'] })
+  declare(t, inconsolata, 'Stretch Normal Padded', { stretch: ' normal ' as FontFaceDescriptors['stretch'] })
+  declare(t, inconsolata, 'Stretch 100%', { stretch: '100%' })
+  const px = (f: string) => draw(f).pixels
+  const autoNormal = px('32px "Stretch Auto"')
+  const autoCondensed = px('condensed 32px "Stretch Auto"')
+  const autoExpanded = px('expanded 32px "Stretch Auto"')
+  t.notDeepEqual(autoCondensed, autoNormal)
+  t.notDeepEqual(autoExpanded, autoNormal)
+  for (const name of ['Stretch Normal', 'Stretch Auto Desc', 'Stretch Auto Upper', 'Stretch Normal Padded']) {
+    t.deepEqual(px(`condensed 32px "${name}"`), autoCondensed, `${name} condensed`)
+    t.deepEqual(px(`32px "${name}"`), autoNormal, `${name} normal`)
+    t.deepEqual(px(`expanded 32px "${name}"`), autoExpanded, `${name} expanded`)
+  }
+  t.deepEqual(px('condensed 32px "Stretch 100%"'), autoNormal)
+  t.deepEqual(px('32px "Stretch 100%"'), autoNormal)
+  t.deepEqual(px('expanded 32px "Stretch 100%"'), autoNormal)
+  t.notDeepEqual(px('expanded 32px "Stretch 100%"'), autoExpanded)
+})
+
+test('stretch keywords clamp wdth to their CSS percentage and are ASCII case-insensitive', (t) => {
+  const cases: [string, number][] = [
+    ['ultra-condensed', 50],
+    ['extra-condensed', 62.5],
+    ['condensed', 75],
+    ['semi-condensed', 87.5],
+    ['semi-expanded', 112.5],
+    ['expanded', 125],
+    ['extra-expanded', 150],
+    ['ultra-expanded', 200],
+    ['CONDENSED', 75],
+    ['Semi-Expanded', 112.5],
+    ['ULTRA-EXPANDED', 200],
+  ]
+  for (const [i, [stretch, pct]] of cases.entries()) {
+    const name = `Stretch Kw ${i}`
+    declare(t, inconsolata, name, { stretch: stretch as FontFaceDescriptors['stretch'] })
+    const expected = draw('32px "Stretch Auto"', undefined, `"wdth" ${pct}`).pixels
+    t.deepEqual(draw(`32px "${name}"`).pixels, expected, `${stretch} normal request`)
+    t.deepEqual(draw(`expanded 32px "${name}"`).pixels, expected, `${stretch} expanded request`)
+    t.deepEqual(draw(`condensed 32px "${name}"`).pixels, expected, `${stretch} condensed request`)
+  }
+})
+
+test('stretch percentages, quarter-step quantization, ranges, reversed ranges, and math functions', (t) => {
+  const px = (f: string, vars = '') => draw(f, undefined, vars).pixels
+  // Single percentages (0% clamps to axis min 50, 10000% clamps to axis max 200).
+  const singles: [string, number][] = [
+    ['0%', 50],
+    ['50%', 50],
+    ['75%', 75],
+    ['10000%', 200],
+    ['calc(50% + 25%)', 75],
+    ['min(50%, 75%)', 50],
+    ['clamp(50%, 80%, 100%)', 80],
+  ]
+  for (const [i, [stretch, pct]] of singles.entries()) {
+    const name = `Stretch Single ${i}`
+    declare(t, inconsolata, name, { stretch: stretch as FontFaceDescriptors['stretch'] })
+    const expected = px('32px "Stretch Auto"', `"wdth" ${pct}`)
+    t.deepEqual(px(`32px "${name}"`), expected, `${stretch} normal`)
+    t.deepEqual(px(`ultra-expanded 32px "${name}"`), expected, `${stretch} ultra-expanded`)
+  }
+
+  // Quarter-step quantization: 75.24% truncates to 75%, 75.25% stays 75.25%.
+  declare(t, inconsolata, 'Stretch Q 75', { stretch: '75%' })
+  declare(t, inconsolata, 'Stretch Q 75.24', { stretch: '75.24%' })
+  declare(t, inconsolata, 'Stretch Q 75.25', { stretch: '75.25%' })
+  const measure200 = (family: string) => {
+    const ctx = createCanvas(10, 10).getContext('2d')
+    ctx.font = `200px "${family}"`
+    return ctx.measureText('Hamburgefonstiv').width
+  }
+  const w75 = measure200('Stretch Q 75')
+  t.is(measure200('Stretch Q 75.24'), w75)
+  t.not(measure200('Stretch Q 75.25'), w75)
+
+  // Two-value range and reversed range.
+  declare(t, inconsolata, 'Stretch Range 75 125', { stretch: '75% 125%' })
+  declare(t, inconsolata, 'Stretch Range 125 75', { stretch: '125% 75%' })
+  const at75 = px('32px "Stretch Auto"', '"wdth" 75')
+  const at100 = px('32px "Stretch Auto"', '"wdth" 100')
+  const at125 = px('32px "Stretch Auto"', '"wdth" 125')
+  for (const name of ['Stretch Range 75 125', 'Stretch Range 125 75']) {
+    t.deepEqual(px(`ultra-condensed 32px "${name}"`), at75, `${name} clamp low`)
+    t.deepEqual(px(`32px "${name}"`), at100, `${name} in range`)
+    t.deepEqual(px(`extra-expanded 32px "${name}"`), at125, `${name} clamp high`)
+  }
+
+  // Negative calc() clamps to 0% without resetting weight: '700'.
+  declare(t, scienceGothic, 'Stretch NegCalc Bold', { weight: '700', stretch: 'calc(-10%)' })
+  t.deepEqual(px('expanded 32px "Stretch NegCalc Bold"'), px('32px "SG Stretch Auto"', '"wght" 700, "wdth" 50'))
+  t.notDeepEqual(px('expanded 32px "Stretch NegCalc Bold"'), px('expanded 32px "SG Stretch Auto"'))
+
+  // Range with negative calc() endpoint in both orders.
+  declare(t, inconsolata, 'Stretch CalcRange A', { stretch: 'calc(-10%) 125%' })
+  declare(t, inconsolata, 'Stretch CalcRange B', { stretch: '125% calc(-10%)' })
+  const at50 = px('32px "Stretch Auto"', '"wdth" 50')
+  for (const name of ['Stretch CalcRange A', 'Stretch CalcRange B']) {
+    t.deepEqual(px(`ultra-condensed 32px "${name}"`), at50, `${name} low`)
+    t.deepEqual(px(`32px "${name}"`), at100, `${name} mid`)
+    t.deepEqual(px(`extra-expanded 32px "${name}"`), at125, `${name} high`)
+  }
+})
+
+test('invalid stretch descriptors register nothing and give null', (t) => {
+  const garamond = font('EBGaramond-Regular.ttf')
+  const invalid: unknown[] = [
+    '',
+    ' ',
+    '-10%',
+    '-10% 100%',
+    '50',
+    '50px',
+    'normal normal',
+    'auto auto',
+    'auto 100%',
+    'condensed expanded',
+    'condensed 150%',
+    '50% 100% 150%',
+    'inherit',
+    'calc(10px)',
+    'calc(50% + 10px)',
+    null,
+    100,
+  ]
+  for (const [i, stretch] of invalid.entries()) {
+    const name = `Stretch Invalid ${i}`
+    t.is(
+      GlobalFonts.register(garamond, name, { stretch } as unknown as FontFaceDescriptors),
+      null,
+      JSON.stringify(stretch),
+    )
+    t.false(GlobalFonts.has(name), JSON.stringify(stretch))
+  }
+})
+
+test('weight calc(0) resets stretch descriptor to auto too', (t) => {
+  declare(t, scienceGothic, 'Reset Stretch', { weight: 'calc(0)', stretch: '75%' })
+  const px = (f: string) => draw(f).pixels
+  t.deepEqual(px('expanded 32px "Reset Stretch"'), px('expanded 32px "SG Stretch Auto"'))
+  t.deepEqual(px('bold 32px "Reset Stretch"'), px('bold 32px "SG Stretch Auto"'))
+  t.notDeepEqual(px('expanded 32px "Reset Stretch"'), draw('32px "SG Stretch Auto"', undefined, '"wdth" 75').pixels)
+})
+
+test('same bytes or path with distinct stretch descriptors are distinct FontKeys', (t) => {
+  const px = (f: string) => draw(f).pixels
+  // TTF accepts trailing padding so these bytes are isolated from other tests.
+  const data = Buffer.concat([scienceGothic, Buffer.alloc(64)])
+  const keyNormal = GlobalFonts.register(data, 'Stretch Twin', { stretch: 'normal' })
+  const key100 = GlobalFonts.register(data, 'Stretch Twin', { stretch: '100%' })
+  const keyCondensed = GlobalFonts.register(data, 'Stretch Twin', { stretch: 'condensed' })
+  t.truthy(keyNormal)
+  t.truthy(key100)
+  t.truthy(keyCondensed)
+  t.not(keyNormal!.typefaceId, key100!.typefaceId)
+  t.not(keyNormal!.typefaceId, keyCondensed!.typefaceId)
+  t.not(key100!.typefaceId, keyCondensed!.typefaceId)
+  t.is(GlobalFonts.register(data, 'Stretch Twin', { stretch: '100%' })?.typefaceId, key100!.typefaceId)
+  t.is(GlobalFonts.register(data, 'Stretch Twin', { stretch: 'condensed' })?.typefaceId, keyCondensed!.typefaceId)
+
+  // Removing normal and condensed leaves the explicit 100% declaration clamping wdth.
+  t.true(GlobalFonts.remove(keyNormal!))
+  t.true(GlobalFonts.remove(keyCondensed!))
+  t.deepEqual(px('expanded 32px "Stretch Twin"'), px('32px "SG Stretch Auto"'))
+  t.notDeepEqual(px('expanded 32px "Stretch Twin"'), px('expanded 32px "SG Stretch Auto"'))
+  t.true(GlobalFonts.remove(key100!))
+  t.false(GlobalFonts.has('Stretch Twin'))
+
+  // Same for registerFromPath.
+  const path = join(__dirname, 'fonts', 'Inconsolata-VariableFont_wdth,wght.woff2')
+  const pNormal = GlobalFonts.registerFromPath(path, 'Stretch Path Twin', { stretch: 'normal' })
+  const p100 = GlobalFonts.registerFromPath(path, 'Stretch Path Twin', { stretch: '100%' })
+  const pCondensed = GlobalFonts.registerFromPath(path, 'Stretch Path Twin', { stretch: 'condensed' })
+  t.truthy(pNormal)
+  t.truthy(p100)
+  t.truthy(pCondensed)
+  t.not(pNormal!.typefaceId, p100!.typefaceId)
+  t.not(pNormal!.typefaceId, pCondensed!.typefaceId)
+  t.not(p100!.typefaceId, pCondensed!.typefaceId)
+  t.true(GlobalFonts.remove(pNormal!))
+  t.true(GlobalFonts.remove(p100!))
+  t.deepEqual(px('expanded 32px "Stretch Path Twin"'), draw('32px "Stretch Auto"', undefined, '"wdth" 75').pixels)
+  t.true(GlobalFonts.remove(pCondensed!))
+  t.false(GlobalFonts.has('Stretch Path Twin'))
+})
+
+test('fontVariationSettings overrides declared stretch descriptor', (t) => {
+  declare(t, inconsolata, 'Stretch VarOverride Single', { stretch: 'condensed' })
+  declare(t, inconsolata, 'Stretch VarOverride Range', { stretch: '75% 100%' })
+  const expected = draw('32px "Stretch Auto"', undefined, "'wdth' 175").pixels
+  t.notDeepEqual(expected, draw('32px "Stretch VarOverride Single"').pixels)
+  t.deepEqual(draw('32px "Stretch VarOverride Single"', undefined, "'wdth' 175").pixels, expected)
+  t.deepEqual(draw('32px "Stretch VarOverride Range"', undefined, "'wdth' 175").pixels, expected)
+})
+
+test('multi-face @font-face selection uses StretchDistance and Stretch > Style > Weight priority', (t) => {
+  const lato = font('Lato-Regular.ttf')
+  const face = (tag: string, advanceM: number) => withStaticStyle(lato, { family: tag, advanceM })
+  const measureM = (f: string) => {
+    const ctx = createCanvas(10, 10).getContext('2d')
+    ctx.font = f
+    return Math.round(ctx.measureText('M').width * 100) / 100
+  }
+  const wFor = (advanceM: number) => (40 * advanceM) / 2000
+
+  // <= 100% directional selection: {50%, 87.5%}; requesting condensed (75%) picks 50% (narrower).
+  declare(t, face('MfA1', 1000), 'Multi Stretch Narrow', { stretch: '50%' })
+  declare(t, face('MfA2', 2200), 'Multi Stretch Narrow', { stretch: '87.5%' })
+  t.is(measureM('condensed 40px "Multi Stretch Narrow"'), wFor(1000))
+  t.is(measureM('semi-condensed 40px "Multi Stretch Narrow"'), wFor(2200))
+
+  // <= 100% fallback upward when only > 100% exist: {112.5%, 200%}; normal (100%) picks 112.5%.
+  declare(t, face('MfB1', 1200), 'Multi Stretch Up', { stretch: '112.5%' })
+  declare(t, face('MfB2', 2400), 'Multi Stretch Up', { stretch: '200%' })
+  t.is(measureM('40px "Multi Stretch Up"'), wFor(1200))
+
+  // > 100% directional selection: {100%, 150%}; requesting expanded (125%) picks 150% (wider).
+  declare(t, face('MfC1', 1100), 'Multi Stretch Wide', { stretch: '100%' })
+  declare(t, face('MfC2', 2500), 'Multi Stretch Wide', { stretch: '150%' })
+  t.is(measureM('expanded 40px "Multi Stretch Wide"'), wFor(2500))
+  t.is(measureM('semi-expanded 40px "Multi Stretch Wide"'), wFor(2500))
+
+  // > 100% fallback downward when only <= 100% exist: {75%, 100%}; expanded (125%) picks 100%.
+  declare(t, face('MfD1', 1300), 'Multi Stretch Down', { stretch: '75%' })
+  declare(t, face('MfD2', 2300), 'Multi Stretch Down', { stretch: '100%' })
+  t.is(measureM('expanded 40px "Multi Stretch Down"'), wFor(2300))
+
+  // Stretch ranges.
+  declare(t, face('MfE1', 1000), 'Multi Stretch Ranges', { stretch: '50% 80%' })
+  declare(t, face('MfE2', 2600), 'Multi Stretch Ranges', { stretch: '110% 150%' })
+  t.is(measureM('condensed 40px "Multi Stretch Ranges"'), wFor(1000))
+  t.is(measureM('expanded 40px "Multi Stretch Ranges"'), wFor(2600))
+
+  // Priority: Stretch > Style > Weight.
+  declare(t, face('MfF1', 1400), 'Multi Stretch Prio', { stretch: 'expanded', style: 'normal', weight: 400 })
+  declare(t, face('MfF2', 2800), 'Multi Stretch Prio', { stretch: 'normal', style: 'italic', weight: 700 })
+  t.is(measureM('italic bold expanded 40px "Multi Stretch Prio"'), wFor(1400))
+
+  declare(t, face('MfG1', 1500), 'Multi Style Prio', { stretch: 'normal', style: 'italic', weight: 400 })
+  declare(t, face('MfG2', 2700), 'Multi Style Prio', { stretch: 'normal', style: 'normal', weight: 700 })
+  t.is(measureM('italic bold 40px "Multi Style Prio"'), wFor(1500))
+})
+
+test('SVG text respects stretch descriptor clamping', (t) => {
+  declare(t, inconsolata, 'SVG Stretch Normal', { stretch: 'normal' })
+  declare(t, inconsolata, 'SVG Stretch Condensed', { stretch: 'condensed' })
+  declare(t, inconsolata, 'SVG Stretch Expanded', { stretch: 'expanded' })
+  const svgDoc = (family: string) =>
+    `<svg xmlns="http://www.w3.org/2000/svg" width="240" height="60"><text x="10" y="44" font-family="${family}" font-size="32">Ham</text></svg>`
+  const renderSvg = (family: string) => {
+    const img = new Image()
+    img.src = Buffer.from(svgDoc(family))
+    const ctx = createCanvas(240, 60).getContext('2d')
+    ctx.drawImage(img, 0, 0)
+    return Buffer.from(ctx.getImageData(0, 0, 240, 60).data)
+  }
+  const pathsOf = (family: string) =>
+    convertSVGTextToPath(svgDoc(family))
+      .toString()
+      .match(/ d="[^"]*"/g)
+
+  const normalPx = renderSvg('SVG Stretch Normal')
+  const condensedPx = renderSvg('SVG Stretch Condensed')
+  const expandedPx = renderSvg('SVG Stretch Expanded')
+  t.notDeepEqual(condensedPx, normalPx)
+  t.notDeepEqual(expandedPx, normalPx)
+  t.notDeepEqual(condensedPx, expandedPx)
+
+  const normalPaths = pathsOf('SVG Stretch Normal')
+  const condensedPaths = pathsOf('SVG Stretch Condensed')
+  const expandedPaths = pathsOf('SVG Stretch Expanded')
+  t.truthy(normalPaths)
+  t.truthy(condensedPaths)
+  t.truthy(expandedPaths)
+  t.notDeepEqual(condensedPaths, normalPaths)
+  t.notDeepEqual(expandedPaths, normalPaths)
+  t.notDeepEqual(condensedPaths, expandedPaths)
+})
+
+test('stretch single calc percentage converts to f32 before quarter-step quantization like Blink', (t) => {
+  const lato = font('Lato-Regular.ttf')
+  const measure = (fontStr: string) => {
+    const ctx = createCanvas(240, 60).getContext('2d')
+    ctx.font = fontStr
+    return ctx.measureText('MMMM').width
+  }
+  // Single value: calc(100% / 0.19 * 0.19) rounds to 100f -> 100%, tying on
+  // stretch with 100% so italic selects the italic face (inconsolata).
+  declare(t, lato, 'Stretch Calc Single', { stretch: '100%', style: 'normal' })
+  declare(t, inconsolata, 'Stretch Calc Single', {
+    stretch: 'calc(100% / 0.19 * 0.19)',
+    style: 'italic',
+  })
+  const latoW = measure('normal 40px "Stretch Calc Single"')
+  const singleItalicW = measure('italic 40px "Stretch Calc Single"')
+  t.not(singleItalicW, latoW)
+
+  // Two-value range: endpoints stay f64 (99.99999999999999 -> 99.75%), so
+  // the 100% face wins on stretch even for an italic request.
+  declare(t, lato, 'Stretch Calc Range', { stretch: '100%', style: 'normal' })
+  declare(t, inconsolata, 'Stretch Calc Range', {
+    stretch: 'calc(100% / 0.19 * 0.19) calc(100% / 0.19 * 0.19)',
+    style: 'italic',
+  })
+  t.is(measure('italic 40px "Stretch Calc Range"'), latoW)
+})

@@ -177,7 +177,7 @@ GlobalFonts.registerFromPath('./fonts/Lato-Regular.ttf', 'sans-serif')
 
 For the unquoted keyword (`sans-serif`), each face of that font is matched by the file's own style and descriptors are ignored; bold is made from weight 600, as for other registered fonts. Only the quoted name (`"sans-serif"`) follows the descriptor and newest-face rule below.
 
-Faces of one family are chosen by their descriptors, as with `@font-face`. Without descriptors every face is `auto` and the newest face wins; give `{ weight, style }` for each file of a family, or use `loadFontsFromDir` (installed fonts match by the file's own style):
+Faces of one family are chosen by their descriptors, as with `@font-face`. Without descriptors every face is `auto` and the newest face wins; give `{ weight, style, stretch }` for each file of a family, or use `loadFontsFromDir` (installed fonts match by the file's own style):
 
 ```js
 GlobalFonts.registerFromPath('./fonts/Lato-Regular.ttf', 'MyLato', { weight: 400 })

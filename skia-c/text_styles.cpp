@@ -356,8 +356,11 @@ std::vector<SkFontArguments::VariationPosition::Coordinate> FontVariations(
     const float slope = declared
                             ? ClampAxisValue(request.slope, declared->slope)
                             : request.slope;
+    const float width =
+        declared ? ClampAxisValue(request.stretch_pct, declared->width)
+                 : request.stretch_pct;
     coords.push_back({kWght, weight});
-    coords.push_back({kWdth, request.stretch_pct});
+    coords.push_back({kWdth, width});
     // FontVariableItalicAxis: a web face's ital axis is 1 for the `italic`
     // keyword, else 0 (not the axis default); then slnt is the axis default.
     const bool use_ital = UsesItalAxis(ital_axis, request);
