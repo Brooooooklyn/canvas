@@ -1,6 +1,7 @@
 import { Readable } from 'node:stream'
 import { join, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { inflateSync } from 'node:zlib'
 
 import test from 'ava'
 
@@ -257,12 +258,9 @@ test('toBuffer(callback, invalidMime) calls back with error', async (t) => {
   const canvas = createCanvas(10, 10)
   canvas.getContext('2d').fillRect(0, 0, 10, 10)
   const err = await new Promise<Error>((resolve) => {
-    canvas.toBuffer(
-      (err: Error | null, _result: Buffer) => {
-        resolve(err!)
-      },
-      'image/jepg' as any,
-    )
+    canvas.toBuffer((err: Error | null, _result: Buffer) => {
+      resolve(err!)
+    }, 'image/jepg' as any)
   })
   t.truthy(err)
   t.true(err instanceof TypeError)
@@ -273,13 +271,10 @@ test('toBuffer(callback, "raw") calls back with raw pixel data', async (t) => {
   const canvas = createCanvas(10, 10)
   canvas.getContext('2d').fillRect(0, 0, 10, 10)
   const buf = await new Promise<Buffer>((resolve, reject) => {
-    canvas.toBuffer(
-      (err: Error | null, result: Buffer) => {
-        if (err) reject(err)
-        else resolve(result)
-      },
-      'raw' as any,
-    )
+    canvas.toBuffer((err: Error | null, result: Buffer) => {
+      if (err) reject(err)
+      else resolve(result)
+    }, 'raw' as any)
   })
   t.true(Buffer.isBuffer(buf))
   t.is(buf.length, 10 * 10 * 4) // RGBA
@@ -437,11 +432,62 @@ test('PngConfig.resolution writes a pHYs chunk', async (t) => {
   t.is(pngChunk(canvas.toBuffer('image/png', { resolution: 72.6 }), 'pHYs'), PHYS_72)
 })
 
-test('PngConfig without a usable resolution gives the plain PNG', async (t) => {
+test('PngConfig.compressionLevel and filters are forwarded', async (t) => {
+  const canvas = drawnCanvas(createCanvas(16, 16))
+  const config = { compressionLevel: 1 as const, filters: 0x20 }
+  const idatZlib = (png: Buffer) => {
+    const parts: Buffer[] = []
+    let offset = 8
+    while (offset < png.length) {
+      const length = png.readUInt32BE(offset)
+      if (png.toString('latin1', offset + 4, offset + 8) === 'IDAT') {
+        parts.push(png.subarray(offset + 8, offset + 8 + length))
+      }
+      offset += 12 + length
+    }
+    return Buffer.concat(parts)
+  }
+  const viaCallback = await new Promise<Buffer>((resolve, reject) => {
+    canvas.toBuffer((err, buf) => (err ? reject(err) : resolve(buf)), 'image/png', config)
+  })
+  const streamed = Buffer.concat(await canvas.createPNGStream(config).toArray())
+  for (const png of [canvas.toBuffer('image/png', config), viaCallback, streamed]) {
+    const zlib = idatZlib(png)
+    t.is(zlib[1] >> 6, 0)
+    const rows = inflateSync(zlib)
+    for (let y = 0; y < 16; y++) t.is(rows[y * (16 * 4 + 1)], 2)
+  }
+
+  // Each PngConfig getter is read once.
+  const reads: string[] = []
+  const oneShot = {
+    get resolution() {
+      reads.push('resolution')
+      return reads.filter((k) => k === 'resolution').length === 1 ? 300 : undefined
+    },
+    get compressionLevel() {
+      reads.push('compressionLevel')
+      return reads.filter((k) => k === 'compressionLevel').length === 1 ? 1 : undefined
+    },
+    get filters() {
+      reads.push('filters')
+      return reads.filter((k) => k === 'filters').length === 1 ? 0x20 : undefined
+    },
+  }
+  const png = canvas.toBuffer('image/png', oneShot as any)
+  t.deepEqual(reads, ['resolution', 'compressionLevel', 'filters'])
+  t.is(pngChunk(png, 'pHYs'), PHYS_300)
+  const zlib = idatZlib(png)
+  t.is(zlib[1] >> 6, 0)
+  const rows = inflateSync(zlib)
+  for (let y = 0; y < 16; y++) t.is(rows[y * (16 * 4 + 1)], 2)
+})
+
+test('PngConfig without usable options gives the plain PNG', async (t) => {
   const canvas = drawnCanvas(createCanvas(16, 16))
   const plain = drawnCanvas(nativeCreateCanvas(16, 16)).toBuffer('image/png')
   const configs: any[] = [
-    { compressionLevel: 9 },
+    { compressionLevel: 10, filters: 1 },
     { resolution: 0 },
     { resolution: NaN },
     { resolution: '300' },

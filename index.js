@@ -86,6 +86,15 @@ const SvgExportFlag = {
   RelativePathEncoding: 0x04,
 }
 
+const PngFilter = {
+  None: 0x08,
+  Sub: 0x10,
+  Up: 0x20,
+  Avg: 0x40,
+  Paeth: 0x80,
+  All: 0xf8,
+}
+
 if (!('families' in GlobalFonts)) {
   Object.defineProperty(GlobalFonts, 'families', {
     get: function () {
@@ -732,6 +741,7 @@ module.exports = {
   StrokeCap,
   StrokeJoin,
   SvgExportFlag,
+  PngFilter,
   GlobalFonts: GlobalFonts,
   convertSVGTextToPath,
   DOMPoint,

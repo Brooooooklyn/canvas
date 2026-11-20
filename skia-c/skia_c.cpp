@@ -1236,6 +1236,18 @@ static SkWebpEncoder::Options webp_options(float quality, bool lossless) {
   return options;
 }
 
+// -1 keeps Skia's default (zlib level 6, all row filters).
+static SkPngEncoder::Options png_options(int zlib_level, int filters) {
+  SkPngEncoder::Options options;
+  if (zlib_level >= 0) {
+    options.fZLibLevel = zlib_level;
+  }
+  if (filters >= 0) {
+    options.fFilterFlags = static_cast<SkPngEncoder::FilterFlag>(filters);
+  }
+  return options;
+}
+
 bool skiac_surface_save(skiac_surface* c_surface, const char* path) {
   auto snapshot = SURFACE_CAST->makeImageSnapshot();
   auto image = encodable_image(snapshot.get());
@@ -3730,15 +3742,6 @@ void skiac_image_encode_data(skiac_image* c_image,
                              bool unpremul_readback,
                              int png_zlib_level,
                              int png_filters) {
-  // -1: Skia's default.
-  SkPngEncoder::Options png_options;
-  if (png_zlib_level >= 0) {
-    png_options.fZLibLevel = png_zlib_level;
-  }
-  if (png_filters >= 0) {
-    png_options.fFilterFlags =
-        static_cast<SkPngEncoder::FilterFlag>(png_filters);
-  }
   auto image_ref = encodable_image(IMAGE_CAST);
   if (unpremul_readback && image_ref->alphaType() == kPremul_SkAlphaType &&
       image_ref->colorType() != kRGBA_8888_SkColorType &&
@@ -3770,7 +3773,8 @@ void skiac_image_encode_data(skiac_image* c_image,
       ok = SkJpegEncoder::Encode(&stream, pixmap,
                                  jpeg_options(static_cast<int>(quality)));
     } else if (format == int(SkEncodedImageFormat::kPNG)) {
-      ok = SkPngEncoder::Encode(&stream, pixmap, png_options);
+      ok = SkPngEncoder::Encode(&stream, pixmap,
+                                png_options(png_zlib_level, png_filters));
     } else if (format == int(SkEncodedImageFormat::kWEBP)) {
       ok = SkWebpEncoder::Encode(&stream, pixmap,
                                  webp_options(quality, lossless));
@@ -3782,7 +3786,8 @@ void skiac_image_encode_data(skiac_image* c_image,
     encoded_data = SkJpegEncoder::Encode(
         nullptr, image, jpeg_options(static_cast<int>(quality)));
   } else if (format == int(SkEncodedImageFormat::kPNG)) {
-    encoded_data = SkPngEncoder::Encode(nullptr, image, png_options);
+    encoded_data = SkPngEncoder::Encode(
+        nullptr, image, png_options(png_zlib_level, png_filters));
   } else if (format == int(SkEncodedImageFormat::kWEBP)) {
     encoded_data =
         SkWebpEncoder::Encode(nullptr, image, webp_options(quality, lossless));

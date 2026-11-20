@@ -13,7 +13,7 @@ import { inflateSync } from 'node:zlib'
 import { crc32 } from '@node-rs/crc32'
 import test from 'ava'
 
-import { createCanvas, loadImage, type Canvas, type ImageMetadata } from '../index'
+import { createCanvas, loadImage, PngFilter, type Canvas, type ImageMetadata } from '../index'
 
 // 64x48: a gradient and a translucent rectangle, no text.
 function drawn(attrs?: Parameters<Canvas['getContext']>[1]): Canvas {
@@ -407,7 +407,7 @@ test('metadata only inserts', async (t) => {
 test('WebP, AVIF and GIF ignore metadata', async (t) => {
   const canvas = drawn()
   const pairs: [string, object, object][] = [
-    ['webp', {}, { resolution: 300, title: 'x', comment: 'c' }],
+    ['webp', {}, { resolution: 300, title: 'x', comment: 'c', compressionLevel: 1, filters: PngFilter.Up }],
     ['avif', { quality: 50, speed: 10 }, { quality: 50, speed: 10, title: 'x', resolution: 300 }],
     ['gif', {}, { title: 'x' }],
     ['webp', { quality: 'x' }, { quality: 'x', title: 'x' }],
@@ -422,18 +422,147 @@ test('WebP, AVIF and GIF ignore metadata', async (t) => {
   }
 })
 
+function pngIdatZlib(png: Buffer): Buffer {
+  return Buffer.concat(
+    pngChunks(png)
+      .filter((c) => c.type === 'IDAT')
+      .map((c) => c.data),
+  )
+}
+
+function pngRowFilters(png: Buffer, width = 64, height = 48): number[] {
+  const rows = inflateSync(pngIdatZlib(png))
+  const stride = width * 4 + 1
+  const filters: number[] = []
+  for (let y = 0; y < height; y++) filters.push(rows[y * stride])
+  return filters
+}
+
 test('compressionLevel and filters set the PNG encoder', async (t) => {
   const canvas = drawn()
-  const options = { compressionLevel: 1, filters: 0x20 }
+  const plain = canvas.toBuffer('image/png')
+  const decodePixels = async (data: Buffer) => {
+    const image = await loadImage(data)
+    const target = createCanvas(64, 48)
+    const ctx = target.getContext('2d')
+    ctx.drawImage(image, 0, 0)
+    return Buffer.from(ctx.getImageData(0, 0, 64, 48).data)
+  }
+  const expectedPixels = await decodePixels(plain)
+
+  // All three PNG entry points accept both options and preserve pixels.
+  const fastOptions = { compressionLevel: 1, filters: PngFilter.Up }
   for (const png of [
-    canvas.toBuffer('image/png', options),
-    canvas.encodeSync('png', options),
-    await canvas.encode('png', options),
+    canvas.toBuffer('image/png', fastOptions),
+    canvas.encodeSync('png', fastOptions),
+    await canvas.encode('png', fastOptions),
   ]) {
-    const zlib = Buffer.concat(pngChunks(png).filter((c) => c.type === 'IDAT').map((c) => c.data))
-    const rows = inflateSync(zlib)
-    t.is(zlib[1] >> 6, 0) // zlib's level flag for levels 0 and 1
-    for (let y = 0; y < 48; y++) t.is(rows[y * (64 * 4 + 1)], 2) // up
+    const zlib = pngIdatZlib(png)
+    t.is(zlib[1] >> 6, 0) // zlib FLEVEL for levels 0 and 1
+    t.true(pngRowFilters(png).every((f) => f === 2)) // up
+    t.deepEqual(await decodePixels(png), expectedPixels)
+  }
+
+  // Compression levels: 0 (stored/uncompressed), -0 (same as 0), 1, 6 (default), 9 (max).
+  const level0 = canvas.toBuffer('image/png', { compressionLevel: 0 })
+  const levelNeg0 = canvas.toBuffer('image/png', { compressionLevel: -0 })
+  const level1 = canvas.toBuffer('image/png', { compressionLevel: 1 })
+  const level6 = canvas.toBuffer('image/png', { compressionLevel: 6 })
+  const level9 = canvas.toBuffer('image/png', { compressionLevel: 9 })
+  t.deepEqual(levelNeg0, level0)
+  t.true(level0.length > level1.length, 'level 0 should skip deflate compression')
+  t.is(pngIdatZlib(level0)[1] >> 6, 0)
+  t.is(pngIdatZlib(level1)[1] >> 6, 0)
+  t.is(pngIdatZlib(level6)[1] >> 6, 2)
+  t.is(pngIdatZlib(level9)[1] >> 6, 3)
+  t.deepEqual(level6, plain)
+  t.deepEqual(await decodePixels(level0), expectedPixels)
+  t.deepEqual(await decodePixels(level9), expectedPixels)
+
+  // Every single filter constant and combinations.
+  for (const [flag, rowFilter] of [
+    [PngFilter.None, 0],
+    [PngFilter.Sub, 1],
+    [PngFilter.Up, 2],
+    [PngFilter.Avg, 3],
+    [PngFilter.Paeth, 4],
+  ] as const) {
+    const png = canvas.toBuffer('image/png', { filters: flag })
+    t.is(pngIdatZlib(png)[1] >> 6, 2, `flag 0x${flag.toString(16)} keeps default zlib level`)
+    t.true(
+      pngRowFilters(png).every((f) => f === rowFilter),
+      `flag 0x${flag.toString(16)} -> row filter ${rowFilter}`,
+    )
+    t.deepEqual(await decodePixels(png), expectedPixels)
+  }
+  const subOrUp = canvas.toBuffer('image/png', { filters: PngFilter.Sub | PngFilter.Up })
+  t.true(pngRowFilters(subOrUp).every((f) => f === 1 || f === 2))
+  t.deepEqual(canvas.toBuffer('image/png', { filters: PngFilter.All }), plain)
+
+  // Combined with ImageMetadata (including compressionLevel: 0 which splits IDAT into multiple chunks).
+  const withMeta = canvas.toBuffer('image/png', {
+    compressionLevel: 0,
+    filters: PngFilter.Up,
+    resolution: 300,
+    title: 'Fast PNG',
+  })
+  t.true(pngChunks(withMeta).filter((c) => c.type === 'IDAT').length > 1)
+  t.is(physHex(withMeta), PHYS[4][1])
+  t.is(textChunks(withMeta).length, 1)
+  t.true(pngChunks(withMeta).every(crcOk))
+  t.true(pngRowFilters(withMeta).every((f) => f === 2))
+  t.deepEqual(await decodePixels(withMeta), expectedPixels)
+})
+
+test('invalid PNG compressionLevel and filters values use defaults', async (t) => {
+  const canvas = drawn()
+  const plain = canvas.toBuffer('image/png')
+  const invalidLevels: unknown[] = [
+    -1,
+    10,
+    1.5,
+    NaN,
+    Infinity,
+    -Infinity,
+    '1',
+    null,
+    undefined,
+    true,
+    1n,
+    new Number(1),
+    {},
+    [1],
+  ]
+  for (const compressionLevel of invalidLevels) {
+    const options = { compressionLevel } as any
+    t.deepEqual(canvas.toBuffer('image/png', options), plain, `compressionLevel=${String(compressionLevel)}`)
+  }
+  const invalidFilters: unknown[] = [
+    -8,
+    -1,
+    -0,
+    0,
+    1,
+    7,
+    0x09, // valid bit 0x08 OR invalid bit 0x01
+    0xff,
+    0x100,
+    32.5,
+    NaN,
+    Infinity,
+    -Infinity,
+    '32',
+    null,
+    undefined,
+    true,
+    32n,
+    new Number(32),
+    {},
+    [32],
+  ]
+  for (const filters of invalidFilters) {
+    const options = { filters } as any
+    t.deepEqual(canvas.toBuffer('image/png', options), plain, `filters=${String(filters)}`)
   }
 })
 
@@ -466,19 +595,38 @@ test('web methods never write metadata', async (t) => {
   const canvas = drawn()
   const png = canvas.toBuffer('image/png')
   const fromUrl = (url: string) => Buffer.from(url.slice(url.indexOf(',') + 1), 'base64')
-  t.deepEqual(fromUrl(canvas.toDataURL('image/png', { resolution: 300 } as any)), png)
-  t.deepEqual(fromUrl(await canvas.toDataURLAsync('image/png', { resolution: 300, title: 'x' } as any)), png)
+  t.deepEqual(
+    fromUrl(canvas.toDataURL('image/png', { resolution: 300, compressionLevel: 1, filters: 0x20 } as any)),
+    png,
+  )
+  t.deepEqual(
+    fromUrl(
+      await canvas.toDataURLAsync('image/png', {
+        resolution: 300,
+        title: 'x',
+        compressionLevel: 1,
+        filters: 0x20,
+      } as any),
+    ),
+    png,
+  )
   t.is(
     canvas.toDataURL('image/avif', { quality: 50, resolution: 300, title: 'x' } as any),
     canvas.toDataURL('image/avif', { quality: 50 }),
   )
   t.is(canvas.toDataURL('image/jpeg', { resolution: 300 } as any), canvas.toDataURL('image/jpeg'))
   const blob = await new Promise<Blob | null>((resolve) =>
-    canvas.toBlob(resolve, 'image/png', { resolution: 300, title: 'x' }),
+    canvas.toBlob(resolve, 'image/png', { resolution: 300, title: 'x', compressionLevel: 1, filters: 0x20 }),
   )
-  t.deepEqual(chunkTypes(Buffer.from(await blob!.arrayBuffer())), ['IHDR', 'sBIT', 'sRGB', 'IDAT', 'IEND'])
-  const converted = await canvas.convertToBlob({ type: 'image/png', resolution: 300, title: 'x' } as any)
-  t.deepEqual(chunkTypes(Buffer.from(await converted.arrayBuffer())), ['IHDR', 'sBIT', 'sRGB', 'IDAT', 'IEND'])
+  t.deepEqual(Buffer.from(await blob!.arrayBuffer()), png)
+  const converted = await canvas.convertToBlob({
+    type: 'image/png',
+    resolution: 300,
+    title: 'x',
+    compressionLevel: 1,
+    filters: 0x20,
+  } as any)
+  t.deepEqual(Buffer.from(await converted.arrayBuffer()), png)
   const jpegBlob = await canvas.convertToBlob({ type: 'image/jpeg', resolution: 300, comment: 'x' } as any)
   const jpeg = Buffer.from(await jpegBlob.arrayBuffer())
   t.is(jpeg.subarray(0, 20).toString('hex'), 'ffd8ffe000104a46494600010100000100010000')
@@ -580,6 +728,18 @@ test('property reads', async (t) => {
   t.throws(() => canvas.encodeSync('jpeg', throwingQuality), { message: 'quality getter' })
   t.throws(() => canvas.toBuffer('image/png', throwingQuality), { message: 'quality getter' })
   t.false(read.includes('resolution'))
+  const throwingPngOption = {
+    get compressionLevel(): number {
+      throw new Error('compressionLevel getter')
+    },
+    get filters() {
+      read.push('filters')
+      return 0x20
+    },
+  }
+  t.throws(() => canvas.toBuffer('image/png', throwingPngOption), { message: 'compressionLevel getter' })
+  t.throws(() => canvas.encode('png', throwingPngOption), { message: 'compressionLevel getter' })
+  t.false(read.includes('filters'))
 
   // Inherited members count.
   const inherited = textChunks(canvas.toBuffer('image/png', Object.create({ title: 'inh' })))

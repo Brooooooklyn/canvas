@@ -874,10 +874,30 @@ export interface JpegEncodeOptions extends ImageMetadata {
   quality?: number
 }
 
+/**
+ * libpng row filter flags for {@link PngEncodeOptions.filters}, combinable with `|`.
+ * Use `None` (`0x08`) to disable row filtering; default is `All` (`0xF8`).
+ */
+export enum PngFilter {
+  None = 0x08,
+  Sub = 0x10,
+  Up = 0x20,
+  Avg = 0x40,
+  Paeth = 0x80,
+  All = 0xf8,
+}
+
 export interface PngEncodeOptions extends ImageMetadata {
-  /** zlib level, an integer from 0 (fastest) to 9 (smallest). Default 6. */
+  /**
+   * zlib compression level, an integer from 0 (uncompressed, fastest) to 9 (smallest).
+   * Out-of-range, fractional and non-number values use the default (6).
+   */
   compressionLevel?: number
-  /** libpng's row filters, ORed: 0x08 none, 0x10 sub, 0x20 up, 0x40 average, 0x80 Paeth. Default 0xF8. */
+  /**
+   * libpng row filter bitmask (see {@link PngFilter}): a non-zero OR of
+   * `0x08` (none), `0x10` (sub), `0x20` (up), `0x40` (average), `0x80` (Paeth).
+   * Any other value (including `0`) uses the default (`0xF8`, all filters).
+   */
   filters?: number
 }
 
@@ -1074,7 +1094,7 @@ export class Canvas {
   encode(format: 'png', options?: PngEncodeOptions): Promise<Buffer>
   encode(format: 'avif', cfg?: AvifConfig | number): Promise<Buffer>
   encode(format: 'gif', quality?: number): Promise<Buffer>
-  /** Writes no image metadata; use `encode` and stream the Buffer for that. */
+  /** Writes no image metadata and uses default PNG options; use `encode` and stream the Buffer for those. */
   encodeStream(format: 'webp' | 'jpeg', quality?: number): ReadableStream<Buffer>
   encodeStream(format: 'png'): ReadableStream<Buffer>
   toBuffer(mime: 'image/png', options?: PngEncodeOptions): Buffer

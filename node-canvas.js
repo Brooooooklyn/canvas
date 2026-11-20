@@ -110,17 +110,33 @@ function _extractQuality(mime, configOrQuality) {
 }
 
 /**
- * The native PNG options for a node-canvas PngConfig: only `resolution`, the
- * one member node-canvas writes (a pHYs chunk); undefined without a numeric
- * one, so the native call stays a plain PNG encode.
+ * The native PNG options for a node-canvas PngConfig: `resolution` (pHYs chunk),
+ * `compressionLevel` (zlib 0-9) and `filters` (libpng filter bitmask); undefined
+ * when none of them is a number, so the native call stays a plain PNG encode.
  *
  * @param {object|undefined} config
- * @returns {{ resolution: number }|undefined}
+ * @returns {{ resolution?: number, compressionLevel?: number, filters?: number }|undefined}
  */
 function _pngOptions(config) {
   if (config === null || typeof config !== 'object') return undefined
   const resolution = config.resolution
-  return typeof resolution === 'number' ? { resolution: resolution } : undefined
+  const compressionLevel = config.compressionLevel
+  const filters = config.filters
+  const options = {}
+  let hasOption = false
+  if (typeof resolution === 'number') {
+    options.resolution = resolution
+    hasOption = true
+  }
+  if (typeof compressionLevel === 'number') {
+    options.compressionLevel = compressionLevel
+    hasOption = true
+  }
+  if (typeof filters === 'number') {
+    options.filters = filters
+    hasOption = true
+  }
+  return hasOption ? options : undefined
 }
 
 // ---------------------------------------------------------------------------

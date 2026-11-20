@@ -7,10 +7,10 @@
 //! encoder settings. AVIF and GIF are this library's extra types there. The
 //! Node methods (toBuffer, encode, encodeSync, encodeStream) take a 0-100
 //! quality; toBuffer, encode and encodeSync also take PNG and JPEG metadata
-//! (image_metadata.rs) in the same options object.
+//! (image_metadata.rs) and PNG encoder options (compressionLevel, filters) in
+//! the same options object.
 
-use std::cell::Cell;
-use std::mem;
+use std::{cell::Cell, ffi::CStr, mem, ptr};
 
 use napi::bindgen_prelude::*;
 
@@ -116,19 +116,21 @@ pub(crate) enum Encoding {
 /// node-canvas's `compressionLevel` and `filters` for Skia's PNG encoder;
 /// None keeps its default.
 #[derive(Clone, Copy, Default)]
-pub struct PngOptions {
+pub(crate) struct PngOptions {
   pub(crate) zlib_level: Option<u8>,
   pub(crate) filters: Option<u8>,
 }
 
 impl PngOptions {
-  /// compressionLevel (an integer from 0 to 9) and filters (libpng's filter
-  /// bits, 0x08 to 0xF8) of `object`; any other value is missing.
+  /// compressionLevel (an integer from 0 to 9) and filters (non-zero OR of
+  /// libpng's filter bits: 0x08, 0x10, 0x20, 0x40, 0x80) of `object`; any
+  /// other value is missing (keeps Skia's default).
   unsafe fn read(env: sys::napi_env, object: sys::napi_value) -> Result<Self> {
-    let int = |key, valid: fn(u32) -> bool| -> Result<Option<u8>> {
-      let Some(value) = webidl::member(env, object, key)? else {
-        return Ok(None);
-      };
+    let int = |key: &CStr, valid: fn(u32) -> bool| -> Result<Option<u8>> {
+      let mut value = ptr::null_mut();
+      check_status!(unsafe {
+        sys::napi_get_named_property(env, object, key.as_ptr(), &mut value)
+      })?;
       if webidl::type_of(env, value)? != ValueType::Number {
         return Ok(None);
       }
@@ -136,8 +138,8 @@ impl PngOptions {
       Ok((n.fract() == 0.0 && (0.0..=255.0).contains(&n) && valid(n as u32)).then_some(n as u8))
     };
     Ok(Self {
-      zlib_level: int("compressionLevel", |n| n <= 9)?,
-      filters: int("filters", |n| n & !0xF8 == 0)?,
+      zlib_level: int(c"compressionLevel", |n| n <= 9)?,
+      filters: int(c"filters", |n| n != 0 && n & !0xF8 == 0)?,
     })
   }
 }
@@ -406,7 +408,8 @@ pub(crate) enum NodeQuality {
 }
 
 /// The 2nd argument of toBuffer, encode and encodeSync: the quality, and,
-/// from an object, the metadata members, read after the AvifConfig ones.
+/// from an object, the metadata and PNG encoder members, read after the
+/// AvifConfig ones.
 pub struct NodeEncodeOptions {
   pub(crate) quality: NodeQuality,
   pub(crate) metadata: ImageMetadata,

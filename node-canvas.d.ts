@@ -37,9 +37,12 @@ import {
 // ---------------------------------------------------------------------------
 
 export interface PngConfig {
-  /** ZLIB compression level (0-9). Accepted for compatibility; Skia uses its own encoder. */
+  /** ZLIB compression level (0-9). Default 6. Out-of-range, fractional and non-number values use the default. */
   compressionLevel?: 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9
-  /** PNG filter flags. Accepted for compatibility; Skia uses its own encoder. */
+  /**
+   * libpng row filter bitmask: a non-zero OR of `0x08` (none), `0x10` (sub), `0x20` (up),
+   * `0x40` (average), `0x80` (Paeth). Any other value (including `0`) uses the default (`0xF8`, all filters).
+   */
   filters?: number
   /** Palette for indexed PNGs. Not supported by Skia backend. */
   palette?: Uint8ClampedArray

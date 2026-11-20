@@ -6898,7 +6898,7 @@ impl SkImage {
   /// ignored for PNG, and for a lossless WebP). `crop_to_max_dimension`:
   /// encode the top-left part the encoder can hold. `unpremul_readback`:
   /// encode toDataURL's unpremultiplied readback of a float16 image.
-  pub fn encode_data(
+  pub(crate) fn encode_data(
     &self,
     format: SkEncodedImageFormat,
     quality: f32,
