@@ -1444,9 +1444,8 @@ std::shared_ptr<const FontFaceCore> MakeFontFaceCore(
             ? DescriptorsUnder(c_collection, faces[i]->uniqueID(), folded, seen)
             : std::nullopt;
     font_selection::Capabilities caps;
-    caps.width = {
-        font_selection::Value(declared ? declared->width.min : 100),
-        font_selection::Value(declared ? declared->width.max : 100)};
+    caps.width = {font_selection::Value(declared ? declared->width.min : 100),
+                  font_selection::Value(declared ? declared->width.max : 100)};
     caps.weight = {
         font_selection::Value(declared ? declared->weight.min : 400),
         font_selection::Value(declared ? declared->weight.max : 400)};
