@@ -364,9 +364,9 @@ test('glyph boxes above 256px keep their fractions like Chrome', (t) => {
     const [, font, text] = /^(\S+ \w+) (".*")$/.exec(key)!
     ctx.font = font
     const measured = ctx.measureText(JSON.parse(text))
-    // Above 256px, DirectWrite's unhinted path ascent for Iosevka matches
+    // Above 256px, DirectWrite's unhinted path ascent for Iosevka "Hg" matches
     // macOS CoreText (~441 at 600px) rather than Linux Fontations (450).
-    const skip = DWRITE && font.endsWith(' IosevkaT') ? ['actualBoundingBoxAscent'] : []
+    const skip = DWRITE && font.endsWith(' IosevkaT') && text === '"Hg"' ? ['actualBoundingBoxAscent'] : []
     out.push(...differences(key, row, measured, null, skip))
     if (skip.length) {
       const macAscent = RAW.darwin.large[key][3]

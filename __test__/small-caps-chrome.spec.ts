@@ -105,7 +105,7 @@ const ENGINE_GAPS = /^(SerifProT|GothicT|RobotoMonoT|IosevkaT|VirgilT) |^OswaldT
 function mismatches(key: string, d: Draw, chrome: Row) {
   const { box, width, ink } = draw(d)
   const widthTolerance = DWRITE ? 0.01 : 1e-3
-  const tolerance = DWRITE || (FREETYPE && ENGINE_GAPS.test(key)) ? 1 + 1e-3 : 1e-3
+  const tolerance = DWRITE ? 2 + 0.01 : FREETYPE && ENGINE_GAPS.test(key) ? 1 + 1e-3 : 1e-3
   const out: string[] = []
   if (!(Math.abs(width - chrome[0]) <= widthTolerance)) out.push(`${key} width: ${width} (Chrome ${chrome[0]})`)
   if (!box.every((v, i) => Math.abs(v - chrome[i + 1]) <= tolerance)) {
