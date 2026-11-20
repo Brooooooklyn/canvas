@@ -9,6 +9,9 @@
 
 #include "skia_c.hpp"
 
+// skiac_text_request::antialias value for ctx.antialias = 'none'.
+constexpr uint8_t kAntialiasNone = 1;
+
 // The font Blink's SimpleFontData reads `typeface`'s metrics and glyph boxes
 // from (FontPlatformData::CreateSkFont with textRendering auto).
 SkFont MetricsFont(sk_sp<SkTypeface> typeface, float size);
@@ -29,6 +32,11 @@ class TextRasterPolicy {
   // draw, null when measuring.
   SkFont DrawFont(const SkFont& shaped, const SkMatrix* device) const;
 
+  // The font used to rasterize drawn text blobs: DrawFont with kAlias edging
+  // when ctx.antialias is 'none'. Shaping and TextMetrics stay on DrawFont so
+  // advances and measurements remain invariant across ctx.antialias.
+  SkFont RasterFont(const SkFont& shaped, const SkMatrix* device) const;
+
   // Whether DrawFont gives another font for some device than for none: a
   // geometricPrecision run that may get LCD masks (macOS).
   bool DrawFontUsesDevice() const;
@@ -46,6 +54,7 @@ class TextRasterPolicy {
   bool UsesLcdText(const SkFont& font, const SkMatrix& device) const;
 
   bool geometric_precision_;
+  bool alias_text_;
   // SystemFontRenderer() when the request began, so one request never mixes
   // modes.
   bool system_;

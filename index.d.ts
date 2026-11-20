@@ -744,6 +744,18 @@ export interface SKRSContext2D extends CanvasRenderingContext2D {
   getContextAttributes(): Required<CanvasRenderingContext2DSettings>
   getTransform(): DOMMatrix
 
+  /**
+   * Non-standard (`node-canvas` extension): controls raster antialiasing for
+   * subsequent drawing operations. Default `"default"`.
+   *
+   * - `"none"`: disables antialiasing on raster shapes, clips, text, and bitmap
+   *   image borders (vector SVG/PDF output and SVG `Image` content are unaffected).
+   * - `"default" | "gray" | "subpixel"`: keeps antialiasing enabled.
+   *
+   * Invalid values are silently ignored.
+   */
+  antialias: 'default' | 'none' | 'gray' | 'subpixel'
+
   letterSpacing: string
   wordSpacing: string
   /**

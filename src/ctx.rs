@@ -26,10 +26,10 @@ use crate::{
   path::{Path, check_round_rect},
   pattern::{CanvasPattern, Pattern, srgb_channel_to_u8},
   sk::{
-    AccountedBitmap, AlphaType, Bitmap, BlendMode, Color4f, ColorSpace, DecodedCopy, FillType,
-    FilterQuality, FontVariantCaps, ImageFilter, ImagePattern, LineMetrics, MaskFilter, Matrix,
-    Paint, PaintStyle, Path as SkPath, PathEffect, ReadPixelsError, Shader, SkWMemoryStream,
-    StrokeCap, StrokeJoin, Surface, TextSettings, Transform,
+    AccountedBitmap, AlphaType, Antialias, Bitmap, BlendMode, Color4f, ColorSpace, DecodedCopy,
+    FillType, FilterQuality, FontVariantCaps, ImageFilter, ImagePattern, LineMetrics, MaskFilter,
+    Matrix, Paint, PaintStyle, Path as SkPath, PathEffect, ReadPixelsError, Shader,
+    SkWMemoryStream, StrokeCap, StrokeJoin, Surface, TextSettings, Transform,
   },
   state::{BLINK_IDENTITY, Context2dRenderingState, SpacingLength},
   webidl::{self, CanvasPixelFormat, Double, ImageDataPixelFormat, Positional, ReportedSettings},
@@ -1290,8 +1290,9 @@ impl Context {
       },
       clip_path.estimated_bytes(),
     );
+    let aa = self.state.antialias.is_enabled();
     self.with_canvas_state(|canvas| {
-      canvas.set_clip_path(&clip_path);
+      canvas.set_clip_path(&clip_path, aa);
     });
 
     self.state.has_clip = true;
@@ -1299,7 +1300,7 @@ impl Context {
     if let Some(ref recorder) = self.page_recorder {
       recorder
         .borrow_mut()
-        .add_clip(&self.state.transform, clip_path);
+        .add_clip(&self.state.transform, clip_path, aa);
     }
     self.flush_if_recording_limit_exceeded();
   }
@@ -2543,6 +2544,7 @@ impl Context {
       variant_ligatures: Default::default(),
       variant_numeric: Default::default(),
       variant_position: crate::font_props::FontVariantPosition::Normal,
+      antialias: Antialias::Default,
       ..self.text_settings()
     };
     let mut units = FontUnits::default();
@@ -4065,6 +4067,7 @@ impl Context {
       },
       source_raster_bytes,
     );
+    let allow_aa = self.state.antialias.is_enabled();
     self.with_shadowed_render_canvas(
       &paint,
       DrawContent::Geometry,
@@ -4083,7 +4086,7 @@ impl Context {
         if let Some(rect) = shadow_rect {
           let (width, height) = (rect.right - rect.left, rect.bottom - rect.top);
           let mut shadow_paint = shadow_paint.clone();
-          shadow_paint.set_anti_alias(image_antialiased(device_ctm, width, height));
+          shadow_paint.set_anti_alias(allow_aa && image_antialiased(device_ctm, width, height));
           shadow_canvas.draw_rect(rect.left, rect.top, width, height, &shadow_paint);
         } else {
           shadow_canvas.draw_picture_rect(
@@ -4137,6 +4140,7 @@ impl Context {
       size_adjust: state.font_size_adjust,
       optical_sizing: state.font_optical_sizing,
       lcd_text: false,
+      antialias: state.antialias,
     }
   }
 
@@ -5058,6 +5062,19 @@ impl CanvasRenderingContext2D {
       self.context.state.paint.set_blend_mode(blend_mode);
       self.context.state.global_composite_operation = blend_mode;
     };
+  }
+
+  #[napi(getter)]
+  pub fn get_antialias(&self) -> &'static str {
+    self.context.state.antialias.as_str()
+  }
+
+  #[napi(setter)]
+  pub fn set_antialias(&mut self, value: webidl::DomString<webidl::SetAntialias>) {
+    if let Ok(aa) = value.0.parse::<Antialias>() {
+      self.context.state.antialias = aa;
+      self.context.state.paint.set_anti_alias(aa.is_enabled());
+    }
   }
 
   #[napi(getter)]
@@ -6161,13 +6178,16 @@ impl CanvasRenderingContext2D {
     // Get picture from source canvas (preserves vector graphics)
     // Note: We need mutable access to the source context to get the picture
     // This is safe because we have exclusive access to the CanvasElement
-    // A raster destination in another color space or pixel format would
-    // replay the source's ops in its own (gradients interpolate there, and a
-    // float16 canvas keeps what unorm8 rounds), so it takes the source
-    // bitmap, as drawImage does. PDF and SVG keep the vector replay.
+    // A raster destination in another color space or pixel format, or with
+    // antialias disabled, would replay the source's ops with mismatched
+    // destination rasterization semantics (gradients interpolate in the dest
+    // space, float16 keeps what unorm8 rounds, and recorded source paints
+    // retain their own AA flag), so it takes the source bitmap, as drawImage
+    // does. PDF and SVG keep the vector replay.
     let picture = if self.context.backend == Backend::Raster
       && (canvas.ctx.context.color_space != self.context.color_space
-        || canvas.ctx.context.pixel_format != self.context.pixel_format)
+        || canvas.ctx.context.pixel_format != self.context.pixel_format
+        || !self.context.state.antialias.is_enabled())
     {
       None
     } else {

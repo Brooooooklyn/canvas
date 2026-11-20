@@ -88,9 +88,10 @@ SkFont MetricsFont(sk_sp<SkTypeface> typeface, float size) {
 
 TextRasterPolicy::TextRasterPolicy(const skiac_text_request& request)
     : geometric_precision_(request.text_rendering == kGeometricPrecision),
+      alias_text_(request.antialias == kAntialiasNone),
       system_(SystemFontRenderer()) {
 #if defined(__APPLE__)
-  lcd_text_ = system_ && request.lcd_text;
+  lcd_text_ = system_ && request.lcd_text && !alias_text_;
 #endif
 }
 
@@ -136,7 +137,7 @@ bool TextRasterPolicy::UsesLcdText(const SkFont&, const SkMatrix&) const {
 
 bool TextRasterPolicy::DrawFontUsesDevice() const {
 #if defined(__APPLE__)
-  return geometric_precision_ && lcd_text_;
+  return !alias_text_ && geometric_precision_ && lcd_text_;
 #else
   return false;
 #endif
@@ -178,6 +179,15 @@ SkFont TextRasterPolicy::DrawFont(const SkFont& shaped,
   return font;
 }
 
+SkFont TextRasterPolicy::RasterFont(const SkFont& shaped,
+                                    const SkMatrix* device) const {
+  SkFont font = DrawFont(shaped, device);
+  if (alias_text_) {
+    font.setEdging(SkFont::Edging::kAlias);
+  }
+  return font;
+}
+
 SkPaint TextRasterPolicy::DrawPaint(const SkFont& draw_font,
                                     const SkPaint& paint) const {
   if (!system_) {
@@ -190,8 +200,9 @@ SkPaint TextRasterPolicy::DrawPaint(const SkFont& draw_font,
   // (SkTypeface_mac_ct.cpp onFilterRec). Ours defines it (Skia's BUILD.gn
   // skia_private); a mask filter turns the pre-blend off too
   // (SkScalerContext.cpp PreprocessRec), and a blur this small leaves the
-  // mask as it is.
+  // mask as it is. Skip it for kAlias since a blur mask filter forces AA.
   if (draw_font.getHinting() == SkFontHinting::kNone &&
+      draw_font.getEdging() != SkFont::Edging::kAlias &&
       SkTypeface_GetCTFontRef(draw_font.getTypeface()) &&
       !draw_paint.getMaskFilter()) {
     draw_paint.setMaskFilter(

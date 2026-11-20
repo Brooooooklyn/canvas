@@ -133,8 +133,8 @@ pub struct PageRecorder {
 #[derive(Default)]
 struct RecorderLevel {
   transform: Matrix,
-  /// Each clip() of this level: the CTM it ran under and its path.
-  clips: Vec<(Matrix, SkPath)>,
+  /// Each clip() of this level: the CTM it ran under, its path, and its AA flag.
+  clips: Vec<(Matrix, SkPath, bool)>,
 }
 
 impl PageRecorder {
@@ -194,9 +194,9 @@ impl PageRecorder {
         if index > 0 {
           canvas.save();
         }
-        for (transform, clip) in &level.clips {
+        for (transform, clip, aa) in &level.clips {
           canvas.set_transform(transform);
-          canvas.set_clip_path(clip);
+          canvas.set_clip_path(clip, *aa);
           charges.push((clip.generation_id(), clip.estimated_bytes()));
         }
         canvas.set_transform(&level.transform);
@@ -245,9 +245,9 @@ impl PageRecorder {
     self.top_level.transform = transform.clone();
   }
 
-  /// clip() added `path` under `transform` to the current level.
-  pub fn add_clip(&mut self, transform: &Matrix, path: SkPath) {
-    self.top_level.clips.push((transform.clone(), path));
+  /// clip() added `path` under `transform` with antialiasing `aa` to the current level.
+  pub fn add_clip(&mut self, transform: &Matrix, path: SkPath, aa: bool) {
+    self.top_level.clips.push((transform.clone(), path, aa));
   }
 
   /// ctx.save(): the new level starts with the same CTM and no clips of its

@@ -6,8 +6,8 @@ use super::{
   font::{ComputedFont, FontStretch},
   pattern::Pattern,
   sk::{
-    FilterQuality, FontKerning, FontVariantCaps, Paint, TextAlign, TextBaseline, TextDirection,
-    TextRendering,
+    Antialias, FilterQuality, FontKerning, FontVariantCaps, Paint, TextAlign, TextBaseline,
+    TextDirection, TextRendering,
   },
 };
 
@@ -61,6 +61,7 @@ pub struct Context2dRenderingState {
   pub line_dash_offset: f32,
   pub image_smoothing_enabled: bool,
   pub image_smoothing_quality: FilterQuality,
+  pub antialias: Antialias,
   pub paint: Paint,
   pub font_style: ComputedFont,
   pub font_variation_settings: String,
@@ -135,6 +136,7 @@ impl Default for Context2dRenderingState {
       line_dash_offset: 0.0,
       image_smoothing_enabled: true,
       image_smoothing_quality: FilterQuality::default(),
+      antialias: Antialias::Default,
       paint: Paint::default(),
       font_style: ComputedFont::default(),
       font_variation_settings: "normal".to_owned(),
