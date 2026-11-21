@@ -58,7 +58,8 @@ jobs:
       - name: Install tools on Windows
         if: matrix.os == 'windows-latest'
         run: |
-          choco install llvm ninja -y
+          choco upgrade llvm -y
+          choco install ninja -y
           pip install certifi
 
       # See https://github.com/ilammy/msvc-dev-cmd?tab=readme-ov-file#caveats
@@ -143,7 +144,8 @@ jobs:
 
       - name: Install tools on Windows
         run: |
-          choco install llvm ninja -y
+          choco upgrade llvm -y
+          choco install ninja -y
           pip install certifi
 
       # See https://github.com/ilammy/msvc-dev-cmd?tab=readme-ov-file#caveats
