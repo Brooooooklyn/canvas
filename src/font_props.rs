@@ -14,6 +14,7 @@ use std::collections::BTreeMap;
 use cssparser::{Parser, Token};
 
 use crate::css_math::{self, Category, Lengths, MathOptions};
+use crate::sk::FontVariation;
 
 /// CSS whitespace (css-syntax: space, tab, LF, CR, FF). NBSP and U+3000 are
 /// not whitespace: they are ident code points.
@@ -151,6 +152,105 @@ fn parse_single_keyword(value: &str, keywords: &[&str]) -> Option<usize> {
     return None;
   }
   keywords.iter().position(|k| ident.eq_ignore_ascii_case(k))
+}
+
+// ---------------------------------------------------------------------------
+// font-variation-settings
+
+/// The computed font-variation-settings: deduped by tag (last wins) and sorted
+/// by tag (StyleBuilderConverterBase::ConvertFontVariationSettings). Empty is
+/// `normal`.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct FontVariationSettings(pub Vec<FontVariation>);
+
+impl FontVariationSettings {
+  /// ConsumeFontSettings (css_parsing_utils.cc):
+  /// `normal | <string> <number> #`.
+  pub fn parse(value: &str) -> Option<Self> {
+    if reject_canvas_keyword(value) {
+      return None;
+    }
+    let mut p = Parser::new(value);
+    if let Some(ident) = try_ident(&mut p) {
+      return (ident.eq_ignore_ascii_case("normal") && p.is_exhausted()).then(Self::default);
+    }
+    // Keyed by tag: an insert replaces the earlier item of a tag (the last
+    // wins), and iteration is in tag order.
+    let mut variations: BTreeMap<u32, f32> = BTreeMap::new();
+    loop {
+      let tag = match p.next() {
+        Ok(Token::QuotedString(s)) => tag_from_str(s)?,
+        _ => return None,
+      };
+      let val = variation_value(&mut p)?;
+      variations.insert(tag, val);
+      if p.is_exhausted() {
+        break;
+      }
+      match p.next() {
+        Ok(Token::Comma) => {}
+        _ => return None,
+      }
+    }
+    Some(Self(
+      variations
+        .into_iter()
+        .map(|(tag, value)| FontVariation { tag, value })
+        .collect(),
+    ))
+  }
+
+  pub fn serialize(&self) -> String {
+    if self.0.is_empty() {
+      return "normal".to_owned();
+    }
+    self
+      .0
+      .iter()
+      .map(|v| {
+        let mut s = String::with_capacity(14);
+        s.push('"');
+        for b in v.tag.to_be_bytes() {
+          if b == b'"' || b == b'\\' {
+            s.push('\\');
+          }
+          s.push(b as char);
+        }
+        s.push('"');
+        s.push(' ');
+        s.push_str(&css_g6(f64::from(v.value)));
+        s
+      })
+      .collect::<Vec<_>>()
+      .join(", ")
+  }
+}
+
+/// Clamp a computed variation axis value to finite f32 (NaN -> 0, +/-inf ->
+/// +/-f32::MAX, -0 -> 0), matching Chrome's computed `font-variation-settings`.
+fn clamp_variation_value(v: f64) -> f32 {
+  if v.is_nan() {
+    0.0
+  } else if v >= f64::from(f32::MAX) {
+    f32::MAX
+  } else if v <= f64::from(f32::MIN) {
+    f32::MIN
+  } else {
+    let f = v as f32;
+    if f == 0.0 { 0.0 } else { f }
+  }
+}
+
+/// The required `<number>` after a variation tag: a number token or a math
+/// function resolving to a plain number.
+fn variation_value(p: &mut Parser<'_>) -> Option<f32> {
+  if let Some(v) = consume_math_number(p) {
+    return Some(clamp_variation_value(v));
+  }
+  match p.next() {
+    Ok(Token::Number { value, .. }) => Some(clamp_variation_value(f64::from(*value))),
+    _ => None,
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -703,6 +803,9 @@ fn compute_calc_size_adjust(v: f64) -> f32 {
 mod tests {
   use super::*;
 
+  fn fvs(v: &str) -> Option<String> {
+    FontVariationSettings::parse(v).map(|s| s.serialize())
+  }
   fn ffs(v: &str) -> Option<String> {
     FontFeatureSettings::parse(v).map(|s| s.serialize())
   }
@@ -1159,5 +1262,89 @@ mod tests {
         ("inherit", None),
       ],
     );
+  }
+
+  #[test]
+  fn font_variation_settings() {
+    check(
+      fvs,
+      &[
+        ("normal", Some("normal")),
+        ("NORMAL", Some("normal")),
+        (" normal ", Some("normal")),
+        ("/**/normal", Some("normal")),
+        ("\"wght\" 700", Some("\"wght\" 700")),
+        ("'wght' 700", Some("\"wght\" 700")),
+        ("'wght' 700, 'wdth' 50", Some("\"wdth\" 50, \"wght\" 700")),
+        (
+          "  'wght'  700  ,  \"wdth\"  50  ",
+          Some("\"wdth\" 50, \"wght\" 700"),
+        ),
+        ("'wght' 100, 'wght' 200", Some("\"wght\" 200")),
+        (
+          "'wght' 400.5, 'slnt' -10",
+          Some("\"slnt\" -10, \"wght\" 400.5"),
+        ),
+        ("\"wght\" +700", Some("\"wght\" 700")),
+        ("\"wght\" .5", Some("\"wght\" 0.5")),
+        ("\"wght\" -0", Some("\"wght\" 0")),
+        ("\"wght\" 1e3", Some("\"wght\" 1000")),
+        ("\"wght\" 1234567.89", Some("\"wght\" 1.23457e+06")),
+        ("\"wght\" 0.00001", Some("\"wght\" 1e-05")),
+        ("\"wght\" 1e100", Some("\"wght\" 3.40282e+38")),
+        ("\"wght\" -1e100", Some("\"wght\" -3.40282e+38")),
+        ("\"wght\" 1e-100", Some("\"wght\" 0")),
+        ("\"wght\" calc(300 + 400)", Some("\"wght\" 700")),
+        ("\"wght\" calc(1 / 0)", Some("\"wght\" 3.40282e+38")),
+        ("\"wght\" calc(-1 / 0)", Some("\"wght\" -3.40282e+38")),
+        ("\"wght\" calc(0 / 0)", Some("\"wght\" 0")),
+        ("\"wght\" /*comment*/ 700", Some("\"wght\" 700")),
+        ("\"w,ht\" 700", Some("\"w,ht\" 700")),
+        ("\"w\\\"ht\" 700", Some("\"w\\\"ht\" 700")),
+        ("\"w\\\\ht\" 700", Some("\"w\\\\ht\" 700")),
+        ("\"    \" 700", Some("\"    \" 700")),
+        ("\"~~~~\" 700", Some("\"~~~~\" 700")),
+        // Invalid values rejected
+        ("", None),
+        ("   ", None),
+        ("invalid", None),
+        ("inherit", None),
+        ("initial", None),
+        ("unset", None),
+        ("revert", None),
+        ("revert-layer", None),
+        ("var(--a)", None),
+        ("\"wght\" var(--w)", None),
+        ("\"wght\"", None),
+        ("\"wght\" 700px", None),
+        ("\"wght\" calc(10px)", None),
+        ("\"wght\" NaN", None),
+        ("\"wght\" Infinity", None),
+        ("\"wght\" -Infinity", None),
+        ("\"wght\" 700,", None),
+        (", \"wght\" 700", None),
+        (",", None),
+        ("\"wght\" 100 \"wdth\" 50", None),
+        ("\"wght\" 500.", None),
+        ("\"wght\" 700 !important", None),
+        ("'inv' 100", None),
+        ("'wghtx' 100", None),
+        ("\"w\u{1f}ht\" 700", None),
+        ("\"w\u{7f}ht\" 700", None),
+        ("\"w\u{e9}ht\" 700", None),
+        ("'wght' 100, invalid", None),
+      ],
+    );
+  }
+
+  #[test]
+  fn font_variation_settings_computed() {
+    let s = FontVariationSettings::parse("'wght' 100, 'wdth' 75, 'wght' 700").unwrap();
+    assert_eq!(s.0.len(), 2);
+    assert_eq!(s.0[0].tag, u32::from_be_bytes(*b"wdth"));
+    assert_eq!(s.0[0].value, 75.0);
+    assert_eq!(s.0[1].tag, u32::from_be_bytes(*b"wght"));
+    assert_eq!(s.0[1].value, 700.0);
+    assert_eq!(s.serialize(), "\"wdth\" 75, \"wght\" 700");
   }
 }

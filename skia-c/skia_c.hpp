@@ -1364,6 +1364,11 @@ struct skiac_font_collection {
   // a new line's time with the system renderer when uncached.
   static constexpr size_t kMaxSystemTypefaces = 1024;
   std::unordered_map<SkTypefaceID, bool> system_typefaces;
+  // text_styles.cpp CollectionIndex: the TTC face index of a typeface, so
+  // SkFontArguments::setCollectionIndex matches Fontations and DirectWrite
+  // onMakeClone.
+  static constexpr size_t kMaxTtcIndices = 1024;
+  std::unordered_map<SkTypefaceID, int> ttc_indices;
   // text_caps.cpp: the OpenType caps features of a face for a script.
   std::map<std::pair<SkTypefaceID, uint32_t>, uint8_t> caps_features;
   // FontCollection keeps a clone of every face for every list of font
@@ -1596,6 +1601,7 @@ struct skiac_font_collection {
       assets->clearSplitFamilies();
       hb_space_in_lookups.clear();
       system_typefaces.clear();
+      ttc_indices.clear();
       caps_features.clear();
       font_arguments.clear();
       request_tags.clear();
@@ -1639,6 +1645,7 @@ struct skiac_font_collection {
       collection->clearCaches();
       hb_space_in_lookups.clear();
       system_typefaces.clear();
+      ttc_indices.clear();
       caps_features.clear();
       text_caches.reset();
       font_arguments.clear();
@@ -1669,6 +1676,7 @@ struct skiac_font_collection {
     collection->clearCaches();
     hb_space_in_lookups.clear();
     system_typefaces.clear();
+    ttc_indices.clear();
     caps_features.clear();
     font_arguments.clear();
     request_tags.clear();

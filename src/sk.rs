@@ -3385,7 +3385,7 @@ pub(crate) fn unit_from_u8(v: u8) -> f32 {
 #[repr(transparent)]
 pub struct Canvas(pub(crate) *mut ffi::skiac_canvas);
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub struct FontVariation {
   pub tag: u32,
   pub value: f32,

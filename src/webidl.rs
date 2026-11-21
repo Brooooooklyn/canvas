@@ -237,6 +237,7 @@ sites! {
   SetTextBaseline: set "textBaseline" on "CanvasRenderingContext2D";
   SetFontStretch: set "fontStretch" on "CanvasRenderingContext2D";
   SetFontKerning: set "fontKerning" on "CanvasRenderingContext2D";
+  SetFontVariationSettings: set "fontVariationSettings" on "CanvasRenderingContext2D";
   SetFontFeatureSettings: set "fontFeatureSettings" on "CanvasRenderingContext2D";
   SetFontVariantLigatures: set "fontVariantLigatures" on "CanvasRenderingContext2D";
   SetFontVariantNumeric: set "fontVariantNumeric" on "CanvasRenderingContext2D";

@@ -556,7 +556,8 @@ struct InstalledFallbackIndex {
   // A variable face at the request's wght, wdth and slnt, as a named
   // installed family is (FontVariations): the instance fontconfig's and
   // DirectWrite's match of the style gives Chrome, not the default one.
-  sk_sp<SkTypeface> AtRequestAxes(sk_sp<SkTypeface> face,
+  sk_sp<SkTypeface> AtRequestAxes(skiac_font_collection* c_collection,
+                                  sk_sp<SkTypeface> face,
                                   const skiac_text_request& request) {
     const int count = face->getVariationDesignPosition({});
     if (count <= 0) {
@@ -604,6 +605,7 @@ struct InstalledFallbackIndex {
       return found->second;
     }
     SkFontArguments args;
+    args.setCollectionIndex(CollectionIndex(c_collection, face.get()));
     args.setVariationDesignPosition(
         {coordinates.data(), static_cast<int>(coordinates.size())});
     sk_sp<SkTypeface> instance = face->makeClone(args);
@@ -770,7 +772,6 @@ SystemFallbackFont InstalledFallback(skiac_font_collection* c_collection,
                                      Priority priority,
                                      int han_script,
                                      bool monospace) {
-  (void)c_collection;
   SystemFallbackFont result;
   const bool emoji_presentation = priority == Priority::kEmojiEmoji ||
                                   priority == Priority::kEmojiEmojiWithVS;
@@ -789,7 +790,7 @@ SystemFallbackFont InstalledFallback(skiac_font_collection* c_collection,
   // CreateFontPlatformDataForTypeface: bold or italic the face lacks is
   // synthesized.
   auto found = [&](sk_sp<SkTypeface> face) {
-    face = index->AtRequestAxes(std::move(face), request);
+    face = index->AtRequestAxes(c_collection, std::move(face), request);
     result.synthetic = {bold && !face->isBold(), italic && !face->isItalic()};
     result.face = std::move(face);
     return result;

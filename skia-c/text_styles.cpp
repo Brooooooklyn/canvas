@@ -72,6 +72,15 @@ bool UsesItalAxis(const std::optional<SkFontParameters::Variation::Axis>& ital,
          ital->min <= 1 && ital->max >= 1;
 }
 
+bool HasVariation(const skiac_text_request& request, SkFourByteTag tag) {
+  for (int i = 0; request.variations && i < request.variations_count; ++i) {
+    if (request.variations[i].tag == tag) {
+      return true;
+    }
+  }
+  return false;
+}
+
 // font-optical-sizing none without an opsz of the request's own, with the
 // system renderer on Apple: FontVariations sets the opsz axis default
 // (DESIGN D8), and each face needs its own.
@@ -403,6 +412,29 @@ bool HasWebItalAxis(skiac_font_collection* c_collection, SkTypeface* base) {
          FindAxis(Axes(base), kItal).has_value();
 }
 
+int CollectionIndex(skiac_font_collection* c_collection, SkTypeface* face) {
+  if (!face) {
+    return 0;
+  }
+  const SkTypefaceID id = face->uniqueID();
+  if (c_collection) {
+    if (auto found = c_collection->ttc_indices.find(id);
+        found != c_collection->ttc_indices.end()) {
+      return found->second;
+    }
+  }
+  int ttc_index = 0;
+  (void)face->openExistingStream(&ttc_index);
+  if (c_collection) {
+    if (c_collection->ttc_indices.size() >=
+        skiac_font_collection::kMaxTtcIndices) {
+      c_collection->ttc_indices.clear();
+    }
+    c_collection->ttc_indices.emplace(id, ttc_index);
+  }
+  return ttc_index;
+}
+
 namespace {
 
 // font_size_adjust.h FontSizeAdjust::Metric (font_props.rs
@@ -576,6 +608,7 @@ UsedSizes ComputeUsedSizes(skiac_font_collection* c_collection,
         FontVariations({base}, request, computed, descriptors, web_face);
     if (!coords.empty()) {
       SkFontArguments args;
+      args.setCollectionIndex(CollectionIndex(c_collection, base.get()));
       args.setVariationDesignPosition(
           {coords.data(), static_cast<int>(coords.size())});
       if (sk_sp<SkTypeface> clone = base->makeClone(args)) {
@@ -796,9 +829,33 @@ SyntheticStyle SynthesizeStyle(skiac_font_collection* c_collection,
       style = CoreTextFontStyle(face);
     }
 #endif
-    return {
-        weight > 200 + style.weight(),
-        slope == kItalicSlope && style.slant() == SkFontStyle::kUpright_Slant};
+    bool bold = weight > 200 + style.weight();
+    bool italic =
+        slope == kItalicSlope && style.slant() == SkFontStyle::kUpright_Slant;
+    const bool override_wght = bold && HasVariation(request, kWght);
+    const bool override_slnt = italic && HasVariation(request, kSlnt);
+    if (override_wght || override_slnt) {
+      const auto axes = Axes(base);
+      if (override_wght) {
+        if (const auto wght = FindAxis(axes, kWght);
+            wght && wght->min <= wght->max) {
+          // font-variation-settings changed `face->fontStyle().weight()`;
+          // check whether the face's own wght axis would satisfy `weight`.
+          if (wght->max <= 10.0f) {
+            bold = !(wght->max > wght->def);
+          } else {
+            bold = weight > 200 + std::clamp(weight, wght->min, wght->max);
+          }
+        }
+      }
+      if (override_slnt) {
+        if (const auto slnt = FindAxis(axes, kSlnt);
+            slnt && slnt->min <= slnt->max && slnt->min < 0) {
+          italic = false;
+        }
+      }
+    }
+    return {bold, italic};
   }
   // CSSSegmentedFontFace::GetFontData: synthetic when the range's maximum
   // is under the threshold (`auto` is weight 400 and slope 0), whatever
