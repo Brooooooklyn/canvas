@@ -250,6 +250,12 @@ std::vector<SkFontArguments::VariationPosition::Coordinate> FontVariations(
 // (text_styles.cpp).
 bool HasWebItalAxis(skiac_font_collection* c_collection, SkTypeface* base);
 
+// The TTC face index of `face` (cached in ttc_indices), for
+// SkFontArguments::setCollectionIndex so Fontations and DirectWrite
+// onMakeClone keep variations on collection faces past index 0
+// (text_styles.cpp).
+int CollectionIndex(skiac_font_collection* c_collection, SkTypeface* face);
+
 // The font sizes font-size-adjust gives (FontBuilder::UpdateAdjustedSize,
 // FontDescription::EffectiveFontSize, CSSFontFace::GetFontData and
 // CSSFontSelector::GetFontData; text_styles.cpp).

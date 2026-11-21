@@ -306,7 +306,6 @@ interface CanvasTextDrawingStyles {
   textBaseline: CanvasTextBaseline
   textRendering: CanvasTextRendering
   wordSpacing: string
-  fontVariationSettings: string
   lang: string
 }
 
@@ -753,6 +752,13 @@ export interface SKRSContext2D extends CanvasRenderingContext2D {
 
   letterSpacing: string
   wordSpacing: string
+  /**
+   * Non-standard: Chrome's CanvasRenderingContext2D has no such attribute.
+   * Behaves like the CSS `font-variation-settings` property in Chrome.
+   * Invalid values are ignored. Default `"normal"`.
+   * @experimental
+   */
+  fontVariationSettings: string
   /**
    * Non-standard: Chrome's CanvasRenderingContext2D has no such attribute.
    * Behaves like the CSS `font-feature-settings` property in Chrome.

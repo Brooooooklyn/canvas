@@ -240,10 +240,30 @@ LastResortFont LastResortFace(skiac_font_collection* c_collection,
   font.base = base.front();
   font.face = base.front();
   if (font_args) {
-    const std::vector<sk_sp<SkTypeface>> instance =
-        font_collection->findTypefaces(last_resort, style, font_args);
-    if (!instance.empty()) {
-      font.face = instance.front();
+    std::optional<FontArguments> own_args;
+    const std::optional<FontArguments>* lookup_args = &font_args;
+    if (const int ttc_index = CollectionIndex(c_collection, font.base.get());
+        ttc_index != 0) {
+      const auto coords = FontVariations({font.base}, request, request.size,
+                                         std::nullopt, false);
+      if (!coords.empty()) {
+        SkFontArguments args;
+        args.setCollectionIndex(ttc_index);
+        args.setVariationDesignPosition(
+            {coords.data(), static_cast<int>(coords.size())});
+        own_args.emplace(args);
+        c_collection->noteFontArguments(std::hash<FontArguments>()(*own_args));
+        lookup_args = &own_args;
+      } else {
+        lookup_args = nullptr;
+      }
+    }
+    if (lookup_args) {
+      const std::vector<sk_sp<SkTypeface>> instance =
+          font_collection->findTypefaces(last_resort, style, *lookup_args);
+      if (!instance.empty()) {
+        font.face = instance.front();
+      }
     }
   }
   return font;
@@ -1190,10 +1210,12 @@ std::vector<FamilyFace> FamilyFaces(
   // with its base.
   std::vector<FamilyFace> out;
   out.reserve(base_faces.size());
-  // Without font arguments no face varies, so none has an ital axis.
+  // Without font arguments no face varies, so none has an ital axis or needs
+  // its own TTC collection index.
   auto own_of = [&](const FamilyFace& family) {
     return family.opsz != sizes.opsz || family.declared ||
-           (font_args && HasWebItalAxis(c_collection, family.base));
+           (font_args && (HasWebItalAxis(c_collection, family.base) ||
+                          CollectionIndex(c_collection, family.base) != 0));
   };
   bool own_any = false;
   for (size_t k = 0; k < base_faces.size(); ++k) {
@@ -1253,6 +1275,8 @@ std::vector<FamilyFace> FamilyFaces(
                          !IsSystemTypeface(c_collection, base_faces[k].get()));
       if (!coords.empty()) {
         SkFontArguments args;
+        args.setCollectionIndex(
+            CollectionIndex(c_collection, base_faces[k].get()));
         args.setVariationDesignPosition(
             {coords.data(), static_cast<int>(coords.size())});
         own_args.emplace(args);

@@ -749,6 +749,7 @@ sk_sp<SkTypeface> SystemFallbackInstance(skiac_font_collection* c_collection,
     return found->second;
   }
   SkFontArguments args;
+  args.setCollectionIndex(CollectionIndex(c_collection, face.get()));
   args.setVariationDesignPosition(
       {coordinates.data(), static_cast<int>(coordinates.size())});
   sk_sp<SkTypeface> instance = face->makeClone(args);
