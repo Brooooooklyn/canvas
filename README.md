@@ -1,7 +1,7 @@
 # `skr canvas`
 
 [![CI](https://github.com/Brooooooklyn/canvas/actions/workflows/CI.yaml/badge.svg)](https://github.com/Brooooooklyn/canvas/actions/workflows/CI.yaml)
-![Skia Version](https://img.shields.io/badge/Skia-chrome%2Fm157-hotpink)
+![Skia Version](https://img.shields.io/badge/Skia-chrome%2Fm158-hotpink)
 [![Downloads](https://img.shields.io/npm/dm/@napi-rs/canvas.svg?sanitize=true)](https://npmcharts.com/compare/@napi-rs/canvas?minimal=true)
 
 > 🚀 Help me to become a full-time open-source developer by [sponsoring me on Github](https://github.com/sponsors/Brooooooklyn)
