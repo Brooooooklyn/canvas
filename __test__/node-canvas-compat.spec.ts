@@ -1,7 +1,11 @@
-import { readFileSync } from 'node:fs'
+import { once } from 'node:events'
+import { copyFileSync, mkdtempSync, readFileSync, rmSync } from 'node:fs'
+import { createRequire } from 'node:module'
+import { tmpdir } from 'node:os'
 import { Readable } from 'node:stream'
 import { join, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { Worker } from 'node:worker_threads'
 import { inflateSync } from 'node:zlib'
 
 import test from 'ava'
@@ -28,6 +32,13 @@ import { createCanvas as nativeCreateCanvas } from '../index'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const fontPath = join(__dirname, 'fonts', 'SourceSerifPro-Regular.ttf')
+
+// The native functions node-canvas.js registerFont and deregisterAllFonts
+// call (not API), read from the binding at each call so a test can stub them.
+const binding = createRequire(import.meta.url)('../js-binding.js') as {
+  _registerFontFace: (path: string, family?: string, descriptors?: FontFaceDescriptors) => number | null
+  _releaseFontFaces: (faces: number[]) => boolean
+}
 
 // ---------------------------------------------------------------------------
 // Exports
@@ -233,22 +244,22 @@ test.serial('registerFont treats values the @font-face grammar rejects as not gi
   t.is(faceOf('italic', family), 'Italic')
 })
 
-// A null from registerFromPath also means the file failed to load, so a
+// A null from the registration also means the file failed to load, so a
 // valid descriptor is never retried as `auto` (that could reuse another
 // registration's key and lose the face without an error).
 test.serial('registerFont throws when a valid descriptor fails, without a retry', (t) => {
-  const original = GlobalFonts.registerFromPath
+  const original = binding._registerFontFace
   const calls: unknown[] = []
-  GlobalFonts.registerFromPath = ((path: string, family?: string, descriptors?: FontFaceDescriptors) => {
+  binding._registerFontFace = (_path, _family, descriptors) => {
     calls.push(descriptors)
-    return descriptors?.weight === 'auto' ? original.call(GlobalFonts, path, family, descriptors) : null
-  }) as typeof original
+    return null
+  }
   try {
     t.throws(() => registerFont(fixture('RMStatic-Bold.ttf'), { family: 'Compat 1472 No Retry', weight: 'bold' }), {
       message: /Failed to register font/,
     })
   } finally {
-    GlobalFonts.registerFromPath = original
+    binding._registerFontFace = original
   }
   t.deepEqual(calls, [{ weight: 'bold', style: 'auto' }])
 })
@@ -323,18 +334,20 @@ test.serial('registerFont drops a descriptor only when the native parser rejects
       'oblique bold',
     ].map((v) => ['style', v] as ['style', string]),
   ]
-  const original = GlobalFonts.registerFromPath
+  const original = binding._registerFontFace
   for (const [field, value] of cases) {
-    const valid = original.call(GlobalFonts, file, `Compat 1472 Native ${field}`, { [field]: value }) !== null
+    // GlobalFonts.registerFromPath reads the descriptors as registerFont's
+    // registration does: the native parser's verdict.
+    const valid = GlobalFonts.registerFromPath(file, `Compat 1472 Native ${field}`, { [field]: value }) !== null
     let passed: FontFaceDescriptors | undefined
-    GlobalFonts.registerFromPath = ((path: string, family?: string, descriptors?: FontFaceDescriptors) => {
+    binding._registerFontFace = (path, family, descriptors) => {
       passed = descriptors
-      return original.call(GlobalFonts, path, family, descriptors)
-    }) as typeof original
+      return original(path, family, descriptors)
+    }
     try {
       registerFont(file, { family: `Compat 1472 Drift ${field}`, [field]: value })
     } finally {
-      GlobalFonts.registerFromPath = original
+      binding._registerFontFace = original
     }
     t.is(passed?.[field], valid ? value : 'auto', `${field} ${JSON.stringify(value)}`)
   }
@@ -376,6 +389,230 @@ test.serial('deregisterAllFonts removes a registerFont face registered under an 
   t.is(faces(), before + 1)
   deregisterAllFonts()
   t.is(faces(), before)
+})
+
+// deregisterAllFonts takes back each registerFont declaration; the registry
+// keeps a name a GlobalFonts call also declares, and a registration with such
+// a name. Each test starts with no registerFont declaration live.
+const stylesOf = (family: string) => GlobalFonts.families.find((f) => f.family === family)?.styles.length ?? 0
+const familyNames = () => GlobalFonts.families.map((f) => f.family)
+const BOLD = { weight: 'bold', style: 'auto' }
+
+test.serial('deregisterAllFonts keeps a direct registration made after registerFont', (t) => {
+  deregisterAllFonts()
+  const family = 'Compat 1472 Case 2'
+  registerFont(fixture('EBGaramond-Regular.ttf'), { family, weight: 'bold' })
+  const key = GlobalFonts.registerFromPath(fixture('EBGaramond-Regular.ttf'), family, BOLD)
+  t.truthy(key)
+  t.is(stylesOf(family), 1, 'one registration')
+  deregisterAllFonts()
+  t.true(GlobalFonts.has(family))
+  t.true(GlobalFonts.remove(key!))
+  t.false(GlobalFonts.has(family))
+})
+
+// 3a: a spelling of a direct name; 3b: another name on the same registration.
+test.serial('deregisterAllFonts drops only the names registerFont added to a direct registration', (t) => {
+  deregisterAllFonts()
+  const file = fixture('Oswald.ttf')
+  const key = GlobalFonts.registerFromPath(file, 'Compat 1472 Owned Brand', BOLD)
+  t.truthy(key)
+  registerFont(file, { family: 'compat 1472 owned brand', weight: 'bold' })
+  registerFont(file, { family: 'Compat 1472 Other Name', weight: 'bold' })
+  t.true(familyNames().includes('compat 1472 owned brand'))
+  t.true(GlobalFonts.has('Compat 1472 Other Name'))
+  deregisterAllFonts()
+  t.true(GlobalFonts.has('Compat 1472 Owned Brand'))
+  t.false(familyNames().includes('compat 1472 owned brand'))
+  t.false(GlobalFonts.has('Compat 1472 Other Name'))
+  t.is(stylesOf('Compat 1472 Owned Brand'), 1)
+  t.true(GlobalFonts.remove(key!))
+})
+
+// An alias goes when the face it named is no longer listed by any name.
+test.serial('deregisterAllFonts drops the setAlias entries of the names it drops', (t) => {
+  deregisterAllFonts()
+  registerFont(fixture('NotoSansNKo-Regular.ttf'), { family: 'Compat 1472 Alias Only' })
+  t.true(GlobalFonts.setAlias('Compat 1472 Alias Only', 'Compat 1472 Alias A'))
+  const file = fixture('Oswald.ttf')
+  const key = GlobalFonts.registerFromPath(file, 'Compat 1472 Alias Brand', BOLD)
+  registerFont(file, { family: 'compat 1472 alias brand', weight: 'bold' })
+  registerFont(file, { family: 'Compat 1472 Alias Other', weight: 'bold' })
+  t.true(GlobalFonts.setAlias('Compat 1472 Alias Other', 'Compat 1472 Alias B'))
+  t.true(GlobalFonts.setAlias('compat 1472 alias brand', 'Compat 1472 Alias C'))
+  t.true(GlobalFonts.setAlias('Compat 1472 Alias Brand', 'Compat 1472 Alias D'))
+  const aliases = ['A', 'B', 'C', 'D'].map((x) => `Compat 1472 Alias ${x}`)
+  t.deepEqual(
+    aliases.map((a) => GlobalFonts.has(a)),
+    [true, true, true, true],
+  )
+  deregisterAllFonts()
+  // A: its font is gone. B: its name is gone. C: the name is still listed in
+  // another case. D: a direct name.
+  t.deepEqual(
+    aliases.map((a) => GlobalFonts.has(a)),
+    [false, false, true, true],
+  )
+  t.deepEqual(drawText('30px "Compat 1472 Alias D"'), drawText('30px "Compat 1472 Alias Brand"'))
+  t.true(GlobalFonts.remove(key!))
+  t.false(GlobalFonts.has('Compat 1472 Alias D'))
+})
+
+// Case 4 on a registration a direct alias made: registerFont under '' declares
+// the file's own family, and the cleanup makes it what it was.
+test.serial('deregisterAllFonts restores the own family a registerFont call under an empty family declared', (t) => {
+  deregisterAllFonts()
+  const file = fixture('Harmattan-Regular.ttf')
+  const own = 'Harmattan'
+  const key = GlobalFonts.registerFromPath(file, 'Compat 1472 Own X')
+  t.truthy(key)
+  const before = { styles: stylesOf(own), bold: drawText(`bold 30px "${own}"`) }
+  registerFont(file, { family: '', weight: 'bold' })
+  deregisterAllFonts()
+  t.true(GlobalFonts.has('Compat 1472 Own X'))
+  t.deepEqual({ styles: stylesOf(own), bold: drawText(`bold 30px "${own}"`) }, before)
+  t.true(GlobalFonts.remove(key!))
+})
+
+test.serial('deregisterAllFonts after a direct remove of a shared registration', (t) => {
+  deregisterAllFonts()
+  const file = fixture('EBGaramond-Regular.ttf')
+  const family = 'Compat 1472 Removed'
+  registerFont(file, { family })
+  const key = GlobalFonts.registerFromPath(file, family)
+  t.true(GlobalFonts.remove(key!))
+  t.false(GlobalFonts.has(family))
+  // The same path registered again may get the same key; the stale
+  // declaration does not remove it.
+  const again = GlobalFonts.registerFromPath(file, family)
+  t.truthy(again)
+  t.notThrows(() => deregisterAllFonts())
+  t.true(GlobalFonts.has(family))
+  t.true(GlobalFonts.remove(again!))
+})
+
+test.serial('deregisterAllFonts twice releases nothing the second time', (t) => {
+  deregisterAllFonts()
+  const file = fixture('EBGaramond-Regular.ttf')
+  const family = 'Compat 1472 Twice'
+  registerFont(file, { family })
+  deregisterAllFonts()
+  t.false(GlobalFonts.has(family))
+  const key = GlobalFonts.registerFromPath(file, family)
+  deregisterAllFonts()
+  t.true(GlobalFonts.has(family))
+  t.true(GlobalFonts.remove(key!))
+})
+
+test.serial('deregisterAllFonts removes a declaration registerFont made twice', (t) => {
+  deregisterAllFonts()
+  const family = 'Compat 1472 Same Twice'
+  registerFont(fixture('EBGaramond-Regular.ttf'), { family, weight: 'bold' })
+  registerFont(fixture('EBGaramond-Regular.ttf'), { family, weight: 'bold' })
+  t.is(stylesOf(family), 1)
+  deregisterAllFonts()
+  t.false(GlobalFonts.has(family))
+})
+
+// A release that leaves every name declared changes nothing: no rebuild, so
+// the cached FontFaces of a family stay (fontFaceCores counts the ones made).
+test.serial('deregisterAllFonts does not rebuild the fonts when nothing goes', (t) => {
+  deregisterAllFonts()
+  const family = 'Compat 1472 Quiet'
+  const key = GlobalFonts.registerFromPath(fixture('Harmattan-Regular.ttf'), family, BOLD)
+  registerFont(fixture('Harmattan-Regular.ttf'), { family, weight: 'bold' })
+  t.is(stylesOf(family), 1)
+  const ctx = nativeCreateCanvas(10, 10).getContext('2d') as unknown as {
+    font: string
+    __debugTextLine(text: string): string
+  }
+  ctx.font = `20px "${family}"`
+  let n = 0
+  const cores = () => JSON.parse(ctx.__debugTextLine(`line ${n++}`)).fontFaceCores as number
+  const before = cores()
+  t.is(cores(), before, 'a new line reuses the cached FontFaces')
+  deregisterAllFonts()
+  t.is(cores(), before, 'no rebuild')
+  t.true(GlobalFonts.has(family))
+  // The control: a release that removes a font rebuilds.
+  registerFont(fixture('EBGaramond-Regular.ttf'), { family: 'Compat 1472 Quiet Control' })
+  const registered = cores()
+  deregisterAllFonts()
+  t.true(cores() > registered, 'a rebuild')
+  t.true(GlobalFonts.remove(key!))
+})
+
+test.serial('deregisterAllFonts keeps the descriptors a direct registration declares for the name', (t) => {
+  deregisterAllFonts()
+  const family = 'Compat 1472 Kept Descriptors'
+  // Regular declared bold: a bold request takes it as it is, no synthesis.
+  const key = GlobalFonts.registerFromPath(fixture('RMStatic-Regular.ttf'), family, BOLD)
+  registerFont(fixture('RMStatic-Italic.ttf'), { family, weight: '100' })
+  deregisterAllFonts()
+  t.is(faceOf('bold', family), 'Regular')
+  t.true(GlobalFonts.remove(key!))
+})
+
+// A file loadFontsFromDir loaded is an installed font: registerFont names on
+// it go, the font stays. Also when loadFontsFromDir loads a file registerFont
+// registered before.
+test.serial('deregisterAllFonts keeps a font loadFontsFromDir loaded', (t) => {
+  deregisterAllFonts()
+  const dir = mkdtempSync(join(tmpdir(), 'canvas-compat-dir-'))
+  t.teardown(() => rmSync(dir, { recursive: true, force: true }))
+  const file = join(dir, 'IosevkaSlab.ttf')
+  copyFileSync(fixture('iosevka-slab-regular.ttf'), file)
+  t.is(GlobalFonts.loadFontsFromDir(dir), 1)
+  const own = 'Iosevka Slab'
+  t.is(stylesOf(own), 1)
+  const brand = 'Compat 1472 Dir Brand'
+  for (const fontFace of [{ family: '' }, { family: own }, { family: brand }, { family: own, weight: 'bold' }]) {
+    registerFont(file, fontFace)
+    deregisterAllFonts()
+    const at = JSON.stringify(fontFace)
+    t.is(stylesOf(own), 1, at)
+    t.false(GlobalFonts.has(brand), at)
+  }
+
+  const laterDir = mkdtempSync(join(tmpdir(), 'canvas-compat-dir-'))
+  t.teardown(() => rmSync(laterDir, { recursive: true, force: true }))
+  const later = join(laterDir, 'Harmattan.ttf')
+  copyFileSync(fixture('Harmattan-Regular.ttf'), later)
+  const laterFamily = 'Compat 1472 Dir Later'
+  registerFont(later, { family: laterFamily })
+  const harmattan = stylesOf('Harmattan')
+  t.is(GlobalFonts.loadFontsFromDir(laterDir), 1)
+  deregisterAllFonts()
+  t.false(GlobalFonts.has(laterFamily))
+  t.is(stylesOf('Harmattan'), harmattan, 'loadFontsFromDir keeps it')
+})
+
+// The registry is one per process; each worker's node-canvas module releases
+// only its own registerFont declarations.
+test.serial('deregisterAllFonts in a worker keeps what the main thread registered', async (t) => {
+  deregisterAllFonts()
+  const file = fixture('EBGaramond-Regular.ttf')
+  const family = 'Compat 1472 Worker'
+  registerFont(file, { family })
+  const code = `
+    const { parentPort, workerData } = require('node:worker_threads')
+    const { registerFont, deregisterAllFonts, GlobalFonts } = require(workerData.nodeCanvas)
+    registerFont(workerData.file, { family: workerData.family })
+    const during = GlobalFonts.has(workerData.family)
+    deregisterAllFonts()
+    parentPort.postMessage({ during, after: GlobalFonts.has(workerData.family) })
+  `
+  const worker = new Worker(code, {
+    eval: true,
+    workerData: { nodeCanvas: join(__dirname, '..', 'node-canvas.js'), file, family },
+  })
+  const exited = once(worker, 'exit')
+  const [message] = await once(worker, 'message')
+  await exited
+  t.deepEqual(message, { during: true, after: true })
+  t.true(GlobalFonts.has(family))
+  deregisterAllFonts()
+  t.false(GlobalFonts.has(family))
 })
 
 test.serial('registerFont without weight keeps the wght axis of a variable font', (t) => {

@@ -4715,6 +4715,72 @@ uint32_t skiac_font_collection_register_from_path(
   return typeface_id;
 }
 
+// As skiac_font_collection_register_from_path (the same key, names and
+// relist), and the name the call declares records the registerFont
+// declaration it is, a new id: `declaration` gets it, or 0 when the call
+// declared no name (a file loadFontsFromDir loaded, with no alias).
+uint32_t skiac_font_collection_register_from_path_owned(
+    skiac_font_collection* c_font_collection,
+    const char* font_path,
+    const char* name_alias,
+    const skiac_face_descriptors* descriptors,
+    uint32_t* declaration) {
+  *declaration = 0;
+  // Installed fonts register first, as loadSystemFonts does elsewhere.
+  c_font_collection->prepareLookup();
+  auto typeface = MakeCanvasTypefaceFromFile(font_path);
+  if (!typeface || c_font_collection->declarations_issued == UINT32_MAX) {
+    return 0;
+  }
+  const uint32_t owner = ++c_font_collection->declarations_issued;
+  const size_t registered =
+      c_font_collection->assets->getRegisteredFonts().size();
+  const uint32_t typeface_id =
+      c_font_collection->assets->registerTypefaceFromPathWithTracking(
+          font_path, typeface, name_alias, descriptors, owner);
+  if (typeface_id) {
+    RelistRegistered(c_font_collection, typeface_id, registered, typeface,
+                     name_alias);
+    c_font_collection->markCachesDirty();
+    if (c_font_collection->assets->holdsDeclaration(typeface_id, owner)) {
+      *declaration = owner;
+    }
+  }
+  return typeface_id;
+}
+
+// The registry decides, under the font lock, what the declarations held
+// alone: TypefaceFontProviderCustom::releaseDeclarations. Nothing is rebuilt
+// when every name they were on stays declared.
+bool skiac_font_collection_release_declarations(
+    skiac_font_collection* c_font_collection,
+    const uint32_t* declarations,
+    size_t count) {
+  std::set<uint32_t> ids;
+  for (size_t i = 0; i < count; i++) {
+    if (declarations[i]) {
+      ids.insert(declarations[i]);
+    }
+  }
+  if (ids.empty()) {
+    return false;
+  }
+  TypefaceFontProviderCustom::ReleasedDeclarations released =
+      c_font_collection->assets->releaseDeclarations(ids);
+  if (!released.changed) {
+    return false;
+  }
+  for (uint32_t id : released.emptied) {
+    c_font_collection->assets->removeTypeface(id);
+  }
+  // An alias goes when the face it named is no longer listed by any name.
+  c_font_collection->dropAliasesOf(released.emptied);
+  c_font_collection->dropUnlistedAliasesOf(released.trimmed);
+  c_font_collection->dropWebAliasesOf(released.lost_web);
+  c_font_collection->rebuildAssets();
+  return true;
+}
+
 size_t skiac_font_collection_unregister(
     skiac_font_collection* c_font_collection,
     uint32_t typeface_id) {

@@ -1578,6 +1578,20 @@ pub mod ffi {
       descriptors: *const skiac_face_descriptors,
     ) -> u32;
 
+    pub fn skiac_font_collection_register_from_path_owned(
+      c_font_collection: *mut skiac_font_collection,
+      font_path: *const c_char,
+      maybe_name_alias: *const c_char,
+      descriptors: *const skiac_face_descriptors,
+      declaration: *mut u32,
+    ) -> u32;
+
+    pub fn skiac_font_collection_release_declarations(
+      c_font_collection: *mut skiac_font_collection,
+      declarations: *const u32,
+      count: usize,
+    ) -> bool;
+
     pub fn skiac_font_collection_register_system_font(
       c_font_collection: *mut skiac_font_collection,
       font_path: *const c_char,
@@ -6699,6 +6713,43 @@ impl FontCollection {
       result
     } else {
       None
+    }
+  }
+
+  /// node-canvas registerFont: [`Self::register_from_path`], and the
+  /// registerFont declaration the call made (0 when it declared no name),
+  /// for [`Self::release_declarations`]. None when nothing was registered.
+  pub fn register_from_path_owned(
+    &self,
+    font_path: &str,
+    maybe_name_alias: Option<&str>,
+    descriptors: Option<&ffi::skiac_face_descriptors>,
+  ) -> Option<(u32, u32)> {
+    let fp = CString::new(font_path).ok()?;
+    // As register_from_path: an alias with a NUL is no alias.
+    let alias = maybe_name_alias.and_then(|name| CString::new(name).ok());
+    let mut declaration = 0u32;
+    let typeface_id = unsafe {
+      ffi::skiac_font_collection_register_from_path_owned(
+        self.0,
+        fp.as_ptr(),
+        alias.as_ref().map_or(ptr::null(), |a| a.as_ptr()),
+        descriptors.map_or(ptr::null(), |d| d as *const _),
+        &mut declaration,
+      )
+    };
+    (typeface_id > 0).then_some((typeface_id, declaration))
+  }
+
+  /// node-canvas deregisterAllFonts: releases the registerFont declarations.
+  /// Returns whether the registry changed.
+  pub fn release_declarations(&self, declarations: &[u32]) -> bool {
+    unsafe {
+      ffi::skiac_font_collection_release_declarations(
+        self.0,
+        declarations.as_ptr(),
+        declarations.len(),
+      )
     }
   }
 

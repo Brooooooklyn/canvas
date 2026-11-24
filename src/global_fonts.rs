@@ -254,6 +254,61 @@ fn read_face_descriptors(
   ))
 }
 
+/// node-canvas registerFont (node-canvas.js): registers the file as
+/// `GlobalFonts.registerFromPath(font_path, name_alias, descriptors)` does
+/// (the same key, names and descriptors), and the name the call declares
+/// records the registerFont declaration it is. Returns that declaration for
+/// `_releaseFontFaces` (0: the call declared no name, so there is nothing to
+/// release), null when nothing was registered. Not API: reachable through
+/// js-binding, as `_toNumber` is.
+// Only JS calls it: the lib test build registers no napi exports.
+#[cfg_attr(test, allow(dead_code))]
+#[napi(js_name = "_registerFontFace")]
+pub fn register_font_face(
+  env: &Env,
+  font_path: String,
+  name_alias: Option<String>,
+  descriptors: Option<Unknown>,
+) -> napi::Result<Option<u32>> {
+  let maybe_name_alias = name_alias.filter(|s| !s.is_empty());
+  let descriptors = match descriptors {
+    Some(d) => match read_face_descriptors(env.raw(), d.raw())? {
+      Declared::Invalid => return Ok(None),
+      Declared::Auto => None,
+      Declared::Explicit(descriptors) => Some(descriptors),
+    },
+    None => None,
+  };
+  let font = get_font().map_err(into_napi_error)?;
+  let result = font.register_from_path_owned(
+    font_path.as_str(),
+    maybe_name_alias.as_deref(),
+    descriptors.as_ref(),
+  );
+  if result.is_some() {
+    note_font_collection_mutation();
+  }
+  Ok(result.map(|(_, declaration)| declaration))
+}
+
+/// node-canvas deregisterAllFonts (node-canvas.js): releases the
+/// registerFont declarations `_registerFontFace` returned. The registry
+/// decides, under the font lock, what goes: a name no other declaration (a
+/// GlobalFonts call, or another registerFont in any thread) holds, and a
+/// font with no declared name left. Returns whether anything changed. Not
+/// API: reachable through js-binding, as `_toNumber` is.
+// Only JS calls it: the lib test build registers no napi exports.
+#[cfg_attr(test, allow(dead_code))]
+#[napi(js_name = "_releaseFontFaces")]
+pub fn release_font_faces(declarations: Vec<u32>) -> napi::Result<bool> {
+  let font = get_font().map_err(into_napi_error)?;
+  let changed = font.release_declarations(&declarations);
+  if changed {
+    note_font_collection_mutation();
+  }
+  Ok(changed)
+}
+
 #[napi(js_name = "GlobalFonts")]
 #[allow(non_snake_case)]
 pub mod global_fonts {

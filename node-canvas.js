@@ -20,7 +20,8 @@ const {
 } = require('./index.js')
 
 // CanvasRenderingContext2D is not re-exported by index.js, grab from native bindings
-const { CanvasRenderingContext2D } = require('./js-binding')
+const binding = require('./js-binding')
+const { CanvasRenderingContext2D } = binding
 
 // node-canvas defaults JPEG quality to 0.75 across all paths.
 // @napi-rs/canvas native default is 0.92 (matching Blink/Chrome).
@@ -273,10 +274,12 @@ function _addCompatMethods(canvas) {
 // Public API: registerFont / deregisterAllFonts
 // ---------------------------------------------------------------------------
 
-// Track FontKeys from registerFont() so deregisterAllFonts() can remove
-// only user-registered fonts (matching node-canvas behavior which leaves
-// system fonts untouched).
-const _registeredFontKeys = []
+// The registerFont declarations of this module instance (one per worker):
+// deregisterAllFonts releases them. The registry decides, under its lock,
+// what goes: a name no other declaration (a GlobalFonts call or another
+// registerFont) holds, and a registration with no name left. So it removes
+// only what registerFont added, as node-canvas leaves other fonts untouched.
+const _registeredFontFaces = []
 
 // Whether registerFont treats a `font-weight` / `font-style` value as not
 // given: the @font-face grammar (src/font.rs parse_font_face_weight /
@@ -332,8 +335,8 @@ function _isInvalidFaceStyle(value) {
  * Register a font file with the specified font face properties.
  * Compatible with node-canvas's registerFont(path, { family, weight?, style? }).
  *
- * `weight` and `style` are passed to GlobalFonts.registerFromPath as the
- * face's @font-face descriptors, so the faces of one family are picked by
+ * The file is registered as GlobalFonts.registerFromPath does, with `weight`
+ * and `style` as the face's @font-face descriptors, so the faces of one family are picked by
  * them with CSS font matching. Register one call per face file.
  *
  * - A field that is not given is `auto`: a call with only `family` registers
@@ -356,27 +359,20 @@ function registerFont(path, fontFace) {
   // node-canvas reads `weight` as a string or a number and `style` as a
   // string; any other value, or one the @font-face grammar surely rejects,
   // counts as not given. This is checked here and not by retrying: a null
-  // from registerFromPath can also mean the file failed to load.
+  // from the registration can also mean the file failed to load.
   const w = fontFace.weight
   const s = fontFace.style
   const weight =
     (typeof w === 'string' || typeof w === 'number') && !_isInvalidFaceWeight(String(w)) ? String(w) : 'auto'
   const style = typeof s === 'string' && !_isInvalidFaceStyle(s) ? s : 'auto'
-  const faces = _faceCount()
-  const key = GlobalFonts.registerFromPath(path, family, { weight, style })
-  if (!key) {
+  // Read from the binding at each call, not once at load: the tests stub it.
+  const face = binding._registerFontFace(path, family, { weight, style })
+  if (typeof face !== 'number') {
     throw new Error(`Failed to register font from "${path}" with family "${family}"`)
   }
-  // A call that adds no face got the key of a registration that already
-  // existed (the same path, family and descriptors). deregisterAllFonts must
-  // leave that one to its owner, as node-canvas removes only what
-  // registerFont added.
-  if (_faceCount() > faces) _registeredFontKeys.push(key)
-}
-
-// Faces of every family: a registration under `''` takes the file's own family name.
-function _faceCount() {
-  return GlobalFonts.families.reduce((count, f) => count + f.styles.length, 0)
+  // 0: the call declared no name (a file loadFontsFromDir loaded, given with
+  // no family name), so there is nothing to release.
+  if (face !== 0) _registeredFontFaces.push(face)
 }
 
 /**
@@ -385,9 +381,11 @@ function _faceCount() {
  * user-registered fonts and leaves system fonts untouched.
  */
 function deregisterAllFonts() {
-  if (_registeredFontKeys.length > 0) {
-    GlobalFonts.removeBatch(_registeredFontKeys)
-    _registeredFontKeys.length = 0
+  if (_registeredFontFaces.length > 0) {
+    // Read at each call, as in registerFont. The list is cleared only once
+    // the release returns, so a throw keeps the declarations to release.
+    binding._releaseFontFaces(_registeredFontFaces)
+    _registeredFontFaces.length = 0
   }
 }
 
