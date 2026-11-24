@@ -23,6 +23,7 @@ import {
   DOMMatrix,
   GlobalFonts,
 } from '../node-canvas'
+import type { FontFaceDescriptors } from '../index'
 import { createCanvas as nativeCreateCanvas } from '../index'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
@@ -213,8 +214,11 @@ test.serial('registerFont treats values the @font-face grammar rejects as not gi
     { weight: '' },
     { weight: null },
     { weight: 0 },
+    { weight: 'light' },
+    { weight: '1001' },
     { style: '' },
     { style: 1 },
+    { style: 'slanted' },
     { style: 'oblique 10' },
     { weight: 'bolder', style: '' },
   ]
@@ -226,6 +230,65 @@ test.serial('registerFont treats values the @font-face grammar rejects as not gi
   registerFont(fixture('RMStatic-Italic.ttf'), { family, weight: 'bolder', style: 'italic' })
   t.is(faceOf('normal', family), 'Regular')
   t.is(faceOf('italic', family), 'Italic')
+})
+
+// A null from registerFromPath also means the file failed to load, so a
+// valid descriptor is never retried as `auto` (that could reuse another
+// registration's key and lose the face without an error).
+test.serial('registerFont throws when a valid descriptor fails, without a retry', (t) => {
+  const original = GlobalFonts.registerFromPath
+  const calls: unknown[] = []
+  GlobalFonts.registerFromPath = ((path: string, family?: string, descriptors?: FontFaceDescriptors) => {
+    calls.push(descriptors)
+    return descriptors?.weight === 'auto' ? original.call(GlobalFonts, path, family, descriptors) : null
+  }) as typeof original
+  try {
+    t.throws(() => registerFont(fixture('RMStatic-Bold.ttf'), { family: 'Compat 1472 No Retry', weight: 'bold' }), {
+      message: /Failed to register font/,
+    })
+  } finally {
+    GlobalFonts.registerFromPath = original
+  }
+  t.deepEqual(calls, [{ weight: 'bold', style: 'auto' }])
+})
+
+// registerFont drops only values the native parser rejects; a value it keeps
+// that the parser rejects makes registerFont throw.
+test.serial('registerFont drops a descriptor only when the native parser rejects it', (t) => {
+  const file = fixture('RMStatic-Regular.ttf')
+  const cases: Array<['weight' | 'style', string]> = [
+    ...['bold', 'BOLD', '700', ' 700 ', '1', '1000', '1e3', '+700', '100 900', 'normal', 'auto'].map(
+      (v) => ['weight', v] as ['weight', string],
+    ),
+    ...['bolder', 'lighter', 'light', '', ' ', '0', '1001', '-5', '1e400', '.5', 'x-bold'].map(
+      (v) => ['weight', v] as ['weight', string],
+    ),
+    ...['normal', 'italic', 'Italic', 'OBLIQUE', 'auto', 'oblique 10deg', 'oblique  -90deg 90deg', 'oblique 2rad'].map(
+      (v) => ['style', v] as ['style', string],
+    ),
+    ...['slanted', 'x', '', '\n', 'oblique 0', 'oblique 10', 'oblique 10 20'].map(
+      (v) => ['style', v] as ['style', string],
+    ),
+  ]
+  const original = GlobalFonts.registerFromPath
+  for (const [field, value] of cases) {
+    const valid = original.call(GlobalFonts, file, `Compat 1472 Native ${field}`, { [field]: value }) !== null
+    let passed: FontFaceDescriptors | undefined
+    GlobalFonts.registerFromPath = ((path: string, family?: string, descriptors?: FontFaceDescriptors) => {
+      passed = descriptors
+      return original.call(GlobalFonts, path, family, descriptors)
+    }) as typeof original
+    try {
+      registerFont(file, { family: `Compat 1472 Drift ${field}`, [field]: value })
+    } finally {
+      GlobalFonts.registerFromPath = original
+    }
+    t.is(passed?.[field], valid ? value : 'auto', `${field} ${JSON.stringify(value)}`)
+  }
+  // An invalid value with tokens the check does not read is passed as given.
+  t.throws(() => registerFont(file, { family: 'Compat 1472 Unknown', weight: '700px' }), {
+    message: /Failed to register font/,
+  })
 })
 
 test.serial('registerFont without weight keeps the wght axis of a variable font', (t) => {

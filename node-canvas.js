@@ -278,6 +278,39 @@ function _addCompatMethods(canvas) {
 // system fonts untouched).
 const _registeredFontKeys = []
 
+// Values of the @font-face `font-weight` / `font-style` descriptors that the
+// grammar surely rejects (src/font.rs parse_font_face_weight / _style): an
+// empty value, an unknown plain keyword (`bolder`, `light`, `slanted`), a
+// number outside 1-1000, an `oblique` angle with no unit. Every other value
+// is passed to registerFromPath as given, and registerFont throws if it is
+// invalid, so a valid value is never dropped.
+const _CSS_SPACE = /[ \t\n\r\f]+/
+const _KEYWORD = /^[A-Za-z-]+$/
+const _NUMBER = /^[+-]?(?:\d+(?:\.\d+)?|\.\d+)(?:[eE][+-]?\d+)?$/
+
+function _cssWords(value) {
+  const trimmed = value.replace(/^[ \t\n\r\f]+|[ \t\n\r\f]+$/g, '')
+  return trimmed === '' ? [] : trimmed.split(_CSS_SPACE)
+}
+
+function _isInvalidFaceWeight(value) {
+  const words = _cssWords(value)
+  if (words.length !== 1) return words.length === 0
+  const [word] = words
+  if (_KEYWORD.test(word)) return !['normal', 'bold', 'auto'].includes(word.toLowerCase())
+  if (_NUMBER.test(word)) return !(Number(word) >= 1 && Number(word) <= 1000)
+  return false
+}
+
+function _isInvalidFaceStyle(value) {
+  const words = _cssWords(value)
+  if (words.length === 0) return true
+  if (words.length === 1 && _KEYWORD.test(words[0])) {
+    return !['normal', 'italic', 'oblique', 'auto'].includes(words[0].toLowerCase())
+  }
+  return words[0].toLowerCase() === 'oblique' && words.slice(1).every((word) => _NUMBER.test(word))
+}
+
 /**
  * Register a font file with the specified font face properties.
  * Compatible with node-canvas's registerFont(path, { family, weight?, style? }).
@@ -292,7 +325,8 @@ const _registeredFontKeys = []
  * - An explicit weight or style, `'normal'` included, pins a variable font to
  *   it, as with @font-face. Use a range such as `'100 900'` to keep the axis.
  * - A value the @font-face grammar rejects (`'bolder'`, `''`) counts as not
- *   given, as node-canvas ignores unknown values instead of throwing.
+ *   given, as node-canvas ignores unknown values instead of throwing. An
+ *   invalid value with other tokens (`'700px'`) makes registerFont throw.
  *
  * @param {string} path   Absolute path to the font file (.ttf, .otf, etc.)
  * @param {{ family: string, weight?: string | number, style?: string }} fontFace
@@ -303,16 +337,15 @@ function registerFont(path, fontFace) {
     throw new TypeError('registerFont requires a fontFace with a "family" property')
   }
   // node-canvas reads `weight` as a string or a number and `style` as a
-  // string; any other value counts as not given.
+  // string; any other value, or one the @font-face grammar surely rejects,
+  // counts as not given. This is checked here and not by retrying: a null
+  // from registerFromPath can also mean the file failed to load.
   const w = fontFace.weight
   const s = fontFace.style
-  const weight = typeof w === 'string' || typeof w === 'number' ? String(w) : 'auto'
-  const style = typeof s === 'string' ? s : 'auto'
-  const register = (weight, style) => GlobalFonts.registerFromPath(path, family, { weight, style })
-  // registerFromPath returns null, before it loads the file, for a descriptor
-  // it cannot parse. Retry with the bad field as `auto`, so only a file that
-  // cannot be registered throws.
-  const key = register(weight, style) ?? register('auto', style) ?? register(weight, 'auto') ?? register('auto', 'auto')
+  const weight =
+    (typeof w === 'string' || typeof w === 'number') && !_isInvalidFaceWeight(String(w)) ? String(w) : 'auto'
+  const style = typeof s === 'string' && !_isInvalidFaceStyle(s) ? s : 'auto'
+  const key = GlobalFonts.registerFromPath(path, family, { weight, style })
   if (!key) {
     throw new Error(`Failed to register font from "${path}" with family "${family}"`)
   }
