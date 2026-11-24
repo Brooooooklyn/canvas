@@ -301,11 +301,12 @@ fn release_env_owner(key: usize) {
 /// node-canvas registerFont (node-canvas.js): registers the file as
 /// `GlobalFonts.registerFromPath(font_path, name_alias, { weight, style })`
 /// does (the same key, names and descriptors), and the name the call
-/// declares is declared by this env's owner token (ENV_OWNERS). `weight` and `style` are read each on its own with
-/// the @font-face grammar: one it rejects counts as not given (`auto`), as
-/// node-canvas ignores unknown values instead of throwing, and the other is
-/// kept. Returns whether the file was registered. Not API: reachable through
-/// js-binding, as `_toNumber` is.
+/// declares is declared by this env's owner token (ENV_OWNERS). `weight` and
+/// `style` are read each on its own with the @font-face grammar: one it
+/// rejects counts as not given (`auto`), as node-canvas ignores unknown
+/// values instead of throwing, and the other is kept. Returns whether the
+/// file was registered. Not API: reachable through js-binding, as
+/// `_toNumber` is.
 // Only JS calls it: the lib test build registers no napi exports.
 #[cfg_attr(test, allow(dead_code))]
 #[napi(js_name = "_registerFontFace")]
