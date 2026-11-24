@@ -1519,7 +1519,11 @@ struct skiac_font_collection {
     size_t kept = 0;
     for (size_t i = 0; i < set_aliases.size(); ++i) {
       if (keep[i]) {
-        set_aliases[kept++] = std::move(set_aliases[i]);
+        // No self-move: libc++ empties a string moved onto itself.
+        if (kept != i) {
+          set_aliases[kept] = std::move(set_aliases[i]);
+        }
+        ++kept;
       }
     }
     set_aliases.resize(kept);

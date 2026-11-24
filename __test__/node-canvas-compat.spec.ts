@@ -458,6 +458,26 @@ test.serial('deregisterAllFonts drops the setAlias entries of the names it drops
   t.false(GlobalFonts.has('Compat 1472 Alias D'))
 })
 
+// The aliases kept when a cleanup trims a name off a kept font keep their
+// names: the ones made before the dropped alias stay in place in the list.
+test.serial('deregisterAllFonts keeps the setAlias entries made before the one it drops', (t) => {
+  deregisterAllFonts()
+  const unrelated = GlobalFonts.registerFromPath(fixture('Harmattan-Regular.ttf'), 'Compat 1472 Unrelated')
+  t.true(GlobalFonts.setAlias('Compat 1472 Unrelated', 'Compat 1472 Unrelated Alias'))
+  const key = GlobalFonts.registerFromPath(fixture('RMStatic-Bold.ttf'), 'Compat 1472 Kept Owner', BOLD)
+  t.true(GlobalFonts.setAlias('Compat 1472 Kept Owner', 'Compat 1472 Kept Alias'))
+  registerFont(fixture('RMStatic-Bold.ttf'), { family: 'Compat 1472 Trimmed', weight: 'bold' })
+  t.true(GlobalFonts.setAlias('Compat 1472 Trimmed', 'Compat 1472 Trimmed Alias'))
+  deregisterAllFonts()
+  t.true(GlobalFonts.has('Compat 1472 Unrelated Alias'))
+  t.true(GlobalFonts.has('Compat 1472 Kept Alias'))
+  t.false(GlobalFonts.has('Compat 1472 Trimmed'))
+  t.false(GlobalFonts.has('Compat 1472 Trimmed Alias'))
+  t.deepEqual(drawText('bold 30px "Compat 1472 Kept Alias"'), drawText('bold 30px "Compat 1472 Kept Owner"'))
+  t.true(GlobalFonts.remove(key!))
+  t.true(GlobalFonts.remove(unrelated!))
+})
+
 // Case 4 on a registration a direct alias made: registerFont under '' declares
 // the file's own family, and the cleanup makes it what it was.
 test.serial('deregisterAllFonts restores the own family a registerFont call under an empty family declared', (t) => {
@@ -588,31 +608,44 @@ test.serial('deregisterAllFonts keeps a font loadFontsFromDir loaded', (t) => {
 })
 
 // The registry is one per process; each worker's node-canvas module releases
-// only its own registerFont declarations.
+// only its own registerFont declarations, whichever thread declared first.
 test.serial('deregisterAllFonts in a worker keeps what the main thread registered', async (t) => {
   deregisterAllFonts()
   const file = fixture('EBGaramond-Regular.ttf')
   const family = 'Compat 1472 Worker'
-  registerFont(file, { family })
+  // The worker declares, says so, waits for the main thread, then cleans up.
   const code = `
     const { parentPort, workerData } = require('node:worker_threads')
     const { registerFont, deregisterAllFonts, GlobalFonts } = require(workerData.nodeCanvas)
     registerFont(workerData.file, { family: workerData.family })
-    const during = GlobalFonts.has(workerData.family)
-    deregisterAllFonts()
-    parentPort.postMessage({ during, after: GlobalFonts.has(workerData.family) })
+    parentPort.postMessage({ during: GlobalFonts.has(workerData.family) })
+    parentPort.once('message', () => {
+      deregisterAllFonts()
+      parentPort.postMessage({ after: GlobalFonts.has(workerData.family) })
+    })
   `
-  const worker = new Worker(code, {
-    eval: true,
-    workerData: { nodeCanvas: join(__dirname, '..', 'node-canvas.js'), file, family },
-  })
-  const exited = once(worker, 'exit')
-  const [message] = await once(worker, 'message')
-  await exited
-  t.deepEqual(message, { during: true, after: true })
-  t.true(GlobalFonts.has(family))
-  deregisterAllFonts()
-  t.false(GlobalFonts.has(family))
+  for (const order of ['main first', 'worker first']) {
+    if (order === 'main first') {
+      registerFont(file, { family })
+    }
+    const worker = new Worker(code, {
+      eval: true,
+      workerData: { nodeCanvas: join(__dirname, '..', 'node-canvas.js'), file, family },
+    })
+    const exited = once(worker, 'exit')
+    const [registered] = await once(worker, 'message')
+    t.deepEqual(registered, { during: true }, order)
+    if (order === 'worker first') {
+      registerFont(file, { family })
+    }
+    worker.postMessage('clean up')
+    const [cleaned] = await once(worker, 'message')
+    await exited
+    t.deepEqual(cleaned, { after: true }, order)
+    t.true(GlobalFonts.has(family), order)
+    deregisterAllFonts()
+    t.false(GlobalFonts.has(family), order)
+  }
 })
 
 test.serial('registerFont without weight keeps the wght axis of a variable font', (t) => {
