@@ -338,10 +338,11 @@ test.serial('registerFont drops a descriptor only when the native parser rejects
     }
     t.is(passed?.[field], valid ? value : 'auto', `${field} ${JSON.stringify(value)}`)
   }
-  // An invalid value with a token the check does not read is passed as given.
-  t.throws(() => registerFont(file, { family: 'Compat 1472 Unknown', weight: 'calc(' }), {
-    message: /Failed to register font/,
-  })
+  // A value with a token the check does not read counts as not given, as in
+  // node-canvas: registerFont never throws for a descriptor value.
+  for (const weight of ['calc(', 'calc(700)', 'var(--font-weight)', "'bold'", '700,800']) {
+    t.notThrows(() => registerFont(file, { family: 'Compat 1472 Unknown', weight, style: 'italic' }), weight)
+  }
 })
 
 // node-canvas's deregisterAllFonts removes only what registerFont added. A
@@ -363,6 +364,18 @@ test.serial('deregisterAllFonts keeps a direct registration that registerFont re
     t.true(GlobalFonts.has(family), family)
     t.true(GlobalFonts.remove(key!), family)
   }
+})
+
+// A registration under '' takes the file's own family name; it is still
+// tracked, so deregisterAllFonts removes it.
+test.serial('deregisterAllFonts removes a registerFont face registered under an empty family', (t) => {
+  const embedded = 'RMStatic'
+  const faces = () => GlobalFonts.families.find((f) => f.family === embedded)?.styles.length ?? 0
+  const before = faces()
+  registerFont(fixture('RMStatic-BoldItalic.ttf'), { family: '', weight: 'bold', style: 'italic' })
+  t.is(faces(), before + 1)
+  deregisterAllFonts()
+  t.is(faces(), before)
 })
 
 test.serial('registerFont without weight keeps the wght axis of a variable font', (t) => {
