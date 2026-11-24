@@ -331,7 +331,9 @@ struct RegisteredFont {
   // loadFontsFromDir loaded the path after a register call had registered
   // it (the font stays what it was:
   // skiac_font_collection_register_system_font), so loadFontsFromDir holds it
-  // too: a release of registerFont declarations never removes it.
+  // too: a release of registerFont declarations never removes it, and one
+  // that leaves it no declared name makes it the installed font
+  // loadFontsFromDir alone makes (releaseDeclarations' dir_only).
   bool dir_held = false;
 
   // Whether name `i` is a FontFace name of a preloaded font: the alias
@@ -441,6 +443,31 @@ struct RegisteredFont {
       relists.resize(i + 1, 0);
     }
     relists[i] = order;
+  }
+  // The file's own family `own_family` is listed by this registration now,
+  // as the path's first registration lists it (a release took the one that
+  // did: TypefaceFontProviderCustom::releaseDeclarations). A name of that
+  // spelling becomes the listing; else the name is added first, at the
+  // order of the first name (a new registration lists its own family
+  // first, then its call's name), undeclared, so its descriptors stay what
+  // they are.
+  void TakeListing(const std::string& own_family) {
+    auto listed = std::find(aliases.begin(), aliases.end(), own_family);
+    if (listed != aliases.end()) {
+      owners[listed - aliases.begin()].listing = true;
+      return;
+    }
+    const uint64_t order = orders.front();
+    aliases.insert(aliases.begin(), own_family);
+    orders.insert(orders.begin(), order);
+    alias_args.insert(alias_args.begin(), false);
+    call_names.insert(call_names.begin(), false);
+    RegisteredFont::NameOwners named;
+    named.listing = true;
+    owners.insert(owners.begin(), std::move(named));
+    if (!relists.empty()) {
+      relists.insert(relists.begin(), 0);
+    }
   }
   // Takes name `i` off the font (every list parallel to aliases).
   void EraseName(size_t i) {
@@ -1309,6 +1336,10 @@ class TypefaceFontProviderCustom : public TypefaceFontProvider {
     std::set<uint32_t> trimmed;
     // The kept fonts whose web twin went: no FontFace name is left.
     std::set<uint32_t> lost_web;
+    // The kept fonts only loadFontsFromDir holds now (dir_held, no declared
+    // name left): the caller makes each one what loadFontsFromDir alone
+    // makes, an installed font (system_font_ids, markPreloaded).
+    std::set<uint32_t> dir_only;
   };
 
   // node-canvas deregisterAllFonts: takes the registerFont owner token
@@ -1383,6 +1414,59 @@ class TypefaceFontProviderCustom : public TypefaceFontProvider {
         released.emptied.insert(id);
       } else if (lost_name) {
         released.trimmed.insert(id);
+      }
+      if (!font.DeclaresAny() && font.dir_held && !font.preloaded &&
+          !font.installed) {
+        // Only its own-family listing is left (an undeclared name that is
+        // not the listing went above), as loadFontsFromDir alone lists it.
+        font.dir_held = false;
+        released.dir_only.insert(id);
+      }
+    }
+    // The own-family listing of a path goes with the registration that had
+    // it. When other registrations of the path stay (declaration twins a
+    // GlobalFonts call or another env made, with descriptors that differ),
+    // the oldest of them lists it now: had the released calls never
+    // happened, that one would have been the path's first registration,
+    // which lists the file's own family (registerTypefaceFromPathWithTracking).
+    for (uint32_t gone : released.emptied) {
+      const RegisteredFont& font = registered_fonts.at(gone);
+      if (font.path.empty()) {
+        continue;
+      }
+      const auto listing =
+          std::find_if(font.owners.begin(), font.owners.end(),
+                       [](const RegisteredFont::NameOwners& named) {
+                         return named.listing;
+                       });
+      if (listing == font.owners.end()) {
+        continue;
+      }
+      const std::string& own_family =
+          font.aliases[listing - font.owners.begin()];
+      uint32_t heir = 0;
+      bool listed = false;
+      auto index_it = content_hash_index.find(computePathHash(font.path));
+      if (index_it == content_hash_index.end()) {
+        continue;
+      }
+      for (uint32_t other : index_it->second) {
+        auto it = registered_fonts.find(other);
+        if (it == registered_fonts.end() || released.emptied.count(other) ||
+            it->second.path != font.path || it->second.aliases.empty()) {
+          continue;
+        }
+        if (it->second.ListsOwnFamily()) {
+          listed = true;
+          break;
+        }
+        if (!heir || it->second.orders.front() <
+                         registered_fonts.at(heir).orders.front()) {
+          heir = other;
+        }
+      }
+      if (heir && !listed) {
+        registered_fonts.at(heir).TakeListing(own_family);
       }
     }
     return released;

@@ -4776,6 +4776,13 @@ bool skiac_font_collection_release_owner(
   for (uint32_t id : released.emptied) {
     c_font_collection->assets->removeTypeface(id);
   }
+  // A font only loadFontsFromDir holds now is what it alone makes of the
+  // file (skiac_font_collection_register_system_font): an installed font,
+  // a fallback font too (the rebuild lists its face in system_typeface_ids).
+  for (uint32_t id : released.dir_only) {
+    c_font_collection->system_font_ids.insert(id);
+    c_font_collection->assets->markPreloaded(id);
+  }
   // An alias goes when the face it named is no longer listed by any name.
   c_font_collection->dropAliasesOf(released.emptied);
   c_font_collection->dropUnlistedAliasesOf(released.trimmed);

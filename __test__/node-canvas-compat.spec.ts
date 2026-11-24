@@ -1,3 +1,4 @@
+import { spawnSync } from 'node:child_process'
 import { once } from 'node:events'
 import { copyFileSync, mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import { createRequire } from 'node:module'
@@ -817,26 +818,93 @@ test.serial('deregisterAllFonts keeps the own family loadFontsFromDir holds, not
   }
 })
 
-// loadFontsFromDir of a file whose own-family registration went while a
-// declaration twin of it (another env's registerFont) stays: the file is
-// registered under its own family as a new path, and the twin goes with its
-// owner, its name too.
-test.serial('loadFontsFromDir with only a twin of the file left registers its own family', async (t) => {
+// The registration that lists a file's own family goes while a declaration
+// twin of it (another env's registerFont) stays. A release of registerFont
+// declarations gives the twin the own family (as had the released calls
+// never happened), so loadFontsFromDir holds the twin. A direct remove leaves
+// only the twin: loadFontsFromDir registers the file under its own family as
+// a new path. Either way the twin's name goes with its owner, and the file
+// loadFontsFromDir loaded stays.
+test.serial('loadFontsFromDir after the own-family registration of a twin went', async (t) => {
   deregisterAllFonts()
   const own = 'Oswald'
   const family = 'Compat 1472 Dir Only Twin'
-  const {
-    dir,
-    files: [file],
-  } = copies(t, ['Oswald.ttf'])
-  const before = stylesOf(own)
-  // The main thread's call lists the own family; the worker's is a twin.
-  registerFont(file, { family, weight: '400' })
-  t.is(stylesOf(own), before + 1)
   const code = `
     const { parentPort, workerData } = require('node:worker_threads')
     const { registerFont } = require(workerData.nodeCanvas)
     registerFont(workerData.file, { family: workerData.family, weight: '700' })
+    parentPort.once('message', () => parentPort.close())
+    parentPort.postMessage('registered')
+  `
+  for (const gone of ['deregisterAllFonts', 'GlobalFonts.remove'] as const) {
+    const {
+      dir,
+      files: [file],
+    } = copies(t, ['Oswald.ttf'])
+    const before = stylesOf(own)
+    // The main thread's call lists the own family; the worker's is a twin.
+    let key: ReturnType<typeof GlobalFonts.registerFromPath> = null
+    if (gone === 'deregisterAllFonts') {
+      registerFont(file, { family, weight: '400' })
+    } else {
+      key = GlobalFonts.registerFromPath(file, family, { weight: '400' })
+      t.truthy(key, gone)
+    }
+    t.is(stylesOf(own), before + 1, gone)
+    const worker = new Worker(code, {
+      eval: true,
+      workerData: { nodeCanvas: join(__dirname, '..', 'node-canvas.js'), file, family },
+    })
+    t.teardown(() => worker.terminate())
+    const exited = once(worker, 'exit')
+    t.deepEqual(await once(worker, 'message'), ['registered'], gone)
+    t.is(stylesOf(family), 2, gone)
+    if (key) {
+      t.true(GlobalFonts.remove(key), gone)
+    } else {
+      deregisterAllFonts()
+    }
+    t.is(stylesOf(family), 1, `${gone}: the worker's twin`)
+    const released = gone === 'deregisterAllFonts'
+    t.is(stylesOf(own), released ? before + 1 : before, `${gone}: the twin lists the own family`)
+    t.is(GlobalFonts.loadFontsFromDir(dir), 1, gone)
+    t.is(stylesOf(own), before + 1, `${gone}: the file under its own family`)
+    worker.postMessage('exit')
+    await exited
+    t.false(GlobalFonts.has(family), `${gone}: the worker's name goes with it`)
+    t.is(stylesOf(own), before + 1, `${gone}: the file loadFontsFromDir loaded stays`)
+    const reference = GlobalFonts.register(readFileSync(fixture('Oswald.ttf')), 'Compat 1472 Dir Only Twin Ref')
+    t.deepEqual(drawText(`30px "${own}"`), drawText('30px "Compat 1472 Dir Only Twin Ref"'), gone)
+    t.true(GlobalFonts.remove(reference!), gone)
+  }
+})
+
+// A worker's registerFont made the path's first registration (it lists the
+// file's own family); a direct call with other descriptors then made a twin
+// of it. When the worker exits, the twin lists the own family, as the direct
+// call's registration would have, had the worker never registered the file.
+test.serial('a worker exit keeps the own family of a file a direct call registered too', async (t) => {
+  deregisterAllFonts()
+  const own = 'Harmattan'
+  const family = 'Compat 1472 Embedded'
+  const {
+    files: [file, reference],
+  } = copies(t, ['Harmattan-Regular.ttf', 'Harmattan-Regular.ttf'])
+  const before = stylesOf(own)
+  const text = 'سلام Harmattan'
+  // Had the worker never registered the file: the direct call alone.
+  const referenceKey = GlobalFonts.registerFromPath(reference, 'Compat 1472 Embedded Ref', { weight: '700' })
+  t.truthy(referenceKey)
+  t.is(stylesOf(own), before + 1, 'the direct call alone lists the own family')
+  const ownDrawn = drawText(`30px ${own}`)
+  const drawn = drawText('bold 30px "Compat 1472 Embedded Ref"')
+  t.true(GlobalFonts.remove(referenceKey!))
+  t.is(stylesOf(own), before)
+
+  const code = `
+    const { parentPort, workerData } = require('node:worker_threads')
+    const { registerFont } = require(workerData.nodeCanvas)
+    registerFont(workerData.file, { family: workerData.family, weight: '400' })
     parentPort.once('message', () => parentPort.close())
     parentPort.postMessage('registered')
   `
@@ -847,19 +915,97 @@ test.serial('loadFontsFromDir with only a twin of the file left registers its ow
   t.teardown(() => worker.terminate())
   const exited = once(worker, 'exit')
   t.deepEqual(await once(worker, 'message'), ['registered'])
-  t.is(stylesOf(family), 2)
-  deregisterAllFonts()
-  t.is(stylesOf(family), 1, "the worker's twin")
-  t.is(stylesOf(own), before)
-  t.is(GlobalFonts.loadFontsFromDir(dir), 1)
-  t.is(stylesOf(own), before + 1, 'the file under its own family')
+  t.is(stylesOf(own), before + 1, "the worker's registration lists the own family")
+  const key = GlobalFonts.registerFromPath(file, family, { weight: '700' })
+  t.truthy(key)
+  t.is(stylesOf(family), 2, 'the direct call makes a twin')
   worker.postMessage('exit')
   await exited
-  t.false(GlobalFonts.has(family), "the worker's name goes with it")
-  t.is(stylesOf(own), before + 1, 'the file loadFontsFromDir loaded stays')
-  const reference = GlobalFonts.register(readFileSync(fixture('Oswald.ttf')), 'Compat 1472 Dir Only Twin Ref')
-  t.deepEqual(drawText(`30px "${own}"`), drawText('30px "Compat 1472 Dir Only Twin Ref"'))
-  t.true(GlobalFonts.remove(reference!))
+  t.is(stylesOf(family), 1, "the worker's face goes")
+  t.is(stylesOf(own), before + 1, 'the own family stays')
+  t.true(GlobalFonts.has(own))
+  t.deepEqual(drawText(`30px ${own}`), ownDrawn)
+  t.deepEqual(drawText(`bold 30px "${family}"`), drawn)
+  const ctx = nativeCreateCanvas(10, 10).getContext('2d')
+  ctx.font = `30px ${own}`
+  const width = ctx.measureText(text).width
+  ctx.font = '30px "Compat 1472 Embedded Ref"'
+  t.not(ctx.measureText(text).width, width, 'the reference name is gone')
+  ctx.font = `bold 30px "${family}"`
+  t.is(ctx.measureText(text).width, width, 'the own family draws the file')
+  // The twin goes with the own family, as the direct call's registration.
+  t.true(GlobalFonts.remove(key!))
+  t.false(GlobalFonts.has(family))
+  t.is(stylesOf(own), before)
+})
+
+// loadFontsFromDir of a file registerFont registered before holds it; once
+// the registerFont declarations go, it is the installed font loadFontsFromDir
+// alone makes of the file, so a character the font list lacks comes from it
+// (installed-fallback.spec.ts). Each case runs in a child process with no
+// other fonts loaded.
+const DIR_FALLBACK_PROBE = `
+const fs = require('fs'), os = require('os'), path = require('path')
+const { createCanvas, GlobalFonts, registerFont, deregisterAllFonts } = require('./node-canvas.js')
+const F = path.join('__test__', 'fonts')
+const m = (text) => {
+  const ctx = createCanvas(10, 10).getContext('2d')
+  ctx.font = '32px "Compat 1472 Lato Only"'
+  const t = ctx.measureText(text)
+  return [t.width, t.actualBoundingBoxLeft, t.actualBoundingBoxRight, t.actualBoundingBoxAscent, t.actualBoundingBoxDescent]
+}
+GlobalFonts.registerFromPath(path.join(F, 'Lato-Regular.ttf'), 'Compat 1472 Lato Only')
+const ch = String.fromCodePoint(0x1e290)
+const out = { none: m(ch) }
+const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'canvas-compat-fallback-'))
+const file = path.join(dir, 'NamedInstanceProbe.ttf')
+fs.copyFileSync(path.join(F, 'NamedInstanceProbe.ttf'), file)
+const fontFace = JSON.parse(process.env.FONT_FACE || 'null')
+if (fontFace) registerFont(file, fontFace)
+out.loaded = GlobalFonts.loadFontsFromDir(dir)
+if (fontFace) deregisterAllFonts()
+out.glyph = m(ch)
+out.family = GlobalFonts.has('Named Instance Probe')
+fs.rmSync(dir, { recursive: true, force: true })
+process.stdout.write(JSON.stringify(out))
+`
+
+function dirFallback(fontFace: object | null) {
+  const { stdout, stderr, status } = spawnSync(process.execPath, ['-e', DIR_FALLBACK_PROBE], {
+    cwd: join(__dirname, '..'),
+    env: {
+      ...process.env,
+      DISABLE_SYSTEM_FONTS_LOAD: '1',
+      FONT_FACE: JSON.stringify(fontFace),
+    },
+    encoding: 'utf8',
+    timeout: 60_000,
+  })
+  if (status !== 0) throw new Error(stderr)
+  return JSON.parse(stdout) as { none: number[]; loaded: number; glyph: number[]; family: boolean }
+}
+
+test.serial('deregisterAllFonts leaves a file loadFontsFromDir loaded a fallback font', (t) => {
+  const alone = dirFallback(null)
+  t.is(alone.loaded, 1)
+  t.true(alone.family)
+  if (JSON.stringify(alone.glyph) === JSON.stringify(alone.none)) {
+    t.fail('loadFontsFromDir alone gives no glyph for U+1E290')
+    return
+  }
+  for (const fontFace of [
+    { family: 'Compat 1472 Fallback' },
+    { family: 'Named Instance Probe' },
+    { family: 'Named Instance Probe', weight: 'bold' },
+    { family: '' },
+  ]) {
+    const at = JSON.stringify(fontFace)
+    const released = dirFallback(fontFace)
+    t.is(released.loaded, 1, at)
+    t.true(released.family, at)
+    t.deepEqual(released.none, alone.none, at)
+    t.deepEqual(released.glyph, alone.glyph, at)
+  }
 })
 
 // The registerFont calls of one env declare with one owner token: calls that
