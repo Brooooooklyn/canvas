@@ -883,23 +883,40 @@ test.serial('loadFontsFromDir after the own-family registration of a twin went',
 // file's own family); a direct call with other descriptors then made a twin
 // of it. When the worker exits, the twin lists the own family, as the direct
 // call's registration would have, had the worker never registered the file.
+// A direct setAlias of the own family made meanwhile stays too. The fixture's
+// own family is registered nowhere else in this file (as Harmattan is), so
+// the alias names this file's face.
 test.serial('a worker exit keeps the own family of a file a direct call registered too', async (t) => {
   deregisterAllFonts()
-  const own = 'Harmattan'
+  const own = 'Noto Sans Devanagari'
   const family = 'Compat 1472 Embedded'
   const {
     files: [file, reference],
-  } = copies(t, ['Harmattan-Regular.ttf', 'Harmattan-Regular.ttf'])
+  } = copies(t, ['NotoSansDevanagari-subset.ttf', 'NotoSansDevanagari-subset.ttf'])
   const before = stylesOf(own)
-  const text = 'سلام Harmattan'
+  t.is(before, 0)
+  const text = 'नमस्ते हिन्दी'
+  const widthOf = (font: string) => {
+    const ctx = nativeCreateCanvas(10, 10).getContext('2d')
+    ctx.font = font
+    return ctx.measureText(text).width
+  }
+  const missing = widthOf('30px "Compat 1472 No Such Font"')
   // Had the worker never registered the file: the direct call alone.
   const referenceKey = GlobalFonts.registerFromPath(reference, 'Compat 1472 Embedded Ref', { weight: '700' })
   t.truthy(referenceKey)
   t.is(stylesOf(own), before + 1, 'the direct call alone lists the own family')
-  const ownDrawn = drawText(`30px ${own}`)
+  const ownDrawn = drawText(`30px "${own}"`)
   const drawn = drawText('bold 30px "Compat 1472 Embedded Ref"')
+  const width = widthOf(`30px "${own}"`)
+  t.not(width, missing, 'the own family draws the file')
+  // A direct setAlias of the own family names the direct call's face.
+  const alias = 'Compat 1472 Embedded Alias'
+  t.true(GlobalFonts.setAlias(own, alias))
+  t.is(widthOf(`30px "${alias}"`), width)
   t.true(GlobalFonts.remove(referenceKey!))
   t.is(stylesOf(own), before)
+  t.false(GlobalFonts.has(alias), 'the alias goes with the face it named')
 
   const code = `
     const { parentPort, workerData } = require('node:worker_threads')
@@ -919,31 +936,35 @@ test.serial('a worker exit keeps the own family of a file a direct call register
   const key = GlobalFonts.registerFromPath(file, family, { weight: '700' })
   t.truthy(key)
   t.is(stylesOf(family), 2, 'the direct call makes a twin')
+  // Made while the worker's registration is the own family's only face.
+  t.true(GlobalFonts.setAlias(own, alias))
   worker.postMessage('exit')
   await exited
   t.is(stylesOf(family), 1, "the worker's face goes")
   t.is(stylesOf(own), before + 1, 'the own family stays')
   t.true(GlobalFonts.has(own))
-  t.deepEqual(drawText(`30px ${own}`), ownDrawn)
+  t.deepEqual(drawText(`30px "${own}"`), ownDrawn)
   t.deepEqual(drawText(`bold 30px "${family}"`), drawn)
-  const ctx = nativeCreateCanvas(10, 10).getContext('2d')
-  ctx.font = `30px ${own}`
-  const width = ctx.measureText(text).width
-  ctx.font = '30px "Compat 1472 Embedded Ref"'
-  t.not(ctx.measureText(text).width, width, 'the reference name is gone')
-  ctx.font = `bold 30px "${family}"`
-  t.is(ctx.measureText(text).width, width, 'the own family draws the file')
+  t.is(widthOf(`30px "${own}"`), width, 'the own family draws the file')
+  t.is(widthOf('30px "Compat 1472 Embedded Ref"'), missing, 'the reference name is gone')
+  t.is(widthOf(`bold 30px "${family}"`), width, 'the twin draws the file')
+  t.true(GlobalFonts.has(alias), 'the direct setAlias stays')
+  t.is(widthOf(`30px "${alias}"`), width, 'the alias draws the file')
   // The twin goes with the own family, as the direct call's registration.
   t.true(GlobalFonts.remove(key!))
   t.false(GlobalFonts.has(family))
   t.is(stylesOf(own), before)
+  t.false(GlobalFonts.has(alias), 'the alias goes with the face it named')
 })
 
 // loadFontsFromDir of a file registerFont registered before holds it; once
 // the registerFont declarations go, it is the installed font loadFontsFromDir
 // alone makes of the file, so a character the font list lacks comes from it
-// (installed-fallback.spec.ts). Each case runs in a child process with no
-// other fonts loaded.
+// (installed-fallback.spec.ts). A direct registerFromPath of the file with
+// other descriptors (DIRECT_FACE) made before the load would have been the
+// path's first registration had registerFont never run: the load only holds
+// it, so the file is no fallback font, as with no registerFont call. Each
+// case runs in a child process with no other fonts loaded.
 const DIR_FALLBACK_PROBE = `
 const fs = require('fs'), os = require('os'), path = require('path')
 const { createCanvas, GlobalFonts, registerFont, deregisterAllFonts } = require('./node-canvas.js')
@@ -961,8 +982,12 @@ const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'canvas-compat-fallback-'))
 const file = path.join(dir, 'NamedInstanceProbe.ttf')
 fs.copyFileSync(path.join(F, 'NamedInstanceProbe.ttf'), file)
 const fontFace = JSON.parse(process.env.FONT_FACE || 'null')
+const direct = JSON.parse(process.env.DIRECT_FACE || 'null')
+const registerDirect = () => GlobalFonts.registerFromPath(file, direct.family, { weight: direct.weight })
 if (fontFace) registerFont(file, fontFace)
+if (direct && !direct.afterDir) registerDirect()
 out.loaded = GlobalFonts.loadFontsFromDir(dir)
+if (direct && direct.afterDir) registerDirect()
 if (fontFace) deregisterAllFonts()
 out.glyph = m(ch)
 out.family = GlobalFonts.has('Named Instance Probe')
@@ -970,13 +995,20 @@ fs.rmSync(dir, { recursive: true, force: true })
 process.stdout.write(JSON.stringify(out))
 `
 
-function dirFallback(fontFace: object | null) {
+interface DirectFace {
+  family: string
+  weight: string
+  afterDir: boolean
+}
+
+function dirFallback(fontFace: object | null, direct: DirectFace | null = null) {
   const { stdout, stderr, status } = spawnSync(process.execPath, ['-e', DIR_FALLBACK_PROBE], {
     cwd: join(__dirname, '..'),
     env: {
       ...process.env,
       DISABLE_SYSTEM_FONTS_LOAD: '1',
       FONT_FACE: JSON.stringify(fontFace),
+      DIRECT_FACE: JSON.stringify(direct),
     },
     encoding: 'utf8',
     timeout: 60_000,
@@ -1005,6 +1037,19 @@ test.serial('deregisterAllFonts leaves a file loadFontsFromDir loaded a fallback
     t.true(released.family, at)
     t.deepEqual(released.none, alone.none, at)
     t.deepEqual(released.glyph, alone.glyph, at)
+  }
+  // A direct twin of the worker-style registration, made before or after
+  // the load: the same glyph as the direct call and the load alone.
+  for (const afterDir of [false, true]) {
+    const direct = { family: 'Compat 1472 Fallback Direct', weight: '700', afterDir }
+    const at = JSON.stringify(direct)
+    const reference = dirFallback(null, direct)
+    t.is(reference.loaded, 1, at)
+    t.deepEqual(reference.glyph, afterDir ? alone.glyph : alone.none, at)
+    const released = dirFallback({ family: direct.family, weight: '400' }, direct)
+    t.is(released.loaded, 1, at)
+    t.true(released.family, at)
+    t.deepEqual(released.glyph, reference.glyph, at)
   }
 })
 

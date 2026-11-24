@@ -4783,7 +4783,9 @@ bool skiac_font_collection_release_owner(
     c_font_collection->system_font_ids.insert(id);
     c_font_collection->assets->markPreloaded(id);
   }
-  // An alias goes when the face it named is no longer listed by any name.
+  // An alias of an own family a kept registration took stays; any other
+  // goes when the face it named is no longer listed by any name.
+  c_font_collection->moveListingAliases(released.heirs);
   c_font_collection->dropAliasesOf(released.emptied);
   c_font_collection->dropUnlistedAliasesOf(released.trimmed);
   c_font_collection->dropWebAliasesOf(released.lost_web);
