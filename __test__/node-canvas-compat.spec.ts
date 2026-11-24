@@ -260,15 +260,55 @@ test.serial('registerFont drops a descriptor only when the native parser rejects
     ...['bold', 'BOLD', '700', ' 700 ', '1', '1000', '1e3', '+700', '100 900', 'normal', 'auto'].map(
       (v) => ['weight', v] as ['weight', string],
     ),
-    ...['bolder', 'lighter', 'light', '', ' ', '0', '1001', '-5', '1e400', '.5', 'x-bold'].map(
-      (v) => ['weight', v] as ['weight', string],
-    ),
-    ...['normal', 'italic', 'Italic', 'OBLIQUE', 'auto', 'oblique 10deg', 'oblique  -90deg 90deg', 'oblique 2rad'].map(
-      (v) => ['style', v] as ['style', string],
-    ),
-    ...['slanted', 'x', '', '\n', 'oblique 0', 'oblique 10', 'oblique 10 20'].map(
-      (v) => ['style', v] as ['style', string],
-    ),
+    ...[
+      'bolder',
+      'lighter',
+      'light',
+      '',
+      ' ',
+      '0',
+      '1001',
+      '-5',
+      '1e400',
+      '.5',
+      'x-bold',
+      '700px',
+      '70%',
+      '10e',
+      '100 2000',
+      '100 bold',
+      'normal bold',
+      '100 200 300',
+    ].map((v) => ['weight', v] as ['weight', string]),
+    ...[
+      'normal',
+      'italic',
+      'Italic',
+      'OBLIQUE',
+      'auto',
+      'oblique 10deg',
+      'oblique  -90deg 90deg',
+      'oblique 2rad',
+      'oblique 1turn',
+      'oblique 20deg 10deg',
+      'oblique 10DEG',
+    ].map((v) => ['style', v] as ['style', string]),
+    ...[
+      'slanted',
+      'x',
+      '',
+      '\n',
+      'oblique 0',
+      'oblique 10',
+      'oblique 10 20',
+      'oblique 100deg',
+      'oblique 100grad',
+      'oblique 10px',
+      'oblique 10%',
+      'oblique 1deg 2deg 3deg',
+      'italic 10deg',
+      'oblique bold',
+    ].map((v) => ['style', v] as ['style', string]),
   ]
   const original = GlobalFonts.registerFromPath
   for (const [field, value] of cases) {
@@ -285,8 +325,8 @@ test.serial('registerFont drops a descriptor only when the native parser rejects
     }
     t.is(passed?.[field], valid ? value : 'auto', `${field} ${JSON.stringify(value)}`)
   }
-  // An invalid value with tokens the check does not read is passed as given.
-  t.throws(() => registerFont(file, { family: 'Compat 1472 Unknown', weight: '700px' }), {
+  // An invalid value with a token the check does not read is passed as given.
+  t.throws(() => registerFont(file, { family: 'Compat 1472 Unknown', weight: 'calc(' }), {
     message: /Failed to register font/,
   })
 })

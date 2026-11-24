@@ -278,37 +278,51 @@ function _addCompatMethods(canvas) {
 // system fonts untouched).
 const _registeredFontKeys = []
 
-// Values of the @font-face `font-weight` / `font-style` descriptors that the
-// grammar surely rejects (src/font.rs parse_font_face_weight / _style): an
-// empty value, an unknown plain keyword (`bolder`, `light`, `slanted`), a
-// number outside 1-1000, an `oblique` angle with no unit. Every other value
-// is passed to registerFromPath as given, and registerFont throws if it is
-// invalid, so a valid value is never dropped.
+// Whether the @font-face `font-weight` / `font-style` grammar (src/font.rs
+// parse_font_face_weight / parse_font_face_style) surely rejects a value. It
+// reads plain keywords, numbers and dimensions; a value with any other token
+// (`calc()`, a comment, an escape) is passed to registerFromPath as given, and
+// registerFont throws if it is invalid, so a valid value is never dropped.
 const _CSS_SPACE = /[ \t\n\r\f]+/
-const _KEYWORD = /^[A-Za-z-]+$/
-const _NUMBER = /^[+-]?(?:\d+(?:\.\d+)?|\.\d+)(?:[eE][+-]?\d+)?$/
+const _NUMBER = '[+-]?(?:\\d+(?:\\.\\d+)?|\\.\\d+)(?:[eE][+-]?\\d+)?'
+const _IDENT = '-?[A-Za-z_][A-Za-z0-9_-]*'
+const _TOKEN = new RegExp(`^(?:(${_IDENT})|(${_NUMBER})(%|${_IDENT})?)$`)
 
-function _cssWords(value) {
+// The plain tokens of a value, or null when it has another kind of token.
+function _cssTokens(value) {
   const trimmed = value.replace(/^[ \t\n\r\f]+|[ \t\n\r\f]+$/g, '')
-  return trimmed === '' ? [] : trimmed.split(_CSS_SPACE)
+  const tokens = []
+  for (const word of trimmed === '' ? [] : trimmed.split(_CSS_SPACE)) {
+    const match = _TOKEN.exec(word)
+    if (!match) return null
+    tokens.push(
+      match[1] !== undefined
+        ? { keyword: match[1].toLowerCase() }
+        : { number: Number(match[2]), unit: match[3] === undefined ? undefined : match[3].toLowerCase() },
+    )
+  }
+  return tokens
 }
 
 function _isInvalidFaceWeight(value) {
-  const words = _cssWords(value)
-  if (words.length !== 1) return words.length === 0
-  const [word] = words
-  if (_KEYWORD.test(word)) return !['normal', 'bold', 'auto'].includes(word.toLowerCase())
-  if (_NUMBER.test(word)) return !(Number(word) >= 1 && Number(word) <= 1000)
-  return false
+  const tokens = _cssTokens(value)
+  if (tokens === null) return false
+  const weight = (t) => t.number !== undefined && t.unit === undefined && t.number >= 1 && t.number <= 1000
+  if (tokens.length === 1 && tokens[0].keyword !== undefined) {
+    return !['normal', 'bold', 'auto'].includes(tokens[0].keyword)
+  }
+  return !(tokens.length >= 1 && tokens.length <= 2 && tokens.every(weight))
 }
 
 function _isInvalidFaceStyle(value) {
-  const words = _cssWords(value)
-  if (words.length === 0) return true
-  if (words.length === 1 && _KEYWORD.test(words[0])) {
-    return !['normal', 'italic', 'oblique', 'auto'].includes(words[0].toLowerCase())
+  const tokens = _cssTokens(value)
+  if (tokens === null) return false
+  if (tokens.length === 1 && tokens[0].keyword !== undefined) {
+    return !['normal', 'italic', 'oblique', 'auto'].includes(tokens[0].keyword)
   }
-  return words[0].toLowerCase() === 'oblique' && words.slice(1).every((word) => _NUMBER.test(word))
+  // `oblique <angle> [<angle>]`, each written number in [-90, 90].
+  const angle = (t) => ['deg', 'rad', 'grad', 'turn'].includes(t.unit) && t.number >= -90 && t.number <= 90
+  return !(tokens.length >= 2 && tokens.length <= 3 && tokens[0].keyword === 'oblique' && tokens.slice(1).every(angle))
 }
 
 /**
@@ -326,7 +340,8 @@ function _isInvalidFaceStyle(value) {
  *   it, as with @font-face. Use a range such as `'100 900'` to keep the axis.
  * - A value the @font-face grammar rejects (`'bolder'`, `''`) counts as not
  *   given, as node-canvas ignores unknown values instead of throwing. An
- *   invalid value with other tokens (`'700px'`) makes registerFont throw.
+ *   invalid value with a `calc()`, a comment or an escape makes registerFont
+ *   throw.
  *
  * @param {string} path   Absolute path to the font file (.ttf, .otf, etc.)
  * @param {{ family: string, weight?: string | number, style?: string }} fontFace
