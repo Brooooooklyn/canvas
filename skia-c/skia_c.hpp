@@ -273,8 +273,8 @@ struct RegisteredFont {
   // Who declared each name (parallel to aliases), so node-canvas
   // deregisterAllFonts takes back only what its registerFont calls declared
   // (TypefaceFontProviderCustom::releaseDeclarations). A name is declared
-  // (call_names) while a GlobalFonts call or a live registerFont declaration
-  // holds it.
+  // (call_names) while a GlobalFonts call or the registerFont calls of a
+  // live N-API env hold it.
   struct NameOwners {
     // The own-family listing of a new registration: a release never erases
     // it, only stops it being declared.
@@ -284,9 +284,11 @@ struct RegisteredFont {
     // The newest order the GlobalFonts calls set on the name by
     // registering it again (relists), 0 for none.
     uint64_t direct_order = 0;
-    // A live registerFont declaration of it: its id (never issued twice:
-    // skiac_font_collection::declarations_issued) and the order it set on
-    // the name by registering it again, 0 for none.
+    // The registerFont calls of an N-API env declared it: the env's owner
+    // token (one per env, never issued twice:
+    // skiac_font_collection::declarations_issued; its calls are released
+    // together) and the newest order they set on the name by registering it
+    // again, 0 for none. One entry per env, whatever the number of calls.
     struct Declaration {
       uint32_t id = 0;
       uint64_t order = 0;
@@ -356,13 +358,19 @@ struct RegisteredFont {
     }
     return false;
   }
+  // Whether it lists the file's own family as a new registration does (not
+  // a declaration twin: a FontFace of its name only).
+  bool ListsOwnFamily() const {
+    return std::any_of(owners.begin(), owners.end(),
+                       [](const NameOwners& named) { return named.listing; });
+  }
   // Whether a call declares any name of it.
   bool DeclaresAny() const {
     return std::find(call_names.begin(), call_names.end(), true) !=
            call_names.end();
   }
   // Adds a name, registered now. A declared one (`call_name`) is declared
-  // by the registerFont declaration `owner`, 0 for a GlobalFonts call.
+  // by the registerFont owner token `owner`, 0 for a GlobalFonts call.
   // `listing`: the own-family listing of a new registration (NameOwners).
   void AddName(std::string name,
                bool alias_arg,
@@ -384,8 +392,8 @@ struct RegisteredFont {
       }
     }
   }
-  // Name `i` is declared by the registerFont declaration `owner`, 0 for a
-  // GlobalFonts call.
+  // Name `i` is declared by the registerFont owner token `owner`, 0 for a
+  // GlobalFonts call (an owner already on the name is not added again).
   void Declare(size_t i, uint32_t owner) {
     call_names[i] = true;
     if (!owner) {
@@ -394,10 +402,10 @@ struct RegisteredFont {
       owners[i].compat.push_back({owner, 0});
     }
   }
-  // The order name `i` had when `owner` (a registerFont declaration, 0 for
+  // The order name `i` had when `owner` (a registerFont owner token, 0 for
   // the GlobalFonts calls) registered it again: when the owners that moved
   // it go, the name goes back to the newest order the others set
-  // (OwnersRelist).
+  // (OwnersRelist). Only the newest order of each owner is kept.
   void NoteOwnerOrder(size_t i, uint32_t owner, uint64_t order) {
     NameOwners& named = owners[i];
     if (!owner) {
@@ -409,6 +417,7 @@ struct RegisteredFont {
     for (NameOwners::Declaration& declaration : named.compat) {
       if (declaration.id == owner) {
         declaration.order = std::max(declaration.order, order);
+        return;
       }
     }
   }
@@ -516,6 +525,18 @@ class TypefaceFontProviderCustom : public TypefaceFontProvider {
   }
   // __debugTextLine: how many tagged sets are kept.
   size_t splitFamilyCount() const { return split_families.size(); }
+  // __debugTextLine: how many registerFont owner entries the names keep
+  // (RegisteredFont::NameOwners::compat, with the orders they set): one per
+  // N-API env and name, whatever the number of calls.
+  size_t registerFontOwnerCount() const {
+    size_t count = 0;
+    for (const auto& [id, font] : registered_fonts) {
+      for (const RegisteredFont::NameOwners& named : font.owners) {
+        count += named.compat.size();
+      }
+    }
+    return count;
+  }
   // The FontFaceCore a tagged web family's set was made of, for its
   // siblings ("\x01s\x01" k) and quarter-weight sets ("\x01q\x01"), kept
   // as long as the sets.
@@ -765,7 +786,7 @@ class TypefaceFontProviderCustom : public TypefaceFontProvider {
   }
 
   // After a relist of the font `id` under `name` by `owner` (a registerFont
-  // declaration, 0 for a GlobalFonts call): the order the owner set on the
+  // owner token, 0 for a GlobalFonts call): the order the owner set on the
   // name (RegisteredFont::NoteOwnerOrder), so a release of the owner puts
   // the name back where the other owners left it.
   void noteRelistOwner(uint32_t id, const std::string& name, uint32_t owner) {
@@ -783,34 +804,43 @@ class TypefaceFontProviderCustom : public TypefaceFontProvider {
     }
   }
 
-  // A rebuild: the orders the owners of name `index` of the font `id` set
-  // (RegisteredFont::NoteOwnerOrder) in this provider's numbering, the
-  // order of the turn the replay is at: `old_order` is the one it had in
-  // the old provider, `old_relist` that name's relist there. An owner whose
-  // order was the name's relist takes the name's newest order here.
+  // A rebuild: an order an owner of name `index` of the font `id` set
+  // (RegisteredFont::NoteOwnerOrder), in this provider's numbering: the
+  // order of the turn the replay is at. `old_order` is the one it had in
+  // the old provider, `old_relist` that name's relist there. The owner
+  // whose order was the name's relist takes the name's newest order here;
+  // an order no name has any more takes its own turn. 0 when the name is
+  // not here.
+  uint64_t rebuiltOwnerOrder(uint32_t id,
+                             size_t index,
+                             uint64_t old_order,
+                             uint64_t old_relist) {
+    auto it = registered_fonts.find(id);
+    if (it == registered_fonts.end() || index >= it->second.aliases.size()) {
+      return 0;
+    }
+    const RegisteredFont& font_info = it->second;
+    return old_order == old_relist
+               ? std::max(font_info.orders[index], font_info.Relist(index))
+               : ++registrations;
+  }
+
+  // A rebuild: owner `slot` of name `index` of the font `id` (0: the
+  // GlobalFonts calls, d + 1: NameOwners::compat[d], as addRebuiltAlias
+  // copied them) set `order` (rebuiltOwnerOrder).
   void setRebuiltOwnerOrder(uint32_t id,
                             size_t index,
-                            const RegisteredFont::NameOwners& old,
-                            uint64_t old_order,
-                            uint64_t old_relist) {
+                            size_t slot,
+                            uint64_t order) {
     auto it = registered_fonts.find(id);
     if (it == registered_fonts.end() || index >= it->second.aliases.size()) {
       return;
     }
-    RegisteredFont& font_info = it->second;
-    // An order no name has any more takes its own turn.
-    const uint64_t order =
-        old_order == old_relist
-            ? std::max(font_info.orders[index], font_info.Relist(index))
-            : ++registrations;
-    RegisteredFont::NameOwners& named = font_info.owners[index];
-    if (old.direct && old.direct_order == old_order) {
+    RegisteredFont::NameOwners& named = it->second.owners[index];
+    if (!slot) {
       named.direct_order = order;
-    }
-    for (size_t d = 0; d < old.compat.size() && d < named.compat.size(); ++d) {
-      if (old.compat[d].order == old_order) {
-        named.compat[d].order = order;
-      }
+    } else if (slot - 1 < named.compat.size()) {
+      named.compat[slot - 1].order = order;
     }
   }
 
@@ -1004,6 +1034,12 @@ class TypefaceFontProviderCustom : public TypefaceFontProvider {
    * the file. This is intentional to prevent memory waste from duplicate
    * registrations.
    *
+   * Only a registration that lists the file's own family is the path's
+   * (RegisteredFont::ListsOwnFamily): when only declaration twins of the
+   * path are left (the registration they were made from went), the file is
+   * registered as a new path, under its own family, and the twins stay
+   * their owners'.
+   *
    * IMPORTANT: Path-based deduplication means that if a font file is modified
    * on disk and this function is called again with the same path, the new
    * contents will NOT be loaded - it will return the existing registration.
@@ -1031,7 +1067,8 @@ class TypefaceFontProviderCustom : public TypefaceFontProvider {
       for (uint32_t existing_id : index_it->second) {
         auto font_it = registered_fonts.find(existing_id);
         if (font_it != registered_fonts.end() &&
-            !font_it->second.path.empty() && font_it->second.path == path) {
+            !font_it->second.path.empty() && font_it->second.path == path &&
+            font_it->second.ListsOwnFamily()) {
           // Found matching path via index - true duplicate
           return existing_id;
         }
@@ -1073,8 +1110,8 @@ class TypefaceFontProviderCustom : public TypefaceFontProvider {
   // makes a twin. A twin's face is made from the data of the first
   // registration's face, as a rebuild makes it (a file replaced since then
   // gives no other bytes, and no other own family); when that data gives no
-  // face in this mode, the call fails. `owner`: the registerFont
-  // declaration the call is (node-canvas), 0 for a GlobalFonts call; it
+  // face in this mode, the call fails. `owner`: the registerFont owner
+  // token of the call's env (node-canvas), 0 for a GlobalFonts call; it
   // changes no key and no name, only who declared the name
   // (RegisteredFont::NameOwners). Returns the FontKey (a path hash), 0 on
   // failure.
@@ -1231,46 +1268,15 @@ class TypefaceFontProviderCustom : public TypefaceFontProvider {
   }
 
   // loadFontsFromDir loaded the path of the font `id`, which a register call
-  // had registered (RegisteredFont::dir_held). It holds the registration
-  // that lists the file's own family, not a declaration twin of it (the
-  // twin's key can sort first): a twin is a FontFace of its name only.
+  // had registered (RegisteredFont::dir_held): the registration that lists
+  // the file's own family (registerDirTypefaceWithTracking never returns a
+  // declaration twin, a FontFace of its name only).
   void markDirHeld(uint32_t id) {
     auto it = registered_fonts.find(id);
-    if (it == registered_fonts.end()) {
+    if (it == registered_fonts.end() || !it->second.ListsOwnFamily()) {
       return;
     }
-    RegisteredFont* held = &it->second;
-    auto index = content_hash_index.find(computePathHash(it->second.path));
-    if (index != content_hash_index.end()) {
-      for (uint32_t other : index->second) {
-        auto font = registered_fonts.find(other);
-        if (font != registered_fonts.end() &&
-            font->second.path == it->second.path &&
-            std::any_of(font->second.owners.begin(), font->second.owners.end(),
-                        [](const RegisteredFont::NameOwners& owners) {
-                          return owners.listing;
-                        })) {
-          held = &font->second;
-          break;
-        }
-      }
-    }
-    held->dir_held = true;
-  }
-
-  // Whether a name of the font `id` is declared by the registerFont
-  // declaration `owner`.
-  bool holdsDeclaration(uint32_t id, uint32_t owner) const {
-    auto it = registered_fonts.find(id);
-    if (it == registered_fonts.end()) {
-      return false;
-    }
-    for (const RegisteredFont::NameOwners& owners : it->second.owners) {
-      if (owners.HoldsDeclaration(owner)) {
-        return true;
-      }
-    }
-    return false;
+    it->second.dir_held = true;
   }
 
   // Whether a name of the font `id` is the case-folded name, in any
@@ -1305,14 +1311,15 @@ class TypefaceFontProviderCustom : public TypefaceFontProvider {
     std::set<uint32_t> lost_web;
   };
 
-  // node-canvas deregisterAllFonts: takes the registerFont declarations
-  // `ids` off the names they declared. A name no GlobalFonts call or other
-  // declaration holds is no longer declared, and goes unless it is the
-  // font's own-family listing (or its last name while the font stays); its
-  // descriptors go when no spelling of the case-folded name is declared any
-  // more. Only a font a released id was on can be emptied. An id no font
-  // holds (its font was removed) does nothing.
-  ReleasedDeclarations releaseDeclarations(const std::set<uint32_t>& ids) {
+  // node-canvas deregisterAllFonts: takes the registerFont owner token
+  // `owner` (the calls of one N-API env) off the names it declared. A name
+  // no GlobalFonts call or other owner holds is no longer declared, and goes
+  // unless it is the font's own-family listing; its descriptors go when no
+  // spelling of the case-folded name is declared any more. Only a font the
+  // owner was on can be emptied (a font loadFontsFromDir holds, a preloaded
+  // or an installed one always keeps its listing). An owner no font holds
+  // (its font was removed) does nothing.
+  ReleasedDeclarations releaseDeclarations(uint32_t owner) {
     ReleasedDeclarations released;
     for (auto& [id, font] : registered_fonts) {
       bool released_any = false;
@@ -1321,25 +1328,22 @@ class TypefaceFontProviderCustom : public TypefaceFontProvider {
       for (size_t i = font.aliases.size(); i-- > 0;) {
         std::vector<RegisteredFont::NameOwners::Declaration>& compat =
             font.owners[i].compat;
-        auto kept = std::remove_if(
-            compat.begin(), compat.end(),
-            [&](const RegisteredFont::NameOwners::Declaration& d) {
-              return ids.count(d.id);
-            });
-        if (kept == compat.end()) {
+        // One entry per owner (RegisteredFont::Declare).
+        auto held =
+            std::find_if(compat.begin(), compat.end(),
+                         [&](const RegisteredFont::NameOwners::Declaration& d) {
+                           return d.id == owner;
+                         });
+        if (held == compat.end()) {
           continue;
         }
-        compat.erase(kept, compat.end());
+        compat.erase(held);
         released_any = true;
         if (!font.owners[i].direct && compat.empty()) {
           font.call_names[i] = false;
           released.changed = true;
           undeclared.insert(FoldFamilyName(font.aliases[i]));
-          const bool keep =
-              font.owners[i].listing ||
-              (font.aliases.size() == 1 &&
-               (font.preloaded || font.installed || font.dir_held));
-          if (!keep) {
+          if (!font.owners[i].listing) {
             font.EraseName(i);
             lost_name = true;
             continue;
@@ -1430,7 +1434,7 @@ class TypefaceFontProviderCustom : public TypefaceFontProvider {
   // `typeface` (the face this call made) only when the font's face gives no
   // data. A call with no alias leaves such a file's own family undeclared:
   // it stays an installed font (RelistRegistered). `owner`: the
-  // registerFont declaration that declares the name, 0 for a GlobalFonts
+  // registerFont owner token that declares the name, 0 for a GlobalFonts
   // call (RegisteredFont::NameOwners).
   void addPathName(uint32_t id,
                    const std::string& name,
@@ -1612,10 +1616,10 @@ struct skiac_font_collection {
   };
   std::vector<SetAlias> set_aliases;
 
-  // The registerFont declarations issued so far (node-canvas,
-  // skiac_font_collection_register_from_path_owned): each one's id is the
-  // next, never issued twice (also not after removeAll or a rebuild), so a
-  // released or stale id never names another declaration.
+  // The registerFont owner tokens issued so far (node-canvas, one per N-API
+  // env: skiac_font_collection_issue_owner): each one is the next, never
+  // issued twice (also not after removeAll or a rebuild), so a released or
+  // stale token never names another env's calls.
   uint32_t declarations_issued = 0;
 
   // An alias goes when the face it named is no longer listed by any name.
@@ -2095,35 +2099,32 @@ struct skiac_font_collection {
     // A switch (relist_installed) flipped the mode before this rebuild.
     const int mode = SystemFontRenderer() ? 1 : 0;
     const int previous_mode = relist_installed ? 1 - mode : mode;
-    // {order, kind, font ID, alias index or set_aliases index}
+    // {order, kind, font ID, alias index or set_aliases index, owner slot}
     // kOwnerOrder: an order an owner of the name set
-    // (RegisteredFont::NoteOwnerOrder), carried over in its turn.
+    // (RegisteredFont::NoteOwnerOrder), carried over in its turn; the slot
+    // names the owner (setRebuiltOwnerOrder), 0 for the other kinds.
     enum : uint8_t { kName, kSetAlias, kRelist, kOwnerOrder };
-    std::vector<std::tuple<uint64_t, uint8_t, uint32_t, size_t>> names;
+    std::vector<std::tuple<uint64_t, uint8_t, uint32_t, size_t, size_t>> names;
     for (const auto& [id, font_info] : old_fonts) {
       for (size_t i = 0; i < font_info.aliases.size(); ++i) {
-        names.emplace_back(font_info.orders[i], kName, id, i);
+        names.emplace_back(font_info.orders[i], kName, id, i, 0);
         if (i < font_info.relists.size() && font_info.relists[i]) {
-          names.emplace_back(font_info.relists[i], kRelist, id, i);
+          names.emplace_back(font_info.relists[i], kRelist, id, i, 0);
         }
         const RegisteredFont::NameOwners& owners = font_info.owners[i];
-        std::set<uint64_t> owner_orders;
         if (owners.direct && owners.direct_order > font_info.orders[i]) {
-          owner_orders.insert(owners.direct_order);
+          names.emplace_back(owners.direct_order, kOwnerOrder, id, i, 0);
         }
-        for (const RegisteredFont::NameOwners::Declaration& declaration :
-             owners.compat) {
-          if (declaration.order > font_info.orders[i]) {
-            owner_orders.insert(declaration.order);
+        for (size_t d = 0; d < owners.compat.size(); ++d) {
+          if (owners.compat[d].order > font_info.orders[i]) {
+            names.emplace_back(owners.compat[d].order, kOwnerOrder, id, i,
+                               d + 1);
           }
-        }
-        for (uint64_t order : owner_orders) {
-          names.emplace_back(order, kOwnerOrder, id, i);
         }
       }
     }
     for (size_t i = 0; i < set_aliases.size(); ++i) {
-      names.emplace_back(set_aliases[i].order, kSetAlias, 0, i);
+      names.emplace_back(set_aliases[i].order, kSetAlias, 0, i, 0);
     }
     std::sort(names.begin(), names.end());
     // Each alias is made again in its turn (MatchNamedFamily sees only
@@ -2226,7 +2227,11 @@ struct skiac_font_collection {
       }
       return made.emplace(id, std::move(typeface)).first;
     };
-    for (const auto& [order, kind, id, index] : names) {
+    // The order the owners that set the same order on a name take here, one
+    // turn for them all (their events are next to each other in `names`).
+    std::tuple<uint64_t, uint32_t, size_t> owner_order_at{0, 0, SIZE_MAX};
+    uint64_t owner_order = 0;
+    for (const auto& [order, kind, id, index, slot] : names) {
       if (kind == kRelist) {
         // The same font registered again, in its turn.
         auto it = made.find(id);
@@ -2238,9 +2243,15 @@ struct skiac_font_collection {
       if (kind == kOwnerOrder) {
         auto it = made.find(id);
         if (it != made.end() && it->second) {
-          const RegisteredFont& font_info = old_fonts.at(id);
-          new_assets->setRebuiltOwnerOrder(id, index, font_info.owners[index],
-                                           order, font_info.Relist(index));
+          const std::tuple<uint64_t, uint32_t, size_t> at{order, id, index};
+          if (at != owner_order_at) {
+            owner_order_at = at;
+            owner_order = new_assets->rebuiltOwnerOrder(
+                id, index, order, old_fonts.at(id).Relist(index));
+          }
+          if (owner_order) {
+            new_assets->setRebuiltOwnerOrder(id, index, slot, owner_order);
+          }
         }
         continue;
       }
@@ -3383,21 +3394,24 @@ uint32_t skiac_font_collection_register_from_path(
     const char* font_path,
     const char* name_alias,
     const skiac_face_descriptors* descriptors);
-// node-canvas registerFont: registerFromPath, and `declaration` gets the
-// registerFont declaration the call made (0 when it declared nothing), for
-// skiac_font_collection_release_declarations.
+// node-canvas: a new registerFont owner token for an N-API env (never
+// issued twice), 0 when none is left.
+uint32_t skiac_font_collection_issue_owner(
+    skiac_font_collection* c_font_collection);
+// node-canvas registerFont: registerFromPath, and the name the call declares
+// is declared by the owner token `owner` (its env), for
+// skiac_font_collection_release_owner.
 uint32_t skiac_font_collection_register_from_path_owned(
     skiac_font_collection* c_font_collection,
     const char* font_path,
     const char* name_alias,
     const skiac_face_descriptors* descriptors,
-    uint32_t* declaration);
-// node-canvas deregisterAllFonts: releases the registerFont declarations.
-// Returns whether the registry changed (then it was rebuilt once).
-bool skiac_font_collection_release_declarations(
+    uint32_t owner);
+// node-canvas deregisterAllFonts: releases what the owner token `owner`
+// declared. Returns whether the registry changed (then it was rebuilt once).
+bool skiac_font_collection_release_owner(
     skiac_font_collection* c_font_collection,
-    const uint32_t* declarations,
-    size_t count);
+    uint32_t owner);
 size_t skiac_font_collection_unregister(
     skiac_font_collection* c_font_collection,
     uint32_t typeface_id);

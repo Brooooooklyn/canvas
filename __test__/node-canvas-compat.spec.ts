@@ -817,6 +817,87 @@ test.serial('deregisterAllFonts keeps the own family loadFontsFromDir holds, not
   }
 })
 
+// loadFontsFromDir of a file whose own-family registration went while a
+// declaration twin of it (another env's registerFont) stays: the file is
+// registered under its own family as a new path, and the twin goes with its
+// owner, its name too.
+test.serial('loadFontsFromDir with only a twin of the file left registers its own family', async (t) => {
+  deregisterAllFonts()
+  const own = 'Oswald'
+  const family = 'Compat 1472 Dir Only Twin'
+  const {
+    dir,
+    files: [file],
+  } = copies(t, ['Oswald.ttf'])
+  const before = stylesOf(own)
+  // The main thread's call lists the own family; the worker's is a twin.
+  registerFont(file, { family, weight: '400' })
+  t.is(stylesOf(own), before + 1)
+  const code = `
+    const { parentPort, workerData } = require('node:worker_threads')
+    const { registerFont } = require(workerData.nodeCanvas)
+    registerFont(workerData.file, { family: workerData.family, weight: '700' })
+    parentPort.once('message', () => parentPort.close())
+    parentPort.postMessage('registered')
+  `
+  const worker = new Worker(code, {
+    eval: true,
+    workerData: { nodeCanvas: join(__dirname, '..', 'node-canvas.js'), file, family },
+  })
+  t.teardown(() => worker.terminate())
+  const exited = once(worker, 'exit')
+  t.deepEqual(await once(worker, 'message'), ['registered'])
+  t.is(stylesOf(family), 2)
+  deregisterAllFonts()
+  t.is(stylesOf(family), 1, "the worker's twin")
+  t.is(stylesOf(own), before)
+  t.is(GlobalFonts.loadFontsFromDir(dir), 1)
+  t.is(stylesOf(own), before + 1, 'the file under its own family')
+  worker.postMessage('exit')
+  await exited
+  t.false(GlobalFonts.has(family), "the worker's name goes with it")
+  t.is(stylesOf(own), before + 1, 'the file loadFontsFromDir loaded stays')
+  const reference = GlobalFonts.register(readFileSync(fixture('Oswald.ttf')), 'Compat 1472 Dir Only Twin Ref')
+  t.deepEqual(drawText(`30px "${own}"`), drawText('30px "Compat 1472 Dir Only Twin Ref"'))
+  t.true(GlobalFonts.remove(reference!))
+})
+
+// The registerFont calls of one env declare with one owner token: calls that
+// register the same faces again keep one owner entry per env and name (the
+// newest order each set), so the registry's owner state, and a rebuild's
+// replay of it, do not grow with the number of calls.
+test.serial('registerFont again keeps one owner entry per env and name', async (t) => {
+  deregisterAllFonts()
+  const family = 'Compat 1472 Bound'
+  const {
+    files: [regular, bold, other],
+  } = copies(t, ['RMStatic-Regular.ttf', 'RMStatic-Bold.ttf', 'Harmattan-Regular.ttf'])
+  const ctx = nativeCreateCanvas(10, 10).getContext('2d') as unknown as {
+    __debugTextLine(text: string): string
+  }
+  const owners = () => JSON.parse(ctx.__debugTextLine('x')).registerFontOwners as number
+  const base = owners()
+  registerFont(regular, { family })
+  registerFont(bold, { family })
+  const first = owners()
+  t.is(first, base + 2, 'one per face under the family')
+  for (let i = 0; i < 2000; i++) {
+    registerFont(i % 2 ? bold : regular, { family })
+    await new Promise((resolve) => setImmediate(resolve))
+  }
+  t.is(owners(), first, 'after 2000 more calls')
+  // The face registered last draws (no descriptors), also after a rebuild.
+  t.is(faceOf('normal', family), 'Bold')
+  t.true(GlobalFonts.remove(GlobalFonts.registerFromPath(other, 'Compat 1472 Bound Rebuild')!))
+  t.is(owners(), first, 'after a rebuild')
+  t.is(faceOf('normal', family), 'Bold')
+  registerFont(regular, { family })
+  t.is(faceOf('normal', family), 'Regular')
+  deregisterAllFonts()
+  t.is(owners(), base)
+  t.false(GlobalFonts.has(family))
+})
+
 test.serial('registerFont without weight keeps the wght axis of a variable font', (t) => {
   const family = 'Compat 1472 VF'
   registerFont(robotoMonoPath, { family })

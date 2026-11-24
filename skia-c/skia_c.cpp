@@ -4626,7 +4626,7 @@ void skiac_font_collection_get_family(
 // installed font, not a FontFace); a FontFace name a call gave a file
 // loadFontsFromDir loaded is a FontFace (its web twin, RegisteredFont::WebName)
 // and moves too (Chrome 157, FontFaces "ReX" Lato, Oswald, Lato, Oswald: Oswald
-// draws, 37.32). `owner`: the registerFont declaration the call is, 0 for a
+// draws, 37.32). `owner`: the registerFont owner token of the call, 0 for a
 // GlobalFonts call; the order it set is noted on it
 // (RegisteredFont::NoteOwnerOrder).
 static void RelistRegistered(skiac_font_collection* c_font_collection,
@@ -4719,24 +4719,33 @@ uint32_t skiac_font_collection_register_from_path(
   return typeface_id;
 }
 
+uint32_t skiac_font_collection_issue_owner(
+    skiac_font_collection* c_font_collection) {
+  if (c_font_collection->declarations_issued == UINT32_MAX) {
+    return 0;
+  }
+  return ++c_font_collection->declarations_issued;
+}
+
 // As skiac_font_collection_register_from_path (the same key, names and
-// relist), and the name the call declares records the registerFont
-// declaration it is, a new id: `declaration` gets it, or 0 when the call
-// declared no name (a file loadFontsFromDir loaded, with no alias).
+// relist), and the name the call declares records the owner token `owner`
+// (the env's: RegisteredFont::NameOwners, one entry per owner and name
+// however many calls declared it).
 uint32_t skiac_font_collection_register_from_path_owned(
     skiac_font_collection* c_font_collection,
     const char* font_path,
     const char* name_alias,
     const skiac_face_descriptors* descriptors,
-    uint32_t* declaration) {
-  *declaration = 0;
+    uint32_t owner) {
+  if (!owner) {
+    return 0;
+  }
   // Installed fonts register first, as loadSystemFonts does elsewhere.
   c_font_collection->prepareLookup();
   auto typeface = MakeCanvasTypefaceFromFile(font_path);
-  if (!typeface || c_font_collection->declarations_issued == UINT32_MAX) {
+  if (!typeface) {
     return 0;
   }
-  const uint32_t owner = ++c_font_collection->declarations_issued;
   const size_t registered =
       c_font_collection->assets->getRegisteredFonts().size();
   const uint32_t typeface_id =
@@ -4746,31 +4755,21 @@ uint32_t skiac_font_collection_register_from_path_owned(
     RelistRegistered(c_font_collection, typeface_id, registered, typeface,
                      name_alias, owner);
     c_font_collection->markCachesDirty();
-    if (c_font_collection->assets->holdsDeclaration(typeface_id, owner)) {
-      *declaration = owner;
-    }
   }
   return typeface_id;
 }
 
-// The registry decides, under the font lock, what the declarations held
-// alone: TypefaceFontProviderCustom::releaseDeclarations. Nothing is rebuilt
-// when every name they were on stays declared.
-bool skiac_font_collection_release_declarations(
+// The registry decides, under the font lock, what the owner held alone:
+// TypefaceFontProviderCustom::releaseDeclarations. Nothing is rebuilt when
+// every name it was on stays declared.
+bool skiac_font_collection_release_owner(
     skiac_font_collection* c_font_collection,
-    const uint32_t* declarations,
-    size_t count) {
-  std::set<uint32_t> ids;
-  for (size_t i = 0; i < count; i++) {
-    if (declarations[i]) {
-      ids.insert(declarations[i]);
-    }
-  }
-  if (ids.empty()) {
+    uint32_t owner) {
+  if (!owner) {
     return false;
   }
   TypefaceFontProviderCustom::ReleasedDeclarations released =
-      c_font_collection->assets->releaseDeclarations(ids);
+      c_font_collection->assets->releaseDeclarations(owner);
   if (!released.changed) {
     return false;
   }

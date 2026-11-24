@@ -311,7 +311,7 @@ function registerFont(path, fontFace) {
   const weight = typeof w === 'string' || typeof w === 'number' ? String(w) : 'auto'
   const style = typeof s === 'string' ? s : 'auto'
   // Read from the binding at each call, not once at load: the tests stub it.
-  // The registry keeps the declaration for the deregisterAllFonts of this N-API env.
+  // The registry declares the name with this N-API env's owner token, for its deregisterAllFonts.
   if (!binding._registerFontFace(path, family, weight, style)) {
     throw new Error(`Failed to register font from "${path}" with family "${family}"`)
   }
@@ -323,7 +323,7 @@ function registerFont(path, fontFace) {
  * user-registered fonts and leaves system fonts untouched.
  */
 function deregisterAllFonts() {
-  // The registry releases the registerFont declarations of this N-API env
+  // The registry releases what the registerFont calls of this N-API env declared
   // (one per loaded native binding: the main thread or a worker; copies of
   // this module that reuse the cached binding share it). A worker's are
   // released when it exits. It decides, under its lock, what goes: a
