@@ -311,7 +311,7 @@ function registerFont(path, fontFace) {
   const weight = typeof w === 'string' || typeof w === 'number' ? String(w) : 'auto'
   const style = typeof s === 'string' ? s : 'auto'
   // Read from the binding at each call, not once at load: the tests stub it.
-  // The registry keeps the declaration for this thread's deregisterAllFonts.
+  // The registry keeps the declaration for the deregisterAllFonts of this N-API env.
   if (!binding._registerFontFace(path, family, weight, style)) {
     throw new Error(`Failed to register font from "${path}" with family "${family}"`)
   }
@@ -323,9 +323,10 @@ function registerFont(path, fontFace) {
  * user-registered fonts and leaves system fonts untouched.
  */
 function deregisterAllFonts() {
-  // The registry releases the registerFont declarations of this thread (its
-  // N-API env; every copy of this module in it shares them), and the ones a
-  // worker leaves when it exits. It decides, under its lock, what goes: a
+  // The registry releases the registerFont declarations of this N-API env
+  // (one per loaded native binding: the main thread or a worker; copies of
+  // this module that reuse the cached binding share it). A worker's are
+  // released when it exits. It decides, under its lock, what goes: a
   // name no other declaration (a GlobalFonts call or a registerFont in
   // another thread) holds, and a registration with no name left. So it
   // removes only what registerFont added, as node-canvas leaves other fonts
