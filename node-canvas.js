@@ -282,8 +282,9 @@ const _registeredFontKeys = []
 // given: the @font-face grammar (src/font.rs parse_font_face_weight /
 // parse_font_face_style) rejects it, or it has a token this check does not
 // read (`calc()`, `var()`, a quote, an escape), which node-canvas ignores too.
-// The check reads keywords, numbers, dimensions and comments exactly, so it
-// never drops a value made of those that the grammar accepts.
+// The check reads words split by whitespace or comments, each one keyword,
+// number or dimension, exactly: it never drops a value made of such words that
+// the grammar accepts. Tokens written together (`100+500`) count as not read.
 const _CSS_SPACE = /[ \t\n\r\f]+/
 const _NUMBER = '[+-]?(?:\\d+(?:\\.\\d+)?|\\.\\d+)(?:[eE][+-]?\\d+)?'
 const _IDENT = '-?[A-Za-z_][A-Za-z0-9_-]*'
