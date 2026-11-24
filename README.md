@@ -186,7 +186,7 @@ GlobalFonts.registerFromPath('./fonts/Lato-Bold.ttf', 'MyLato', { weight: 700 })
 
 > **Behavior change**: registered faces with no descriptors are all `auto`, so in such a family the face registered last draws every style (made bold or italic when that file is not), as Chrome draws `@font-face` rules with no descriptors. Before, each face was picked by the file's own style.
 
-`registerFont(path, { family, weight, style })` from `@napi-rs/canvas/node-canvas` passes `weight` and `style` as these descriptors, so one call per face file picks each face. A field that is not given is `auto`, and a value the `@font-face` grammar rejects (`'bolder'`) counts as not given. A face declared bold or italic is not made bold or italic when its file is not, and an explicit weight (`'normal'` included) pins a variable font to it.
+`registerFont(path, { family, weight, style })` from `@napi-rs/canvas/node-canvas` passes `weight` and `style` as these descriptors, so one call per face file picks each face. A field that is not given is `auto`, and a value the `@font-face` grammar rejects (`'bolder'`) counts as not given while the other field is kept; a value it accepts (`calc(700)` too) works exactly as in `registerFromPath`. A face declared bold or italic is not made bold or italic when its file is not, and an explicit weight (`'normal'` included) pins a variable font to it.
 
 These still depend on the OS and the machine:
 

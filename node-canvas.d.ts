@@ -172,8 +172,11 @@ export function loadImage(
  * one family are picked by them with CSS font matching. Register one call per
  * face file, e.g. `{ family: 'Lato', weight: 'bold', style: 'italic' }`.
  * A field that is not given, or that the `@font-face` grammar rejects, is
- * `auto`. An explicit weight or style (`'normal'` included) pins a variable
- * font to it; use a range such as `'100 900'` to keep the axis.
+ * `auto`, and the other field is kept; a value the grammar accepts
+ * (`calc(700)` too) works exactly as in `GlobalFonts.registerFromPath`. An
+ * explicit weight or style (`'normal'` included) pins a variable font to it;
+ * use a range such as `'100 900'` to keep the axis. It throws only when the
+ * file cannot be registered.
  *
  * @param path     Absolute path to the font file (.ttf, .otf, etc.)
  * @param fontFace Font face properties matching CSS @font-face descriptors
@@ -182,7 +185,8 @@ export function registerFont(path: string, fontFace: { family: string; weight?: 
 
 /**
  * Deregister all previously registered fonts.
- * Compatible with node-canvas's `deregisterAllFonts()`.
+ * Compatible with node-canvas's `deregisterAllFonts()`: it removes only what
+ * `registerFont` calls of this thread added (a worker's go when it exits).
  */
 export function deregisterAllFonts(): void
 

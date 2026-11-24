@@ -4626,12 +4626,15 @@ void skiac_font_collection_get_family(
 // installed font, not a FontFace); a FontFace name a call gave a file
 // loadFontsFromDir loaded is a FontFace (its web twin, RegisteredFont::WebName)
 // and moves too (Chrome 157, FontFaces "ReX" Lato, Oswald, Lato, Oswald: Oswald
-// draws, 37.32).
+// draws, 37.32). `owner`: the registerFont declaration the call is, 0 for a
+// GlobalFonts call; the order it set is noted on it
+// (RegisteredFont::NoteOwnerOrder).
 static void RelistRegistered(skiac_font_collection* c_font_collection,
                              uint32_t id,
                              size_t registered,
                              const sk_sp<SkTypeface>& typeface,
-                             const char* name_alias) {
+                             const char* name_alias,
+                             uint32_t owner = 0) {
   const auto& fonts = c_font_collection->assets->getRegisteredFonts();
   if (fonts.size() > registered) {
     return;
@@ -4656,6 +4659,7 @@ static void RelistRegistered(skiac_font_collection* c_font_collection,
     return;
   }
   c_font_collection->assets->relist(id, name);
+  c_font_collection->assets->noteRelistOwner(id, name, owner);
 }
 
 uint32_t skiac_font_collection_register(
@@ -4740,7 +4744,7 @@ uint32_t skiac_font_collection_register_from_path_owned(
           font_path, typeface, name_alias, descriptors, owner);
   if (typeface_id) {
     RelistRegistered(c_font_collection, typeface_id, registered, typeface,
-                     name_alias);
+                     name_alias, owner);
     c_font_collection->markCachesDirty();
     if (c_font_collection->assets->holdsDeclaration(typeface_id, owner)) {
       *declaration = owner;

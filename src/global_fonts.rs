@@ -254,12 +254,57 @@ fn read_face_descriptors(
   ))
 }
 
+/// The registerFont declarations each N-API env made (node-canvas.js), by
+/// the env's address: deregisterAllFonts releases the ones of its env, and
+/// an env cleanup hook releases what is left when the env goes (a worker
+/// that exits without deregisterAllFonts). Every node-canvas.js instance of
+/// one env shares the list (a Jest-style reload of the package keeps the
+/// .node binding, so its env). An entry lives from the first declaration of
+/// its env to the env's cleanup, so an address reused by a later env never
+/// finds the ids of the one before. The main thread's hook runs at exit, and
+/// rebuilds only when it changes something. Lock order: the font lock, then
+/// this.
+#[cfg_attr(test, allow(dead_code))]
+static ENV_DECLARATIONS: Mutex<Vec<(usize, Vec<u32>)>> = Mutex::new(Vec::new());
+
+#[cfg_attr(test, allow(dead_code))]
+fn env_declarations<'a>() -> MutexGuard<'a, Vec<(usize, Vec<u32>)>> {
+  ENV_DECLARATIONS
+    .lock()
+    .unwrap_or_else(PoisonError::into_inner)
+}
+
+/// The env cleanup hook: the declarations the env `key` still holds go.
+#[cfg_attr(test, allow(dead_code))]
+fn release_env_declarations(key: usize) {
+  // Declarations were made, so the collection exists.
+  let Some(collection) = GLOBAL_FONT_COLLECTION.get() else {
+    env_declarations().retain(|(env, _)| *env != key);
+    return;
+  };
+  let font = collection.lock();
+  let mut envs = env_declarations();
+  let Some(at) = envs.iter().position(|(env, _)| *env == key) else {
+    return;
+  };
+  let (_, declarations) = envs.swap_remove(at);
+  drop(envs);
+  // A poisoned font lock: another thread panicked mid-change, leave it be.
+  if let Ok(font) = font
+    && font.release_declarations(&declarations)
+  {
+    note_font_collection_mutation();
+  }
+}
+
 /// node-canvas registerFont (node-canvas.js): registers the file as
-/// `GlobalFonts.registerFromPath(font_path, name_alias, descriptors)` does
-/// (the same key, names and descriptors), and the name the call declares
-/// records the registerFont declaration it is. Returns that declaration for
-/// `_releaseFontFaces` (0: the call declared no name, so there is nothing to
-/// release), null when nothing was registered. Not API: reachable through
+/// `GlobalFonts.registerFromPath(font_path, name_alias, { weight, style })`
+/// does (the same key, names and descriptors), and the name the call
+/// declares records the registerFont declaration it is, kept for this env
+/// (ENV_DECLARATIONS). `weight` and `style` are read each on its own with
+/// the @font-face grammar: one it rejects counts as not given (`auto`), as
+/// node-canvas ignores unknown values instead of throwing, and the other is
+/// kept. Returns whether the file was registered. Not API: reachable through
 /// js-binding, as `_toNumber` is.
 // Only JS calls it: the lib test build registers no napi exports.
 #[cfg_attr(test, allow(dead_code))]
@@ -268,40 +313,72 @@ pub fn register_font_face(
   env: &Env,
   font_path: String,
   name_alias: Option<String>,
-  descriptors: Option<Unknown>,
-) -> napi::Result<Option<u32>> {
+  weight: String,
+  style: String,
+) -> napi::Result<bool> {
+  use crate::font::{parse_font_face_style, parse_font_face_weight};
   let maybe_name_alias = name_alias.filter(|s| !s.is_empty());
-  let descriptors = match descriptors {
-    Some(d) => match read_face_descriptors(env.raw(), d.raw())? {
-      Declared::Invalid => return Ok(None),
-      Declared::Auto => None,
-      Declared::Explicit(descriptors) => Some(descriptors),
-    },
-    None => None,
+  let weight = match parse_font_face_weight(&weight) {
+    Some(_) => weight.as_str(),
+    None => "auto",
+  };
+  let style = match parse_font_face_style(&style) {
+    Some(_) => style.as_str(),
+    None => "auto",
+  };
+  // Both parse, and the stretch is the IDL default "normal", as
+  // registerFromPath reads `{ weight, style }`: never Invalid.
+  let descriptors = match face_descriptors(Some(weight), Some(style), None) {
+    Declared::Explicit(descriptors) => Some(descriptors),
+    Declared::Auto | Declared::Invalid => None,
   };
   let font = get_font().map_err(into_napi_error)?;
-  let result = font.register_from_path_owned(
+  let key = env.raw() as usize;
+  let mut envs = env_declarations();
+  // The first declaration of this env adds its entry and the hook that
+  // releases what the env leaves (before anything is registered, so a hook
+  // that cannot be added registers nothing).
+  let at = match envs.iter().position(|(env, _)| *env == key) {
+    Some(at) => at,
+    None => {
+      env.add_env_cleanup_hook(key, release_env_declarations)?;
+      envs.push((key, Vec::new()));
+      envs.len() - 1
+    }
+  };
+  let Some((_, declaration)) = font.register_from_path_owned(
     font_path.as_str(),
     maybe_name_alias.as_deref(),
     descriptors.as_ref(),
-  );
-  if result.is_some() {
-    note_font_collection_mutation();
+  ) else {
+    return Ok(false);
+  };
+  note_font_collection_mutation();
+  // 0: the call declared no name (a file loadFontsFromDir loaded, given
+  // with no family name), so there is nothing to release.
+  if declaration != 0 {
+    envs[at].1.push(declaration);
   }
-  Ok(result.map(|(_, declaration)| declaration))
+  Ok(true)
 }
 
 /// node-canvas deregisterAllFonts (node-canvas.js): releases the
-/// registerFont declarations `_registerFontFace` returned. The registry
+/// registerFont declarations this env made (ENV_DECLARATIONS). The registry
 /// decides, under the font lock, what goes: a name no other declaration (a
-/// GlobalFonts call, or another registerFont in any thread) holds, and a
-/// font with no declared name left. Returns whether anything changed. Not
-/// API: reachable through js-binding, as `_toNumber` is.
+/// GlobalFonts call, or a registerFont of another env) holds, and a font
+/// with no declared name left. Returns whether anything changed. Not API:
+/// reachable through js-binding, as `_toNumber` is.
 // Only JS calls it: the lib test build registers no napi exports.
 #[cfg_attr(test, allow(dead_code))]
 #[napi(js_name = "_releaseFontFaces")]
-pub fn release_font_faces(declarations: Vec<u32>) -> napi::Result<bool> {
+pub fn release_font_faces(env: &Env) -> napi::Result<bool> {
   let font = get_font().map_err(into_napi_error)?;
+  let key = env.raw() as usize;
+  let declarations = match env_declarations().iter_mut().find(|(env, _)| *env == key) {
+    // The entry stays: its hook is still added.
+    Some((_, declarations)) => std::mem::take(declarations),
+    None => return Ok(false),
+  };
   let changed = font.release_declarations(&declarations);
   if changed {
     note_font_collection_mutation();

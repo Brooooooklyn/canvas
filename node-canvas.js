@@ -274,63 +274,6 @@ function _addCompatMethods(canvas) {
 // Public API: registerFont / deregisterAllFonts
 // ---------------------------------------------------------------------------
 
-// The registerFont declarations of this module instance (one per worker):
-// deregisterAllFonts releases them. The registry decides, under its lock,
-// what goes: a name no other declaration (a GlobalFonts call or another
-// registerFont) holds, and a registration with no name left. So it removes
-// only what registerFont added, as node-canvas leaves other fonts untouched.
-const _registeredFontFaces = []
-
-// Whether registerFont treats a `font-weight` / `font-style` value as not
-// given: the @font-face grammar (src/font.rs parse_font_face_weight /
-// parse_font_face_style) rejects it, or it has a token this check does not
-// read (`calc()`, `var()`, a quote, an escape), which node-canvas ignores too.
-// The check reads words split by whitespace or comments, each one keyword,
-// number or dimension, exactly: it never drops a value made of such words that
-// the grammar accepts. Tokens written together (`100+500`) count as not read.
-const _CSS_SPACE = /[ \t\n\r\f]+/
-const _NUMBER = '[+-]?(?:\\d+(?:\\.\\d+)?|\\.\\d+)(?:[eE][+-]?\\d+)?'
-const _IDENT = '-?[A-Za-z_][A-Za-z0-9_-]*'
-const _TOKEN = new RegExp(`^(?:(${_IDENT})|(${_NUMBER})(%|${_IDENT})?)$`)
-
-// The plain tokens of a value, or null when it has another kind of token.
-function _cssTokens(value) {
-  // A comment separates tokens, as whitespace does; an unclosed one runs to the end.
-  const trimmed = value.replace(/\/\*[\s\S]*?(?:\*\/|$)/g, ' ').replace(/^[ \t\n\r\f]+|[ \t\n\r\f]+$/g, '')
-  const tokens = []
-  for (const word of trimmed === '' ? [] : trimmed.split(_CSS_SPACE)) {
-    const match = _TOKEN.exec(word)
-    if (!match) return null
-    tokens.push(
-      match[1] !== undefined
-        ? { keyword: match[1].toLowerCase() }
-        : { number: Number(match[2]), unit: match[3] === undefined ? undefined : match[3].toLowerCase() },
-    )
-  }
-  return tokens
-}
-
-function _isInvalidFaceWeight(value) {
-  const tokens = _cssTokens(value)
-  if (tokens === null) return true
-  const weight = (t) => t.number !== undefined && t.unit === undefined && t.number >= 1 && t.number <= 1000
-  if (tokens.length === 1 && tokens[0].keyword !== undefined) {
-    return !['normal', 'bold', 'auto'].includes(tokens[0].keyword)
-  }
-  return !(tokens.length >= 1 && tokens.length <= 2 && tokens.every(weight))
-}
-
-function _isInvalidFaceStyle(value) {
-  const tokens = _cssTokens(value)
-  if (tokens === null) return true
-  if (tokens.length === 1 && tokens[0].keyword !== undefined) {
-    return !['normal', 'italic', 'oblique', 'auto'].includes(tokens[0].keyword)
-  }
-  // `oblique <angle> [<angle>]`, each written number in [-90, 90].
-  const angle = (t) => ['deg', 'rad', 'grad', 'turn'].includes(t.unit) && t.number >= -90 && t.number <= 90
-  return !(tokens.length >= 2 && tokens.length <= 3 && tokens[0].keyword === 'oblique' && tokens.slice(1).every(angle))
-}
-
 /**
  * Register a font file with the specified font face properties.
  * Compatible with node-canvas's registerFont(path, { family, weight?, style? }).
@@ -344,9 +287,12 @@ function _isInvalidFaceStyle(value) {
  *   variable font keeps its axes.
  * - An explicit weight or style, `'normal'` included, pins a variable font to
  *   it, as with @font-face. Use a range such as `'100 900'` to keep the axis.
- * - A value the @font-face grammar rejects (`'bolder'`, `''`) counts as not
- *   given, as node-canvas ignores unknown values instead of throwing. So
- *   does a value with `calc()`, `var()`, a quote or an escape.
+ * - Each of `weight` and `style` is read on its own: a value the @font-face
+ *   grammar rejects (`'bolder'`, `''`) counts as not given, as node-canvas
+ *   ignores unknown values instead of throwing, and the other field is kept.
+ *   A value the grammar accepts (`calc(700)` too) works exactly as in
+ *   GlobalFonts.registerFromPath. It throws only when the file cannot be
+ *   registered.
  *
  * @param {string} path   Absolute path to the font file (.ttf, .otf, etc.)
  * @param {{ family: string, weight?: string | number, style?: string }} fontFace
@@ -357,22 +303,18 @@ function registerFont(path, fontFace) {
     throw new TypeError('registerFont requires a fontFace with a "family" property')
   }
   // node-canvas reads `weight` as a string or a number and `style` as a
-  // string; any other value, or one the @font-face grammar surely rejects,
-  // counts as not given. This is checked here and not by retrying: a null
-  // from the registration can also mean the file failed to load.
+  // string; any other value counts as not given. The native call reads each
+  // value with the @font-face grammar (src/global_fonts.rs
+  // register_font_face): one it rejects counts as not given too.
   const w = fontFace.weight
   const s = fontFace.style
-  const weight =
-    (typeof w === 'string' || typeof w === 'number') && !_isInvalidFaceWeight(String(w)) ? String(w) : 'auto'
-  const style = typeof s === 'string' && !_isInvalidFaceStyle(s) ? s : 'auto'
+  const weight = typeof w === 'string' || typeof w === 'number' ? String(w) : 'auto'
+  const style = typeof s === 'string' ? s : 'auto'
   // Read from the binding at each call, not once at load: the tests stub it.
-  const face = binding._registerFontFace(path, family, { weight, style })
-  if (typeof face !== 'number') {
+  // The registry keeps the declaration for this thread's deregisterAllFonts.
+  if (!binding._registerFontFace(path, family, weight, style)) {
     throw new Error(`Failed to register font from "${path}" with family "${family}"`)
   }
-  // 0: the call declared no name (a file loadFontsFromDir loaded, given with
-  // no family name), so there is nothing to release.
-  if (face !== 0) _registeredFontFaces.push(face)
 }
 
 /**
@@ -381,12 +323,14 @@ function registerFont(path, fontFace) {
  * user-registered fonts and leaves system fonts untouched.
  */
 function deregisterAllFonts() {
-  if (_registeredFontFaces.length > 0) {
-    // Read at each call, as in registerFont. The list is cleared only once
-    // the release returns, so a throw keeps the declarations to release.
-    binding._releaseFontFaces(_registeredFontFaces)
-    _registeredFontFaces.length = 0
-  }
+  // The registry releases the registerFont declarations of this thread (its
+  // N-API env; every copy of this module in it shares them), and the ones a
+  // worker leaves when it exits. It decides, under its lock, what goes: a
+  // name no other declaration (a GlobalFonts call or a registerFont in
+  // another thread) holds, and a registration with no name left. So it
+  // removes only what registerFont added, as node-canvas leaves other fonts
+  // untouched. Read at each call, as in registerFont.
+  binding._releaseFontFaces()
 }
 
 // ---------------------------------------------------------------------------
