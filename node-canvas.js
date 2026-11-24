@@ -282,20 +282,39 @@ const _registeredFontKeys = []
  * Register a font file with the specified font face properties.
  * Compatible with node-canvas's registerFont(path, { family, weight?, style? }).
  *
- * Note: @napi-rs/canvas auto-detects weight and style from font file metadata
- * (matching browser behavior). The weight and style properties in fontFace are
- * accepted for API compatibility but the actual values are read from the font.
+ * `weight` and `style` are passed to GlobalFonts.registerFromPath as the
+ * face's @font-face descriptors, so the faces of one family are picked by
+ * them with CSS font matching. Register one call per face file.
+ *
+ * - A field that is not given is `auto`: a call with only `family` registers
+ *   the file as GlobalFonts.registerFromPath(path, family) does, and a
+ *   variable font keeps its axes.
+ * - An explicit weight or style, `'normal'` included, pins a variable font to
+ *   it, as with @font-face. Use a range such as `'100 900'` to keep the axis.
+ * - A value the @font-face grammar rejects (`'bolder'`, `''`) counts as not
+ *   given, as node-canvas ignores unknown values instead of throwing.
  *
  * @param {string} path   Absolute path to the font file (.ttf, .otf, etc.)
- * @param {{ family: string, weight?: string, style?: string }} fontFace
+ * @param {{ family: string, weight?: string | number, style?: string }} fontFace
  */
 function registerFont(path, fontFace) {
-  if (!fontFace || typeof fontFace.family !== 'string') {
+  const family = fontFace ? fontFace.family : undefined
+  if (typeof family !== 'string') {
     throw new TypeError('registerFont requires a fontFace with a "family" property')
   }
-  const key = GlobalFonts.registerFromPath(path, fontFace.family)
+  // node-canvas reads `weight` as a string or a number and `style` as a
+  // string; any other value counts as not given.
+  const w = fontFace.weight
+  const s = fontFace.style
+  const weight = typeof w === 'string' || typeof w === 'number' ? String(w) : 'auto'
+  const style = typeof s === 'string' ? s : 'auto'
+  const register = (weight, style) => GlobalFonts.registerFromPath(path, family, { weight, style })
+  // registerFromPath returns null, before it loads the file, for a descriptor
+  // it cannot parse. Retry with the bad field as `auto`, so only a file that
+  // cannot be registered throws.
+  const key = register(weight, style) ?? register('auto', style) ?? register(weight, 'auto') ?? register('auto', 'auto')
   if (!key) {
-    throw new Error(`Failed to register font from "${path}" with family "${fontFace.family}"`)
+    throw new Error(`Failed to register font from "${path}" with family "${family}"`)
   }
   _registeredFontKeys.push(key)
 }

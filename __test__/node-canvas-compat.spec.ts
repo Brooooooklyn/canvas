@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs'
 import { Readable } from 'node:stream'
 import { join, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -138,6 +139,108 @@ test.serial('registerFont accepts weight and style (compat)', (t) => {
     registerFont(fontPath, { family: 'TestSourceSerifWeighted', weight: 'bold', style: 'italic' })
   })
   t.true(GlobalFonts.has('TestSourceSerifWeighted'))
+})
+
+// registerFont passes weight and style as @font-face descriptors (#1472): one
+// call per face file picks each face. RMStatic is monospaced, so the faces are
+// told apart by their pixels, not their widths. The references are registered
+// from Buffers: a reference on the same path would share a FontKey with the
+// compat face, and deregisterAllFonts would remove it.
+const fixture = (name: string) => join(__dirname, 'fonts', name)
+const RM_FACES = ['Regular', 'Bold', 'Italic', 'BoldItalic'] as const
+for (const face of RM_FACES) {
+  GlobalFonts.register(readFileSync(fixture(`RMStatic-${face}.ttf`)), `Compat Ref ${face}`)
+}
+const robotoMonoPath = fixture('RobotoMono-VariableFont_wght.ttf')
+GlobalFonts.register(readFileSync(robotoMonoPath), 'Compat Ref RobotoMono')
+
+function drawText(font: string, variations = 'normal') {
+  const ctx = createCanvas(420, 60).getContext('2d')
+  ctx.font = font
+  ctx.fontVariationSettings = variations
+  ctx.fillText('Hamburgefonstiv', 10, 42)
+  return Buffer.from(ctx.getImageData(0, 0, 420, 60).data)
+}
+
+// The reference face (and the synthesis on it) that draws `request` in `family`.
+function faceOf(request: string, family: string) {
+  const pixels = drawText(`${request} 30px "${family}"`)
+  for (const face of RM_FACES) {
+    for (const [synthesis, prefix] of [
+      ['', ''],
+      ['+synthetic bold', 'bold '],
+      ['+synthetic italic', 'italic '],
+    ]) {
+      if (pixels.equals(drawText(`${prefix}30px "Compat Ref ${face}"`))) return face + synthesis
+    }
+  }
+  return 'unknown'
+}
+
+const REQUESTS = ['normal', 'bold', 'italic', 'italic bold']
+const facesOf = (family: string) => REQUESTS.map((request) => faceOf(request, family))
+
+test.serial('registerFont picks each face of a family by its weight and style', (t) => {
+  const family = 'Compat 1472 Four'
+  registerFont(fixture('RMStatic-Regular.ttf'), { family })
+  registerFont(fixture('RMStatic-Bold.ttf'), { family, weight: 'bold' })
+  registerFont(fixture('RMStatic-Italic.ttf'), { family, style: 'italic' })
+  registerFont(fixture('RMStatic-BoldItalic.ttf'), { family, weight: '700', style: 'italic' })
+  t.deepEqual(facesOf(family), ['Regular', 'Bold', 'Italic', 'BoldItalic'])
+})
+
+test.serial('registerFont face choice does not depend on the registration order', (t) => {
+  const family = 'Compat 1472 Reverse'
+  registerFont(fixture('RMStatic-Italic.ttf'), { family, weight: '400', style: 'italic' })
+  registerFont(fixture('RMStatic-Bold.ttf'), { family, weight: '700', style: 'normal' })
+  registerFont(fixture('RMStatic-Regular.ttf'), { family, weight: '400', style: 'normal' })
+  t.deepEqual(facesOf(family), ['Regular', 'Bold', 'Italic', 'Italic+synthetic bold'])
+})
+
+test.serial('registerFont accepts a numeric weight', (t) => {
+  const family = 'Compat 1472 Numeric'
+  registerFont(fixture('RMStatic-Regular.ttf'), { family, weight: 400 })
+  registerFont(fixture('RMStatic-Bold.ttf'), { family, weight: 700 })
+  t.is(faceOf('normal', family), 'Regular')
+  t.is(faceOf('bold', family), 'Bold')
+})
+
+test.serial('registerFont treats values the @font-face grammar rejects as not given', (t) => {
+  const family = 'Compat 1472 Invalid'
+  const values: Array<Record<string, unknown>> = [
+    { weight: 'bolder' },
+    { weight: 'lighter' },
+    { weight: '' },
+    { weight: null },
+    { weight: 0 },
+    { style: '' },
+    { style: 1 },
+    { style: 'oblique 10' },
+    { weight: 'bolder', style: '' },
+  ]
+  for (const value of values) {
+    t.notThrows(() => registerFont(fixture('RMStatic-Regular.ttf'), { family: `${family} Junk`, ...value }))
+  }
+  // The valid field is kept: this face still serves italic requests.
+  registerFont(fixture('RMStatic-Regular.ttf'), { family, weight: '400', style: 'normal' })
+  registerFont(fixture('RMStatic-Italic.ttf'), { family, weight: 'bolder', style: 'italic' })
+  t.is(faceOf('normal', family), 'Regular')
+  t.is(faceOf('italic', family), 'Italic')
+})
+
+test.serial('registerFont without weight keeps the wght axis of a variable font', (t) => {
+  const family = 'Compat 1472 VF'
+  registerFont(robotoMonoPath, { family })
+  t.deepEqual(drawText(`bold 30px "${family}"`), drawText('30px "Compat Ref RobotoMono"', '"wght" 700'))
+  t.deepEqual(drawText(`100 30px "${family}"`), drawText('30px "Compat Ref RobotoMono"', '"wght" 100'))
+})
+
+test.serial('registerFont with only family registers the file as registerFromPath does', (t) => {
+  const family = 'Compat 1472 Auto'
+  const styles = () => GlobalFonts.families.find((f) => f.family === family)?.styles.length ?? 0
+  GlobalFonts.registerFromPath(fixture('RMStatic-Bold.ttf'), family)
+  registerFont(fixture('RMStatic-Bold.ttf'), { family })
+  t.is(styles(), 1)
 })
 
 // ---------------------------------------------------------------------------

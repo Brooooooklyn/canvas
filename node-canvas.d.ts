@@ -168,14 +168,17 @@ export function loadImage(
  * Register a font file for use in canvas text rendering.
  * Compatible with node-canvas's `registerFont()`.
  *
- * Note: @napi-rs/canvas auto-detects weight and style from font file metadata
- * (matching browser behavior). The `weight` and `style` properties in fontFace
- * are accepted for API compatibility.
+ * `weight` and `style` are the face's `@font-face` descriptors: the faces of
+ * one family are picked by them with CSS font matching. Register one call per
+ * face file, e.g. `{ family: 'Lato', weight: 'bold', style: 'italic' }`.
+ * A field that is not given, or that the `@font-face` grammar rejects, is
+ * `auto`. An explicit weight or style (`'normal'` included) pins a variable
+ * font to it; use a range such as `'100 900'` to keep the axis.
  *
  * @param path     Absolute path to the font file (.ttf, .otf, etc.)
  * @param fontFace Font face properties matching CSS @font-face descriptors
  */
-export function registerFont(path: string, fontFace: { family: string; weight?: string; style?: string }): void
+export function registerFont(path: string, fontFace: { family: string; weight?: string | number; style?: string }): void
 
 /**
  * Deregister all previously registered fonts.
