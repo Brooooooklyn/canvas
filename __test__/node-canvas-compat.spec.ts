@@ -221,13 +221,14 @@ test.serial('registerFont treats values the @font-face grammar rejects as not gi
     { style: 'slanted' },
     { style: 'oblique 10' },
     { weight: 'bolder', style: '' },
+    { weight: 'bolder /* inherited */' },
   ]
   for (const value of values) {
     t.notThrows(() => registerFont(fixture('RMStatic-Regular.ttf'), { family: `${family} Junk`, ...value }))
   }
   // The valid field is kept: this face still serves italic requests.
   registerFont(fixture('RMStatic-Regular.ttf'), { family, weight: '400', style: 'normal' })
-  registerFont(fixture('RMStatic-Italic.ttf'), { family, weight: 'bolder', style: 'italic' })
+  registerFont(fixture('RMStatic-Italic.ttf'), { family, weight: 'bolder /* inherited */', style: 'italic' })
   t.is(faceOf('normal', family), 'Regular')
   t.is(faceOf('italic', family), 'Italic')
 })
@@ -257,9 +258,21 @@ test.serial('registerFont throws when a valid descriptor fails, without a retry'
 test.serial('registerFont drops a descriptor only when the native parser rejects it', (t) => {
   const file = fixture('RMStatic-Regular.ttf')
   const cases: Array<['weight' | 'style', string]> = [
-    ...['bold', 'BOLD', '700', ' 700 ', '1', '1000', '1e3', '+700', '100 900', 'normal', 'auto'].map(
-      (v) => ['weight', v] as ['weight', string],
-    ),
+    ...[
+      'bold',
+      'BOLD',
+      '/**/bold',
+      'bold /* x */',
+      '700',
+      ' 700 ',
+      '1',
+      '1000',
+      '1e3',
+      '+700',
+      '100 900',
+      'normal',
+      'auto',
+    ].map((v) => ['weight', v] as ['weight', string]),
     ...[
       'bolder',
       'lighter',
@@ -329,6 +342,27 @@ test.serial('registerFont drops a descriptor only when the native parser rejects
   t.throws(() => registerFont(file, { family: 'Compat 1472 Unknown', weight: 'calc(' }), {
     message: /Failed to register font/,
   })
+})
+
+// node-canvas's deregisterAllFonts removes only what registerFont added. A
+// registerFont call with the same path, family and descriptors as a direct
+// registration gets the direct one's key and must not remove it. (Lato: no
+// other compat test registers it, and a key is shared by path.)
+test.serial('deregisterAllFonts keeps a direct registration that registerFont reused', (t) => {
+  for (const [index, [direct, compat]] of [
+    [
+      { weight: 'bold', style: 'normal' },
+      { weight: 'bold', style: 'normal' },
+    ],
+    [undefined, {}],
+  ].entries()) {
+    const family = `Compat 1472 Owner ${index}`
+    const key = GlobalFonts.registerFromPath(fixture('Lato-Regular.ttf'), family, direct as FontFaceDescriptors)
+    registerFont(fixture('Lato-Regular.ttf'), { family, ...compat })
+    deregisterAllFonts()
+    t.true(GlobalFonts.has(family), family)
+    t.true(GlobalFonts.remove(key!), family)
+  }
 })
 
 test.serial('registerFont without weight keeps the wght axis of a variable font', (t) => {

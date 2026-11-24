@@ -280,8 +280,8 @@ const _registeredFontKeys = []
 
 // Whether the @font-face `font-weight` / `font-style` grammar (src/font.rs
 // parse_font_face_weight / parse_font_face_style) surely rejects a value. It
-// reads plain keywords, numbers and dimensions; a value with any other token
-// (`calc()`, a comment, an escape) is passed to registerFromPath as given, and
+// reads plain keywords, numbers, dimensions and comments; a value with any
+// other token (`calc()`, a quote, an escape) is passed to registerFromPath as given, and
 // registerFont throws if it is invalid, so a valid value is never dropped.
 const _CSS_SPACE = /[ \t\n\r\f]+/
 const _NUMBER = '[+-]?(?:\\d+(?:\\.\\d+)?|\\.\\d+)(?:[eE][+-]?\\d+)?'
@@ -290,7 +290,8 @@ const _TOKEN = new RegExp(`^(?:(${_IDENT})|(${_NUMBER})(%|${_IDENT})?)$`)
 
 // The plain tokens of a value, or null when it has another kind of token.
 function _cssTokens(value) {
-  const trimmed = value.replace(/^[ \t\n\r\f]+|[ \t\n\r\f]+$/g, '')
+  // A comment separates tokens, as whitespace does; an unclosed one runs to the end.
+  const trimmed = value.replace(/\/\*[\s\S]*?(?:\*\/|$)/g, ' ').replace(/^[ \t\n\r\f]+|[ \t\n\r\f]+$/g, '')
   const tokens = []
   for (const word of trimmed === '' ? [] : trimmed.split(_CSS_SPACE)) {
     const match = _TOKEN.exec(word)
@@ -340,7 +341,7 @@ function _isInvalidFaceStyle(value) {
  *   it, as with @font-face. Use a range such as `'100 900'` to keep the axis.
  * - A value the @font-face grammar rejects (`'bolder'`, `''`) counts as not
  *   given, as node-canvas ignores unknown values instead of throwing. An
- *   invalid value with a `calc()`, a comment or an escape makes registerFont
+ *   invalid value with a `calc()`, a quote or an escape makes registerFont
  *   throw.
  *
  * @param {string} path   Absolute path to the font file (.ttf, .otf, etc.)
@@ -360,11 +361,21 @@ function registerFont(path, fontFace) {
   const weight =
     (typeof w === 'string' || typeof w === 'number') && !_isInvalidFaceWeight(String(w)) ? String(w) : 'auto'
   const style = typeof s === 'string' && !_isInvalidFaceStyle(s) ? s : 'auto'
+  const faces = _faceCount(family)
   const key = GlobalFonts.registerFromPath(path, family, { weight, style })
   if (!key) {
     throw new Error(`Failed to register font from "${path}" with family "${family}"`)
   }
-  _registeredFontKeys.push(key)
+  // A call that adds no face got the key of a registration that already
+  // existed (the same path, family and descriptors). deregisterAllFonts must
+  // leave that one to its owner, as node-canvas removes only what
+  // registerFont added.
+  if (_faceCount(family) > faces) _registeredFontKeys.push(key)
+}
+
+function _faceCount(family) {
+  const entry = GlobalFonts.families.find((f) => f.family === family)
+  return entry ? entry.styles.length : 0
 }
 
 /**
