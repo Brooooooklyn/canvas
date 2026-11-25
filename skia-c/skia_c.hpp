@@ -306,9 +306,7 @@ struct RegisteredFont {
   // never reuse it, its key is no FontKey (RegistrationKey), and it goes
   // whole only with its env's deregisterAllFonts
   // (skiac_font_collection_release_private) or removeAll: it stays when its
-  // env exits, as node-canvas keeps a worker's fonts, as an exited one
-  // (TypefaceFontProviderCustom::kExitedOwner), or goes when an exited one
-  // declares the same (skiac_font_collection::retirePrivate).
+  // env exits, as node-canvas keeps a worker's fonts.
   uint32_t owner = 0;
 
   // Whether name `i` is a FontFace name of a preloaded font: the alias
@@ -1159,105 +1157,6 @@ class TypefaceFontProviderCustom : public TypefaceFontProvider {
     return ids;
   }
 
-  // The owner of the private registrations of every N-API env that went
-  // (src/global_fonts.rs EXITED_OWNER), never an env's token: no
-  // deregisterAllFonts removes them, removeAll does
-  // (skiac_font_collection::retirePrivate).
-  static constexpr uint32_t kExitedOwner = UINT32_MAX;
-
-  // The private registrations of `owner` by path (private_index), null when
-  // it has none.
-  const std::map<std::string, std::set<RegistrationKey>>* privateOf(
-      uint32_t owner) const {
-    auto owned = private_index.find(owner);
-    return owned == private_index.end() ? nullptr : &owned->second;
-  }
-
-  // The private registration `id` becomes one of `owner`
-  // (RegisteredFont::owner, private_index); nothing else changes.
-  void reown(RegistrationKey id, uint32_t owner) {
-    RegisteredFont& font_info = registered_fonts.at(id);
-    auto owned = private_index.find(font_info.owner);
-    if (owned != private_index.end()) {
-      auto keys = owned->second.find(font_info.path);
-      if (keys != owned->second.end()) {
-        keys->second.erase(id);
-        if (keys->second.empty()) {
-          owned->second.erase(keys);
-        }
-      }
-      if (owned->second.empty()) {
-        private_index.erase(owned);
-      }
-    }
-    font_info.owner = owner;
-    private_index[owner][font_info.path].insert(id);
-  }
-
-  // Whether the registrations `a` and `b` declare the same: the same names
-  // in the same order, each given the same way and with the same
-  // descriptors (the rule registerTypefaceFromPathWithTracking reuses a
-  // registration by, for every name), and the same file bytes.
-  bool SameDeclarations(RegistrationKey a, RegistrationKey b) const {
-    const RegisteredFont& x = registered_fonts.at(a);
-    const RegisteredFont& y = registered_fonts.at(b);
-    if (x.path != y.path || x.installed || y.installed ||
-        x.preloaded != y.preloaded || x.no_web_twin != y.no_web_twin ||
-        x.aliases != y.aliases || x.alias_args != y.alias_args ||
-        x.call_names != y.call_names ||
-        x.descriptors.size() != y.descriptors.size()) {
-      return false;
-    }
-    for (const auto& [folded, unused] : x.descriptors) {
-      auto it = y.descriptors.find(folded);
-      if (it == y.descriptors.end() ||
-          !SameDescriptors(x.descriptors, folded, &it->second)) {
-        return false;
-      }
-    }
-    return SameFontData(x.typeface.get(), y.typeface.get());
-  }
-
-  // Of the registrations `a` and `b` (the same names: SameDeclarations),
-  // the one that lists each name before the other does (its registration,
-  // or its latest relist), 0 when neither does. Web faces are ordered by
-  // that, newest first (font_families.cpp FamilyResolver::Faces), so the
-  // later one goes before the earlier one in every family and segment: the
-  // earlier one draws nothing the later one does not.
-  RegistrationKey Earlier(RegistrationKey a, RegistrationKey b) const {
-    const RegisteredFont& x = registered_fonts.at(a);
-    const RegisteredFont& y = registered_fonts.at(b);
-    auto latest = [](const RegisteredFont& font, size_t i) {
-      return std::max(font.orders[i],
-                      i < font.relists.size() ? font.relists[i] : 0);
-    };
-    bool a_first = true;
-    bool b_first = true;
-    for (size_t i = 0; i < x.aliases.size(); ++i) {
-      a_first = a_first && latest(x, i) < latest(y, i);
-      b_first = b_first && latest(y, i) < latest(x, i);
-    }
-    return a_first ? a : b_first ? b : 0;
-  }
-
-  // Whether the font `id` lists a name before every other font and before
-  // `alias_order` (the first setAlias call): the provider's first family,
-  // its fallback for a family nobody lists (onLegacyMakeTypeface).
-  bool ListsFirst(RegistrationKey id, uint64_t alias_order) const {
-    const auto& orders = registered_fonts.at(id).orders;
-    const uint64_t first = *std::min_element(orders.begin(), orders.end());
-    if (first > alias_order) {
-      return false;
-    }
-    for (const auto& [other, font] : registered_fonts) {
-      if (other != id && !font.orders.empty() &&
-          *std::min_element(font.orders.begin(), font.orders.end()) < first) {
-        return false;
-      }
-    }
-    return true;
-  }
-
   // Remove all typefaces from tracking; the twin keys issued stay issued.
   // Note: caller must also clear set_aliases in skiac_font_collection
   size_t removeAllTypefaces() {
@@ -1388,39 +1287,6 @@ class TypefaceFontProviderCustom : public TypefaceFontProvider {
            same(it->second.width, descriptors->width);
   }
 
-  // Whether the faces `a` and `b` are made from the same bytes (the same
-  // face of a collection file).
-  static bool SameFontData(const SkTypeface* a, const SkTypeface* b) {
-    if (a == b) {
-      return true;
-    }
-    if (!a || !b) {
-      return false;
-    }
-    int a_index = 0;
-    int b_index = 0;
-    std::unique_ptr<SkStreamAsset> x = a->openStream(&a_index);
-    std::unique_ptr<SkStreamAsset> y = b->openStream(&b_index);
-    if (!x || !y || a_index != b_index || x->getLength() != y->getLength()) {
-      return false;
-    }
-    const size_t length = x->getLength();
-    if (x->getMemoryBase() && y->getMemoryBase()) {
-      return !memcmp(x->getMemoryBase(), y->getMemoryBase(), length);
-    }
-    char x_chunk[4096];
-    char y_chunk[4096];
-    for (size_t at = 0; at < length;) {
-      const size_t size = std::min(sizeof(x_chunk), length - at);
-      if (x->read(x_chunk, size) != size || y->read(y_chunk, size) != size ||
-          memcmp(x_chunk, y_chunk, size)) {
-        return false;
-      }
-      at += size;
-    }
-    return true;
-  }
-
   void forgetDescribedName(const std::string& folded) {
     auto it = described_names.find(folded);
     if (it != described_names.end() && --it->second == 0) {
@@ -1541,73 +1407,6 @@ struct skiac_font_collection {
                                               ids.count(entry.font_key);
                                      }),
                       set_aliases.end());
-  }
-
-  // An N-API env went (src/global_fonts.rs forget_env_owner): its private
-  // registrations (`owner`) join the exited ones
-  // (TypefaceFontProviderCustom::kExitedOwner), which stay as node-canvas
-  // keeps a worker's fonts, so that exited envs keep one registration per
-  // declaration. Of a registration of `owner` and an exited one that
-  // declare the same (SameDeclarations), the earlier one goes (Earlier):
-  // the later one draws what both drew. Both stay when a setAlias entry was
-  // made from the earlier one (it would go with it: dropAliasesOf), or when
-  // the earlier one is the provider's first family (ListsFirst). Every
-  // registration of `owner` that stays becomes an exited one. A live env's
-  // registrations are never merged. Returns whether one went (then the
-  // provider is rebuilt once).
-  bool retirePrivate(uint32_t owner) {
-    constexpr uint32_t kExited = TypefaceFontProviderCustom::kExitedOwner;
-    const auto* owned = owner == kExited ? nullptr : assets->privateOf(owner);
-    if (!owned) {
-      return false;
-    }
-    uint64_t first_alias = UINT64_MAX;
-    std::set<RegistrationKey> aliased;
-    for (const SetAlias& entry : set_aliases) {
-      first_alias = std::min(first_alias, entry.order);
-      aliased.insert(entry.font_key);
-    }
-    std::set<RegistrationKey> removed;
-    // A copy: the loop changes the index.
-    const auto paths = *owned;
-    for (const auto& [path, keys] : paths) {
-      for (RegistrationKey id : keys) {
-        // The exited registrations of the same path.
-        std::set<RegistrationKey> exited;
-        if (const auto* exited_paths = assets->privateOf(kExited)) {
-          auto same = exited_paths->find(path);
-          if (same != exited_paths->end()) {
-            exited = same->second;
-          }
-        }
-        RegistrationKey drop = 0;
-        for (RegistrationKey kept : exited) {
-          if (!assets->SameDeclarations(kept, id)) {
-            continue;
-          }
-          const RegistrationKey earlier = assets->Earlier(kept, id);
-          if (earlier && !aliased.count(earlier) &&
-              !assets->ListsFirst(earlier, first_alias)) {
-            drop = earlier;
-            break;
-          }
-        }
-        if (drop != id) {
-          assets->reown(id, kExited);
-        }
-        if (drop) {
-          assets->removeTypeface(drop);
-          removed.insert(drop);
-        }
-      }
-    }
-    if (removed.empty()) {
-      return false;
-    }
-    // None was made (`aliased`); as removeFont does.
-    dropAliasesOf(removed);
-    rebuildAssets();
-    return true;
   }
 
   // `registered`: the call registered a face. Such a call is always kept,
@@ -3305,12 +3104,6 @@ bool skiac_font_collection_register_from_path_private(
 // `owner` as skiac_font_collection_unregister_batch removes fonts. Returns
 // whether any went.
 bool skiac_font_collection_release_private(
-    skiac_font_collection* c_font_collection,
-    uint32_t owner);
-// The N-API env of the token `owner` went: its private registrations join
-// the exited ones, one per declaration (skiac_font_collection::
-// retirePrivate). Returns whether one went.
-bool skiac_font_collection_retire_private(
     skiac_font_collection* c_font_collection,
     uint32_t owner);
 bool skiac_font_collection_set_alias(skiac_font_collection* c_font_collection,

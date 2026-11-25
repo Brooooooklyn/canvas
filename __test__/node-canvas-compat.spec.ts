@@ -868,11 +868,11 @@ test.serial('deregisterAllFonts in a worker keeps what the main thread registere
 
 // The registrations of a worker that exits without deregisterAllFonts stay,
 // as in node-canvas: a worker that preloads fonts does not change the main
-// thread's text when it exits. They belong to no live env, so the main
+// thread's text when it exits. They belong to the exited worker, so the main
 // thread's deregisterAllFonts keeps them, and so does the deregisterAllFonts
-// of a later worker (a new env never gets an exited env's token, also at the
-// same address); GlobalFonts.removeAll removes them. The same declaration in
-// the main thread and in a live worker is a registration each.
+// of a later worker (a new env never gets an exited env's registrations, also
+// at the same address); GlobalFonts.removeAll removes them. The same
+// declaration in the main thread and in a worker is a registration each.
 // Each worker stays until the main thread has measured its registration, then
 // exits on its own. In a child process: the exited worker's registrations
 // stay until removeAll, which would remove the other tests' fonts. Lato is
@@ -943,8 +943,8 @@ const start = async (family) => {
   worker.postMessage('exit')
   await exited
   out.later = { registered, cleaned, styles: families.map(stylesOf), own: stylesOf(later) }
-  // Two workers that register the same declaration and exit leave one
-  // registration: the second merges into the first when it exits.
+  // No later worker reuses an exited worker's registration: two workers that
+  // register the same declaration and exit leave one each.
   const churn = 'Compat 1472 Worker Exit churn'
   families.push(churn)
   for (let i = 0; i < 2; i++) {
@@ -988,230 +988,8 @@ test.serial("a worker's registerFont fonts stay and draw after it exits", (t) =>
     { registered: true, cleaned: false, styles: [1, 1], own: 0 },
     'a later worker removes its own only, and nothing of it stays after it exits',
   )
-  t.is(out.churn, 1, 'workers that exit with the same declaration leave one registration')
+  t.is(out.churn, 2, 'each worker that exits without deregisterAllFonts leaves its own')
   t.deepEqual(out.removeAll, [false, false, false], 'GlobalFonts.removeAll removes them')
-})
-
-// The registrations of exited workers are one set: when a worker exits, of
-// a registration of it and an exited one that declare the same (path, names,
-// descriptors, bytes), the earlier one goes and the later one stays, so a
-// pool that recycles workers keeps one face per distinct declaration. Only
-// an exited one merges (a live worker's is its own until it exits), and only
-// when the text stays the same: not when a setAlias was made from the
-// earlier one, nor when the earlier one is the first font registered (the
-// one a family nobody lists draws). In child processes: the exited workers'
-// registrations stay until removeAll.
-const EXIT_MERGE_PROBE = `
-const crypto = require('crypto'), path = require('path')
-const { once } = require('events')
-const { Worker } = require('worker_threads')
-const { createCanvas, GlobalFonts, registerFont, deregisterAllFonts } = require('./node-canvas.js')
-const fonts = path.resolve('__test__', 'fonts')
-const file = path.join(fonts, 'EBGaramond-Regular.ttf')
-const lato = path.join(fonts, 'Lato-Regular.ttf')
-const nodeCanvas = path.resolve('node-canvas.js')
-const text = 'Hamburgefonstiv'
-const measure = (family) => {
-  const ctx = createCanvas(420, 60).getContext('2d')
-  ctx.font = '30px "' + family + '"'
-  ctx.fillText(text, 10, 42)
-  const pixels = crypto.createHash('sha1').update(ctx.getImageData(0, 0, 420, 60).data).digest('hex')
-  return { width: ctx.measureText(text).width, pixels }
-}
-const stylesOf = (name) => GlobalFonts.families.find((f) => f.family === name)?.styles.length ?? 0
-const tick = () => new Promise((resolve) => setImmediate(resolve))
-GlobalFonts.registerFromPath(lato, 'Compat 1472 Merge Lato')
-const code = \`
-  const { parentPort, workerData } = require('node:worker_threads')
-  const { registerFont, deregisterAllFonts, GlobalFonts } = require(workerData.nodeCanvas)
-  registerFont(workerData.file, { family: workerData.family, weight: workerData.weight })
-  parentPort.on('message', (message) => {
-    if (message === 'clean up') {
-      deregisterAllFonts()
-      parentPort.postMessage(GlobalFonts.has(workerData.family))
-    } else {
-      parentPort.close()
-    }
-  })
-  parentPort.postMessage(GlobalFonts.has(workerData.family))
-\`
-const start = async (family, weight = '400') => {
-  const worker = new Worker(code, { eval: true, workerData: { nodeCanvas, file, family, weight } })
-  const exited = once(worker, 'exit')
-  const [registered] = await once(worker, 'message')
-  return { worker, exited, registered }
-}
-const stop = async ({ worker, exited }) => {
-  worker.postMessage('exit')
-  await exited
-  await tick()
-}
-;(async () => {
-  const N = 20
-  const same = 'Compat 1472 Merge Same'
-  const families = [same]
-  const out = { missing: measure('Compat 1472 No Such Font') }
-  // N workers in turn, each with the same declaration.
-  const runs = []
-  for (let i = 0; i < N; i++) {
-    const run = await start(same)
-    if (i === 0) out.alive = measure(same)
-    runs.push({ registered: run.registered, styles: stylesOf(same) })
-    await stop(run)
-  }
-  out.runs = runs
-  out.same = { styles: stylesOf(same), after: measure(same) }
-  // Two declarations (two weights), each from two workers.
-  const two = 'Compat 1472 Merge Two'
-  families.push(two)
-  for (const weight of ['400', '700', '400', '700']) await stop(await start(two, weight))
-  out.two = stylesOf(two)
-  // A live worker with the declaration of an exited one has its own; its
-  // deregisterAllFonts removes only its own.
-  const live = await start(same)
-  out.live = { styles: stylesOf(same) }
-  live.worker.postMessage('clean up')
-  ;[out.live.cleaned] = await once(live.worker, 'message')
-  out.live.cleanedStyles = stylesOf(same)
-  out.live.cleanedDraw = measure(same)
-  await stop(live)
-  out.live.afterStyles = stylesOf(same)
-  // The main thread's registerFont of it is its own too, and its
-  // deregisterAllFonts keeps the exited ones.
-  registerFont(file, { family: same, weight: '400' })
-  out.main = { styles: stylesOf(same) }
-  deregisterAllFonts()
-  out.main.cleanedStyles = stylesOf(same)
-  out.main.cleanedDraw = measure(same)
-  // A registration of the family between two exited ones: the later one
-  // stays, so the family draws it, not the one between.
-  const between = 'Compat 1472 Merge Between'
-  families.push(between)
-  await stop(await start(between))
-  GlobalFonts.registerFromPath(lato, between, { weight: '400' })
-  out.between = { lato: measure(between) }
-  const later = await start(between)
-  out.between.alive = measure(between)
-  await stop(later)
-  out.between.after = measure(between)
-  out.between.styles = stylesOf(between)
-  // A setAlias made from the earlier one: it stays with its alias.
-  const aliased = 'Compat 1472 Merge Aliased'
-  const alias = 'Compat 1472 Merge Alias'
-  families.push(aliased, alias)
-  const named = await start(aliased)
-  out.alias = { set: GlobalFonts.setAlias(aliased, alias), alive: measure(alias) }
-  await stop(named)
-  await stop(await start(aliased))
-  out.alias.after = measure(alias)
-  out.alias.styles = stylesOf(aliased)
-  GlobalFonts.removeAll()
-  out.removeAll = families.map((family) => GlobalFonts.has(family))
-  process.stdout.write(JSON.stringify(out))
-})().catch((err) => {
-  console.error(err)
-  process.exit(1)
-})
-`
-
-test.serial("exited workers' registerFont fonts keep one face per declaration", (t) => {
-  const { stdout, stderr, status } = spawnSync(process.execPath, ['-e', EXIT_MERGE_PROBE], {
-    cwd: join(__dirname, '..'),
-    env: { ...process.env, DISABLE_SYSTEM_FONTS_LOAD: '1' },
-    encoding: 'utf8',
-    timeout: 120_000,
-  })
-  t.is(status, 0, stderr)
-  const out = JSON.parse(stdout)
-  t.notDeepEqual(out.alive, out.missing, 'the family draws the file')
-  out.runs.forEach((run: { registered: boolean; styles: number }, i: number) => {
-    t.true(run.registered, `worker ${i}`)
-    t.is(run.styles, i === 0 ? 1 : 2, `worker ${i}: a live worker has its own registration`)
-  })
-  t.is(out.same.styles, 1, 'workers that exit with the same declaration leave one face')
-  t.deepEqual(out.same.after, out.alive, 'and the text is the one the first worker drew')
-  t.is(out.two, 2, 'two declarations leave two faces')
-  t.deepEqual(
-    out.live,
-    { styles: 2, cleaned: true, cleanedStyles: 1, cleanedDraw: out.alive, afterStyles: 1 },
-    "a live worker's deregisterAllFonts removes only its own",
-  )
-  t.deepEqual(
-    out.main,
-    { styles: 2, cleanedStyles: 1, cleanedDraw: out.alive },
-    "the main thread's deregisterAllFonts keeps the exited ones",
-  )
-  t.notDeepEqual(out.between.lato, out.between.alive, 'the later worker draws over the registration between')
-  t.deepEqual(out.between.after, out.between.alive, 'and still after it exits')
-  t.is(out.between.styles, 2, 'the later exited one stays, the one between too')
-  t.true(out.alias.set)
-  t.notDeepEqual(out.alias.alive, out.missing, 'the alias draws the file')
-  t.deepEqual(out.alias.after, out.alias.alive, 'and still after the workers exit')
-  t.is(out.alias.styles, 2, 'so the face the alias was made from stays')
-  t.deepEqual(out.removeAll, [false, false, false, false, false], 'GlobalFonts.removeAll removes them')
-})
-
-// The first font registered is the provider's first family, the one a
-// family nobody lists draws when no installed font does (Linux): an exited
-// worker's registration that is the first stays, also when a later worker
-// registers the same declaration and exits.
-const EXIT_FIRST_PROBE = `
-const path = require('path')
-const { once } = require('events')
-const { Worker } = require('worker_threads')
-const { createCanvas, GlobalFonts } = require('./node-canvas.js')
-const fonts = path.resolve('__test__', 'fonts')
-const file = path.join(fonts, 'EBGaramond-Regular.ttf')
-const nodeCanvas = path.resolve('node-canvas.js')
-const family = 'Compat 1472 Merge First'
-const width = (name) => {
-  const ctx = createCanvas(10, 10).getContext('2d')
-  ctx.font = '30px "' + name + '"'
-  return ctx.measureText('Hamburgefonstiv').width
-}
-const stylesOf = (name) => GlobalFonts.families.find((f) => f.family === name)?.styles.length ?? 0
-const code = \`
-  const { parentPort, workerData } = require('node:worker_threads')
-  const { registerFont } = require(workerData.nodeCanvas)
-  registerFont(workerData.file, { family: workerData.family })
-  parentPort.postMessage('registered')
-  parentPort.once('message', () => parentPort.close())
-\`
-const run = async () => {
-  const worker = new Worker(code, { eval: true, workerData: { nodeCanvas, file, family } })
-  const exited = once(worker, 'exit')
-  await once(worker, 'message')
-  worker.postMessage('exit')
-  await exited
-  await new Promise((resolve) => setImmediate(resolve))
-}
-;(async () => {
-  await run()
-  const out = { file: width(family), missing: width('Compat 1472 No Such Font') }
-  GlobalFonts.registerFromPath(path.join(fonts, 'Lato-Regular.ttf'), 'Compat 1472 Merge Lato')
-  out.lato = width('Compat 1472 Merge Lato')
-  await run()
-  out.after = width('Compat 1472 No Such Font')
-  out.styles = stylesOf(family)
-  process.stdout.write(JSON.stringify(out))
-})().catch((err) => {
-  console.error(err)
-  process.exit(1)
-})
-`
-
-test.serial("an exited worker's first font stays the fallback", (t) => {
-  const { stdout, stderr, status } = spawnSync(process.execPath, ['-e', EXIT_FIRST_PROBE], {
-    cwd: join(__dirname, '..'),
-    env: { ...process.env, DISABLE_SYSTEM_FONTS_LOAD: '1' },
-    encoding: 'utf8',
-    timeout: 60_000,
-  })
-  t.is(status, 0, stderr)
-  const out = JSON.parse(stdout)
-  t.not(out.lato, out.file)
-  t.is(out.after, out.missing, 'a family nobody lists draws the same after the later worker exits')
-  t.is(out.styles, 2, 'the first font stays, and so does the later one')
 })
 
 // Two weights of one file in one env are two registrations (the second a

@@ -1591,11 +1591,6 @@ pub mod ffi {
       owner: u32,
     ) -> bool;
 
-    pub fn skiac_font_collection_retire_private(
-      c_font_collection: *mut skiac_font_collection,
-      owner: u32,
-    ) -> bool;
-
     pub fn skiac_font_collection_register_system_font(
       c_font_collection: *mut skiac_font_collection,
       font_path: *const c_char,
@@ -6761,14 +6756,6 @@ impl FontCollection {
   /// whether any went.
   pub fn release_private(&self, owner: u32) -> bool {
     unsafe { ffi::skiac_font_collection_release_private(self.0, owner) }
-  }
-
-  /// The N-API env of the token `owner` went: its private registrations
-  /// stay as exited ones, which keep one registration per declaration (one
-  /// that an exited registration draws the same as goes). Returns whether
-  /// one went.
-  pub fn retire_private(&self, owner: u32) -> bool {
-    unsafe { ffi::skiac_font_collection_retire_private(self.0, owner) }
   }
 
   pub fn unregister(&self, typeface_id: u32) -> bool {
