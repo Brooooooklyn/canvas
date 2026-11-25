@@ -304,7 +304,9 @@ struct RegisteredFont {
   // (registerTypefaceFromPathWithTracking with `owner`), it is in no index
   // (content_hash_index), so register / registerFromPath / loadFontsFromDir
   // never reuse it, its key is no FontKey (RegistrationKey), and it goes
-  // whole with its env (skiac_font_collection_release_private).
+  // whole only with its env's deregisterAllFonts
+  // (skiac_font_collection_release_private) or removeAll: it stays when its
+  // env exits, as node-canvas keeps a worker's fonts.
   uint32_t owner = 0;
 
   // Whether name `i` is a FontFace name of a preloaded font: the alias

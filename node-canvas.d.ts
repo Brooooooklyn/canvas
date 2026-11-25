@@ -192,7 +192,8 @@ export function registerFont(path: string, fontFace: { family: string; weight?: 
  * Deregister all previously registered fonts.
  * Compatible with node-canvas's `deregisterAllFonts()`: it removes the
  * registrations that `registerFont` calls made through the same loaded native
- * binding (one per main thread or worker; a worker's go when it exits), each
+ * binding (one per main thread or worker; a worker's stay when it exits, as in
+ * node-canvas, and only its own `deregisterAllFonts` removes them), each
  * whole, as `GlobalFonts.remove(key)` removes one, with the `setAlias` entries
  * made from them. `GlobalFonts` registrations and `loadFontsFromDir` fonts are
  * never touched. A `registerFont` registration is its own: a file registered

@@ -261,14 +261,17 @@ fn read_face_descriptors(
 /// GlobalFonts call or loadFontsFromDir ever reuses it.
 /// deregisterAllFonts removes the env's private registrations whole, as
 /// GlobalFonts.remove removes one (the token stays for the env's later
-/// calls), and an env cleanup hook removes them when the env goes (a worker
-/// that exits without deregisterAllFonts). Every node-canvas.js instance of
-/// one env shares the token (a Jest-style reload of the package keeps the
-/// .node binding, so its env). An entry lives from the first registerFont
-/// of its env to the env's cleanup, so an address reused by a later env
-/// gets a new token; a token is never issued twice. The main thread's hook
-/// runs at exit, and rebuilds only when it removes something. Lock order:
-/// the font lock, then this.
+/// calls). When the env goes (a worker exits, or the process), its
+/// registrations stay, as in node-canvas: a worker that preloads fonts does
+/// not change the main thread's text when it exits. An env cleanup hook only
+/// drops the entry, so the exited env's registrations stay private (no
+/// FontKey names them, and no later env's deregisterAllFonts removes them);
+/// only GlobalFonts.removeAll does. Every node-canvas.js instance of one env
+/// shares the token (a Jest-style reload of the package keeps the .node
+/// binding, so its env). An entry lives from the first registerFont of its
+/// env to the env's cleanup, so an address reused by a later env gets a new
+/// token; a token is never issued twice. Lock order: the font lock, then
+/// this.
 #[cfg_attr(test, allow(dead_code))]
 static ENV_OWNERS: Mutex<(u32, Vec<(usize, u32)>)> = Mutex::new((0, Vec::new()));
 
@@ -277,27 +280,12 @@ fn env_owners<'a>() -> MutexGuard<'a, (u32, Vec<(usize, u32)>)> {
   ENV_OWNERS.lock().unwrap_or_else(PoisonError::into_inner)
 }
 
-/// The env cleanup hook: the private registrations of the env `key` go.
+/// The env cleanup hook: the env `key` goes. Its entry goes, so a later env
+/// at the same address gets a new token, never this one; its private
+/// registrations stay registered (ENV_OWNERS).
 #[cfg_attr(test, allow(dead_code))]
-fn release_env_owner(key: usize) {
-  // A token was issued, so the collection exists.
-  let Some(collection) = GLOBAL_FONT_COLLECTION.get() else {
-    env_owners().1.retain(|(env, _)| *env != key);
-    return;
-  };
-  let font = collection.lock();
-  let mut owners = env_owners();
-  let Some(at) = owners.1.iter().position(|(env, _)| *env == key) else {
-    return;
-  };
-  let (_, owner) = owners.1.swap_remove(at);
-  drop(owners);
-  // A poisoned font lock: another thread panicked mid-change, leave it be.
-  if let Ok(font) = font
-    && font.release_private(owner)
-  {
-    note_font_collection_mutation();
-  }
+fn forget_env_owner(key: usize) {
+  env_owners().1.retain(|(env, _)| *env != key);
 }
 
 /// node-canvas registerFont (node-canvas.js): registers the file as a
@@ -344,8 +332,8 @@ pub fn register_font_face(
   let key = env.raw() as usize;
   let mut owners = env_owners();
   // The first registerFont of this env issues its token and adds the hook
-  // that removes what the env leaves (before anything is registered, so a
-  // hook that cannot be added registers nothing).
+  // that drops the entry when the env goes (before anything is registered,
+  // so a hook that cannot be added registers nothing).
   let owner = match owners.1.iter().find(|(env, _)| *env == key) {
     Some((_, owner)) => *owner,
     None => {
@@ -353,7 +341,7 @@ pub fn register_font_face(
       let Some(owner) = owners.0.checked_add(1) else {
         return Ok(false);
       };
-      env.add_env_cleanup_hook(key, release_env_owner)?;
+      env.add_env_cleanup_hook(key, forget_env_owner)?;
       owners.0 = owner;
       owners.1.push((key, owner));
       owner

@@ -866,41 +866,115 @@ test.serial('deregisterAllFonts in a worker keeps what the main thread registere
   }
 })
 
-// The registrations of a worker that exits without deregisterAllFonts go
-// with it (an env cleanup hook). The same declaration in the main thread and
-// in a worker is a registration each. The worker stays until the main thread
-// has counted its registration, then exits on its own.
-test.serial('a worker that exits without deregisterAllFonts leaves no registration', async (t) => {
-  deregisterAllFonts()
-  const file = fixture('EBGaramond-Regular.ttf')
-  const family = 'Compat 1472 Worker Exit'
-  const code = `
-    const { parentPort, workerData } = require('node:worker_threads')
-    const { registerFont, GlobalFonts } = require(workerData.nodeCanvas)
-    registerFont(workerData.file, { family: workerData.family })
-    parentPort.once('message', () => parentPort.close())
-    parentPort.postMessage({ during: GlobalFonts.has(workerData.family) })
-  `
-  for (const order of ['worker alone', 'main first']) {
-    const main = order === 'main first'
-    if (main) {
-      registerFont(file, { family })
+// The registrations of a worker that exits without deregisterAllFonts stay,
+// as in node-canvas: a worker that preloads fonts does not change the main
+// thread's text when it exits. They belong to the exited worker, so the main
+// thread's deregisterAllFonts keeps them, and so does the deregisterAllFonts
+// of a later worker (a new env never gets an exited env's registrations, also
+// at the same address); GlobalFonts.removeAll removes them. The same
+// declaration in the main thread and in a worker is a registration each.
+// Each worker stays until the main thread has measured its registration, then
+// exits on its own. In a child process: the exited worker's registrations
+// stay until removeAll, which would remove the other tests' fonts. Lato is
+// registered first, so a family nobody lists draws Lato, not the file.
+const WORKER_EXIT_PROBE = `
+const crypto = require('crypto'), fs = require('fs'), path = require('path')
+const { once } = require('events')
+const { Worker } = require('worker_threads')
+const { createCanvas, GlobalFonts, registerFont, deregisterAllFonts } = require('./node-canvas.js')
+const fonts = path.resolve('__test__', 'fonts')
+const file = path.join(fonts, 'EBGaramond-Regular.ttf')
+const nodeCanvas = path.resolve('node-canvas.js')
+const text = 'Hamburgefonstiv'
+const measure = (family) => {
+  const ctx = createCanvas(420, 60).getContext('2d')
+  ctx.font = '30px "' + family + '"'
+  ctx.fillText(text, 10, 42)
+  const pixels = crypto.createHash('sha1').update(ctx.getImageData(0, 0, 420, 60).data).digest('hex')
+  return { width: ctx.measureText(text).width, pixels }
+}
+const stylesOf = (name) => GlobalFonts.families.find((f) => f.family === name)?.styles.length ?? 0
+GlobalFonts.registerFromPath(path.join(fonts, 'Lato-Regular.ttf'), 'Compat 1472 Exit Lato')
+// The file, from a registration of its own (a Buffer: never reused).
+GlobalFonts.register(fs.readFileSync(file), 'Compat 1472 Exit Ref')
+const code = \`
+  const { parentPort, workerData } = require('node:worker_threads')
+  const { registerFont, deregisterAllFonts, GlobalFonts } = require(workerData.nodeCanvas)
+  registerFont(workerData.file, { family: workerData.family })
+  parentPort.on('message', (message) => {
+    if (message === 'clean up') {
+      deregisterAllFonts()
+      parentPort.postMessage(GlobalFonts.has(workerData.family))
+    } else {
+      parentPort.close()
     }
-    const worker = new Worker(code, {
-      eval: true,
-      workerData: { nodeCanvas: join(__dirname, '..', 'node-canvas.js'), file, family },
-    })
-    t.teardown(() => worker.terminate())
-    const exited = once(worker, 'exit')
-    const [registered] = await once(worker, 'message')
-    t.deepEqual(registered, { during: true }, order)
-    t.is(stylesOf(family), main ? 2 : 1, `${order}: a registration per env`)
+  })
+  parentPort.postMessage(GlobalFonts.has(workerData.family))
+\`
+const start = async (family) => {
+  const worker = new Worker(code, { eval: true, workerData: { nodeCanvas, file, family } })
+  const exited = once(worker, 'exit')
+  const [registered] = await once(worker, 'message')
+  return { worker, exited, registered }
+}
+;(async () => {
+  const out = { ref: measure('Compat 1472 Exit Ref'), missing: measure('Compat 1472 No Such Font') }
+  const families = []
+  for (const order of ['worker alone', 'main first']) {
+    const family = 'Compat 1472 Worker Exit ' + order
+    families.push(family)
+    if (order === 'main first') registerFont(file, { family })
+    const { worker, exited, registered } = await start(family)
+    const r = { registered, styles: stylesOf(family), alive: measure(family) }
     worker.postMessage('exit')
     await exited
-    t.is(stylesOf(family), main ? 1 : 0, `${order}: after the worker exits`)
+    r.afterStyles = stylesOf(family)
+    r.after = measure(family)
     deregisterAllFonts()
-    t.false(GlobalFonts.has(family), `${order}: after the main thread cleans up`)
+    r.cleanedStyles = stylesOf(family)
+    r.cleaned = measure(family)
+    out[order] = r
   }
+  // A later worker registers and cleans up its own only.
+  const later = 'Compat 1472 Worker Exit later'
+  const { worker, exited, registered } = await start(later)
+  worker.postMessage('clean up')
+  const [cleaned] = await once(worker, 'message')
+  worker.postMessage('exit')
+  await exited
+  out.later = { registered, cleaned, styles: families.map(stylesOf) }
+  GlobalFonts.removeAll()
+  out.removeAll = families.map((family) => GlobalFonts.has(family))
+  process.stdout.write(JSON.stringify(out))
+})().catch((err) => {
+  console.error(err)
+  process.exit(1)
+})
+`
+
+test.serial("a worker's registerFont fonts stay and draw after it exits", (t) => {
+  const { stdout, stderr, status } = spawnSync(process.execPath, ['-e', WORKER_EXIT_PROBE], {
+    cwd: join(__dirname, '..'),
+    env: { ...process.env, DISABLE_SYSTEM_FONTS_LOAD: '1' },
+    encoding: 'utf8',
+    timeout: 60_000,
+  })
+  t.is(status, 0, stderr)
+  const out = JSON.parse(stdout)
+  t.not(out.missing.width, out.ref.width, 'a family nobody lists does not draw the file')
+  for (const order of ['worker alone', 'main first']) {
+    const main = order === 'main first'
+    const r = out[order]
+    t.true(r.registered, order)
+    t.is(r.styles, main ? 2 : 1, `${order}: a registration per env`)
+    t.deepEqual(r.alive, out.ref, `${order}: the family draws the file`)
+    t.is(r.afterStyles, r.styles, `${order}: the worker's registration stays after it exits`)
+    t.deepEqual(r.after, r.alive, `${order}: the text is the same after the worker exits`)
+    t.is(r.cleanedStyles, 1, `${order}: the main thread's deregisterAllFonts keeps the exited worker's`)
+    t.deepEqual(r.cleaned, r.alive, `${order}: and the text stays`)
+  }
+  t.deepEqual(out.later, { registered: true, cleaned: false, styles: [1, 1] }, 'a later worker removes its own only')
+  t.deepEqual(out.removeAll, [false, false], 'GlobalFonts.removeAll removes them')
 })
 
 // Two weights of one file in one env are two registrations (the second a
@@ -926,12 +1000,13 @@ test.serial('registerFont of two weights of one file is two faces, both released
 
 // A worker's registerFont made a registration of the file, under its family
 // only; a direct call with other descriptors then made one of its own, which
-// lists the file's own family too. When the worker exits, the direct one
-// stays as it was, and so does a direct setAlias of the own family made from
+// lists the file's own family too. When the worker's deregisterAllFonts
+// removes its registration (a worker's stays after it exits, so it cleans up
+// before), the direct one stays as it was, and so does a direct setAlias of the own family made from
 // its face (the newest of the own family's faces). In a child process with no
 // other fonts (the worker started from it), so nothing else lists the own
 // family and the alias names this file's face.
-const EMBEDDED_EXIT_PROBE = `
+const EMBEDDED_RELEASE_PROBE = `
 const crypto = require('crypto'), fs = require('fs'), os = require('os'), path = require('path')
 const { once } = require('events')
 const { Worker } = require('worker_threads')
@@ -987,9 +1062,13 @@ fs.copyFileSync(fixture, reference)
   const worker = new Worker(
     \`
     const { parentPort, workerData } = require('node:worker_threads')
-    const { registerFont } = require(workerData.nodeCanvas)
+    const { registerFont, deregisterAllFonts } = require(workerData.nodeCanvas)
     registerFont(workerData.file, { family: workerData.family, weight: '400' })
-    parentPort.once('message', () => parentPort.close())
+    parentPort.once('message', () => {
+      deregisterAllFonts()
+      parentPort.postMessage('cleaned')
+      parentPort.close()
+    })
     parentPort.postMessage('registered')
     \`,
     { eval: true, workerData: { nodeCanvas: path.resolve('node-canvas.js'), file, family } },
@@ -1003,7 +1082,8 @@ fs.copyFileSync(fixture, reference)
   out.ownStyles = stylesOf(own)
   // Made from the direct call's face, the newest of the own family.
   out.aliasedAgain = GlobalFonts.setAlias(own, alias)
-  worker.postMessage('exit')
+  worker.postMessage('clean up')
+  ;[out.cleaned] = await once(worker, 'message')
   await exited
   out.after = {
     familyStyles: stylesOf(family),
@@ -1031,9 +1111,9 @@ fs.copyFileSync(fixture, reference)
 })
 `
 
-test.serial('a worker exit keeps the own family of a file a direct call registered too', (t) => {
+test.serial("a worker's deregisterAllFonts keeps the own family of a file a direct call registered too", (t) => {
   const run = (env: Record<string, string>) =>
-    spawnSync(process.execPath, ['-e', EMBEDDED_EXIT_PROBE], {
+    spawnSync(process.execPath, ['-e', EMBEDDED_RELEASE_PROBE], {
       cwd: join(__dirname, '..'),
       env: { ...process.env, DISABLE_SYSTEM_FONTS_LOAD: '1', ...env },
       encoding: 'utf8',
@@ -1060,6 +1140,7 @@ test.serial('a worker exit keeps the own family of a file a direct call register
   t.is(out.familyStyles, 2, 'the direct call makes a registration of its own')
   t.is(out.ownStyles, before + 1, 'which lists the own family too')
   t.true(out.aliasedAgain)
+  t.is(out.cleaned, 'cleaned')
   const after = out.after
   t.is(after.familyStyles, 1, "the worker's face goes")
   t.is(after.ownStyles, before + 1, 'the own family stays')
@@ -1081,56 +1162,65 @@ test.serial('a worker exit keeps the own family of a file a direct call register
 // A direct setAlias made again while a worker's registerFont faces are the
 // newest of the family and of the alias name (so the call names the worker's
 // face, which the alias lists already) keeps the entry of the first call: the
-// worker's registrations go when it exits, and the alias stays with the face
-// the first call named, as without the repeat.
-test.serial('a direct setAlias made again during a worker keeps its public face after the worker exits', async (t) => {
-  deregisterAllFonts()
-  const family = 'Compat 1472 Repeat Src'
-  const alias = 'Compat 1472 Repeat Alias'
-  const {
-    files: [file],
-  } = copies(t, ['EBGaramond-Regular.ttf'])
-  const widthOf = (name: string) => {
-    const ctx = nativeCreateCanvas(10, 10).getContext('2d')
-    ctx.font = `30px "${name}"`
-    return ctx.measureText('Hamburgefonstiv').width
-  }
-  const key = GlobalFonts.registerFromPath(file, family)
-  t.truthy(key)
-  t.true(GlobalFonts.setAlias(family, alias))
-  const width = widthOf(family)
-  t.is(widthOf(alias), width, 'the alias draws the file')
-  const drawn = drawText(`30px "${family}"`)
+// worker's deregisterAllFonts removes its registrations (they would stay
+// after it exits), and the alias stays with the face the first call named, as
+// without the repeat.
+test.serial(
+  "a direct setAlias made again during a worker keeps its public face after the worker's deregisterAllFonts",
+  async (t) => {
+    deregisterAllFonts()
+    const family = 'Compat 1472 Repeat Src'
+    const alias = 'Compat 1472 Repeat Alias'
+    const {
+      files: [file],
+    } = copies(t, ['EBGaramond-Regular.ttf'])
+    const widthOf = (name: string) => {
+      const ctx = nativeCreateCanvas(10, 10).getContext('2d')
+      ctx.font = `30px "${name}"`
+      return ctx.measureText('Hamburgefonstiv').width
+    }
+    const key = GlobalFonts.registerFromPath(file, family)
+    t.truthy(key)
+    t.true(GlobalFonts.setAlias(family, alias))
+    const width = widthOf(family)
+    t.is(widthOf(alias), width, 'the alias draws the file')
+    const drawn = drawText(`30px "${family}"`)
 
-  const code = `
+    const code = `
     const { parentPort, workerData } = require('node:worker_threads')
-    const { registerFont } = require(workerData.nodeCanvas)
+    const { registerFont, deregisterAllFonts } = require(workerData.nodeCanvas)
     registerFont(workerData.file, { family: workerData.family })
     registerFont(workerData.file, { family: workerData.alias })
-    parentPort.once('message', () => parentPort.close())
+    parentPort.once('message', () => {
+      deregisterAllFonts()
+      parentPort.postMessage('cleaned')
+      parentPort.close()
+    })
     parentPort.postMessage('registered')
   `
-  const worker = new Worker(code, {
-    eval: true,
-    workerData: { nodeCanvas: join(__dirname, '..', 'node-canvas.js'), file, family, alias },
-  })
-  t.teardown(() => worker.terminate())
-  const exited = once(worker, 'exit')
-  t.deepEqual(await once(worker, 'message'), ['registered'])
-  t.is(stylesOf(family), 2, 'the worker lists a face of its own under the family')
-  t.is(stylesOf(alias), 2, 'and under the alias name')
-  t.true(GlobalFonts.setAlias(family, alias), 'the direct setAlias again')
-  worker.postMessage('exit')
-  await exited
-  t.is(stylesOf(family), 1, "the worker's face goes")
-  t.true(GlobalFonts.has(alias), 'the direct setAlias stays')
-  t.is(stylesOf(alias), 1)
-  t.is(widthOf(alias), width, 'the alias draws the file')
-  t.deepEqual(drawText(`30px "${alias}"`), drawn, 'the alias draws the face the first call named')
-  t.true(GlobalFonts.remove(key!))
-  t.false(GlobalFonts.has(family))
-  t.false(GlobalFonts.has(alias), 'the alias goes with the face it named')
-})
+    const worker = new Worker(code, {
+      eval: true,
+      workerData: { nodeCanvas: join(__dirname, '..', 'node-canvas.js'), file, family, alias },
+    })
+    t.teardown(() => worker.terminate())
+    const exited = once(worker, 'exit')
+    t.deepEqual(await once(worker, 'message'), ['registered'])
+    t.is(stylesOf(family), 2, 'the worker lists a face of its own under the family')
+    t.is(stylesOf(alias), 2, 'and under the alias name')
+    t.true(GlobalFonts.setAlias(family, alias), 'the direct setAlias again')
+    worker.postMessage('clean up')
+    t.deepEqual(await once(worker, 'message'), ['cleaned'])
+    await exited
+    t.is(stylesOf(family), 1, "the worker's face goes")
+    t.true(GlobalFonts.has(alias), 'the direct setAlias stays')
+    t.is(stylesOf(alias), 1)
+    t.is(widthOf(alias), width, 'the alias draws the file')
+    t.deepEqual(drawText(`30px "${alias}"`), drawn, 'the alias draws the face the first call named')
+    t.true(GlobalFonts.remove(key!))
+    t.false(GlobalFonts.has(family))
+    t.false(GlobalFonts.has(alias), 'the alias goes with the face it named')
+  },
+)
 
 // loadFontsFromDir never reuses a registerFont registration: it makes the
 // installed font it makes with no registerFont call, so once registerFont's
