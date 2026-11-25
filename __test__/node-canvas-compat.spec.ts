@@ -870,8 +870,8 @@ test.serial('deregisterAllFonts in a worker keeps what the main thread registere
 // as in node-canvas: a worker that preloads fonts does not change the main
 // thread's text when it exits. They belong to the exited worker, so the main
 // thread's deregisterAllFonts keeps them, and so does the deregisterAllFonts
-// of a later worker (a new env never gets an exited env's registrations, also
-// at the same address); GlobalFonts.removeAll removes them. The same
+// of a later worker (a new env gets a new token); GlobalFonts.removeAll
+// removes them. The same
 // declaration in the main thread and in a worker is a registration each.
 // Each worker stays until the main thread has measured its registration, then
 // exits on its own. In a child process: the exited worker's registrations
