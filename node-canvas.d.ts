@@ -203,12 +203,12 @@ export function registerFont(path: string, fontFace: { family: string; weight?: 
  * A worker's registrations stay when it exits, as in node-canvas, and from
  * then on only `GlobalFonts.removeAll()` removes them (no `deregisterAllFonts`
  * call does). Exited workers keep one face per distinct declaration (file,
- * family, weight and style), so a pool that recycles workers does not add
- * faces for each worker: when a worker exits, of two registrations that
- * declare the same, the earlier one goes and the later one stays, and a
- * `setAlias` made from the earlier one moves to the later one (the same file,
- * so the alias draws the same). Both stay only when the earlier one is the
- * first font registered (the one a family nobody lists draws).
+ * family, weight and style): when a worker exits, a registration that an
+ * exited worker's registration already declares goes, so a pool that
+ * recycles workers does not add faces for each worker. Both stay only when
+ * removing the earlier one would change the text: a `setAlias` was made from
+ * it, or it is the first font registered (the one a family nobody lists
+ * draws).
  */
 export function deregisterAllFonts(): void
 

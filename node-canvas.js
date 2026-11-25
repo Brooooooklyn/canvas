@@ -336,13 +336,10 @@ function deregisterAllFonts() {
   // module that reuse the cached binding share it), as GlobalFonts.remove(key)
   // removes a registration, the setAlias entries made from them included. A
   // worker's stay when it exits, as in node-canvas, and from then on only
-  // GlobalFonts.removeAll removes them. Exited workers keep one face per
-  // distinct declaration: when a worker exits, of two that declare the same,
-  // the earlier one goes and the later one stays, and a setAlias made from
-  // the earlier one moves to the later one. Both stay only when the earlier
-  // one is the first font registered. GlobalFonts registrations and
-  // loadFontsFromDir fonts are never touched, as node-canvas leaves other
-  // fonts untouched.
+  // GlobalFonts.removeAll removes them; exited workers keep one face per
+  // distinct declaration (a registration an exited one already declares goes
+  // when its worker exits). GlobalFonts registrations and loadFontsFromDir
+  // fonts are never touched, as node-canvas leaves other fonts untouched.
   // Read at each call, as in registerFont.
   binding._releaseFontFaces()
 }

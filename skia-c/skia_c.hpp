@@ -1517,8 +1517,7 @@ struct skiac_font_collection {
     // alias chains (TypefaceFontProviderCustom::registrationOf); 0 for an
     // installed font. Removing that font drops the alias (dropAliasesOf),
     // whatever names either was registered under; removing another font
-    // keeps it. A merge of exited registrations moves it to the one that
-    // stays (skiac_font_collection::retirePrivate).
+    // keeps it.
     RegistrationKey font_key = 0;
     // The face is that font's web twin (a FontFace name of a file
     // loadFontsFromDir loaded: RegisteredFont::web_typeface), so a rebuild
@@ -1550,12 +1549,12 @@ struct skiac_font_collection {
   // keeps a worker's fonts, so that exited envs keep one registration per
   // declaration. Of a registration of `owner` and an exited one that
   // declare the same (SameDeclarations), the earlier one goes (Earlier):
-  // the later one draws what both drew. The setAlias entries made from the
-  // earlier one move to the later one (the same bytes: the alias draws the
-  // same), each in its turn (moveAliases). Both stay when the earlier one is
-  // the provider's first family (ListsFirst). Every registration of `owner`
-  // that stays becomes an exited one. A live env's registrations are never
-  // merged. Returns whether one went (then the provider is rebuilt once).
+  // the later one draws what both drew. Both stay when a setAlias entry was
+  // made from the earlier one (it would go with it: dropAliasesOf), or when
+  // the earlier one is the provider's first family (ListsFirst). Every
+  // registration of `owner` that stays becomes an exited one. A live env's
+  // registrations are never merged. Returns whether one went (then the
+  // provider is rebuilt once).
   bool retirePrivate(uint32_t owner) {
     constexpr uint32_t kExited = TypefaceFontProviderCustom::kExitedOwner;
     const auto* owned = owner == kExited ? nullptr : assets->privateOf(owner);
@@ -1563,12 +1562,12 @@ struct skiac_font_collection {
       return false;
     }
     uint64_t first_alias = UINT64_MAX;
+    std::set<RegistrationKey> aliased;
     for (const SetAlias& entry : set_aliases) {
       first_alias = std::min(first_alias, entry.order);
+      aliased.insert(entry.font_key);
     }
-    // The setAlias entries that moved to another registration.
-    std::vector<bool> moved(set_aliases.size(), false);
-    bool removed = false;
+    std::set<RegistrationKey> removed;
     // A copy: the loop changes the index.
     const auto paths = *owned;
     for (const auto& [path, keys] : paths) {
@@ -1587,9 +1586,9 @@ struct skiac_font_collection {
             continue;
           }
           const RegistrationKey earlier = assets->Earlier(kept, id);
-          if (earlier && !assets->ListsFirst(earlier, first_alias)) {
+          if (earlier && !aliased.count(earlier) &&
+              !assets->ListsFirst(earlier, first_alias)) {
             drop = earlier;
-            moveAliases(drop, drop == id ? kept : id, &moved);
             break;
           }
         }
@@ -1598,74 +1597,17 @@ struct skiac_font_collection {
         }
         if (drop) {
           assets->removeTypeface(drop);
-          removed = true;
+          removed.insert(drop);
         }
       }
     }
-    if (!removed) {
+    if (removed.empty()) {
       return false;
     }
-    mergeMovedAliases(moved);
+    // None was made (`aliased`); as removeFont does.
+    dropAliasesOf(removed);
     rebuildAssets();
     return true;
-  }
-
-  // retirePrivate: the setAlias entries made from the registration `from`
-  // are made from `to` (the same declaration and bytes: SameDeclarations),
-  // each keeping its turn; the rebuild makes `to` for an entry whose turn
-  // comes before `to`'s registration (rebuildAssets). `moved` gets them.
-  void moveAliases(RegistrationKey from,
-                   RegistrationKey to,
-                   std::vector<bool>* moved) {
-    for (size_t i = 0; i < set_aliases.size(); ++i) {
-      if (set_aliases[i].font_key == from) {
-        set_aliases[i].font_key = to;
-        (*moved)[i] = true;
-      }
-    }
-  }
-
-  // retirePrivate: of the entries of one name pair made from one
-  // registration and face kind, one of them `moved` there, the earlier ones
-  // go and the latest stays. The text does not change: a web face is
-  // listed by its latest setAlias call (font_families.cpp
-  // FamilyResolver::Order), and the entries name the same face.
-  void mergeMovedAliases(const std::vector<bool>& moved) {
-    std::vector<bool> drop(set_aliases.size(), false);
-    bool any = false;
-    for (size_t i = 0; i < set_aliases.size(); ++i) {
-      if (!moved[i] || drop[i]) {
-        continue;
-      }
-      const SetAlias& entry = set_aliases[i];
-      for (size_t j = 0; j < set_aliases.size(); ++j) {
-        const SetAlias& other = set_aliases[j];
-        if (j == i || drop[j] || other.font_key != entry.font_key ||
-            other.web_face != entry.web_face || other.family != entry.family ||
-            other.alias != entry.alias) {
-          continue;
-        }
-        const size_t earlier = other.order < entry.order ? j : i;
-        drop[earlier] = true;
-        any = true;
-        if (earlier == i) {
-          break;
-        }
-      }
-    }
-    if (!any) {
-      return;
-    }
-    size_t kept = 0;
-    for (size_t i = 0; i < set_aliases.size(); ++i) {
-      if (!drop[i]) {
-        if (kept != i) {
-          set_aliases[kept] = std::move(set_aliases[i]);
-        }
-        ++kept;
-      }
-    }
-    set_aliases.resize(kept);
   }
 
   // `registered`: the call registered a face. Such a call is always kept,
@@ -2122,92 +2064,6 @@ struct skiac_font_collection {
     // (RegisteredFont::web_typeface).
     std::map<RegistrationKey, sk_sp<SkTypeface>> made_web;
     [[maybe_unused]] bool relisted = false;
-    // The font `id` made again (addRebuiltFont, no name yet) when it was
-    // not, with its face in `made` (null when it is not kept).
-    auto make = [&](RegistrationKey id) {
-      auto it = made.find(id);
-      if (it != made.end()) {
-        return it;
-      }
-      const RegisteredFont& font_info = old_fonts.at(id);
-      // The face it has now was made in the mode before this rebuild.
-      sk_sp<SkTypeface> mode_typefaces[2] = {font_info.mode_typefaces[0],
-                                             font_info.mode_typefaces[1]};
-      // (Unless it is the other mode's face, kept when that mode could not
-      // make it.)
-      if (!font_info.installed && font_info.typeface &&
-          !mode_typefaces[previous_mode] &&
-          font_info.typeface != mode_typefaces[1 - previous_mode]) {
-        mode_typefaces[previous_mode] = font_info.typeface;
-      }
-      sk_sp<SkTypeface> typeface;
-      if (font_info.installed) {
-        typeface = font_info.typeface;
-      } else if (mode_typefaces[mode]) {
-        typeface = mode_typefaces[mode];
-      } else if (!font_info.path.empty()) {
-        // Path-registered font: made from the data of the face it has, so
-        // a file replaced or removed since it was registered is not read
-        // again; from the path only when that face gives no data.
-        std::unique_ptr<SkStreamAsset> stream;
-        if (font_info.typeface) {
-          int index = 0;
-          stream = font_info.typeface->openStream(&index);
-        }
-        typeface = stream ? MakeCanvasTypeface(std::move(stream))
-                          : MakeCanvasTypefaceFromFile(font_info.path.c_str());
-      } else if (font_info.data) {
-        // Buffer-registered font: recreate from stored data
-        typeface = MakeCanvasTypeface(font_info.data);
-      }
-      if (typeface && !font_info.installed) {
-        mode_typefaces[mode] = typeface;
-      }
-      // Not made again (its file is gone, or this mode cannot read it):
-      // the face it had stays, and the next switch to this mode tries
-      // again.
-      if (!typeface) {
-        typeface = font_info.typeface;
-      }
-      // The web twin of a preloaded font with a FontFace name, made the
-      // same way: this mode's twin, else a new one from the face's data,
-      // else the twin it had.
-      sk_sp<SkTypeface> web_typeface;
-      sk_sp<SkTypeface> web_mode_typefaces[2] = {
-          font_info.web_mode_typefaces[0], font_info.web_mode_typefaces[1]};
-      if (typeface && font_info.HasWebName()) {
-        if (font_info.web_typeface && !web_mode_typefaces[previous_mode] &&
-            font_info.web_typeface != web_mode_typefaces[1 - previous_mode]) {
-          web_mode_typefaces[previous_mode] = font_info.web_typeface;
-        }
-        if (web_mode_typefaces[mode]) {
-          web_typeface = web_mode_typefaces[mode];
-        } else {
-          int index = 0;
-          if (std::unique_ptr<SkStreamAsset> stream =
-                  typeface->openStream(&index)) {
-            web_typeface = MakeCanvasTypeface(std::move(stream));
-          }
-          if (web_typeface) {
-            web_mode_typefaces[mode] = web_typeface;
-          } else {
-            web_typeface = font_info.web_typeface;
-          }
-        }
-      }
-      if (typeface) {
-        if (system_font_ids.count(id)) {
-          kept_system_font_ids.insert(id);
-          system_typeface_ids.insert(typeface->uniqueID());
-        }
-        new_assets->addRebuiltFont(id, font_info, typeface, mode_typefaces,
-                                   web_typeface, web_mode_typefaces);
-      }
-      if (web_typeface) {
-        made_web.emplace(id, web_typeface);
-      }
-      return made.emplace(id, std::move(typeface)).first;
-    };
     for (const auto& [order, kind, id, index] : names) {
       if (kind == kRelist) {
         // The same font registered again, in its turn.
@@ -2241,15 +2097,6 @@ struct skiac_font_collection {
         // above: the font was registered before the call), never another
         // face of the family name.
         auto from = entry.font_key ? made.find(entry.font_key) : made.end();
-        // An entry moved to a font registered after its turn (retirePrivate
-        // moveAliases): that font is made now, its names in their turn.
-        if (from == made.end() && entry.font_key) {
-          auto old = old_fonts.find(entry.font_key);
-          if (old != old_fonts.end() &&
-              !(old->second.installed && relist_installed)) {
-            from = make(entry.font_key);
-          }
-        }
         if (from != made.end()) {
           typeface = from->second;
           // The web twin, when the alias named a FontFace name of a
@@ -2306,7 +2153,87 @@ struct skiac_font_collection {
 #endif
         continue;
       }
-      auto it = make(id);
+      auto it = made.find(id);
+      if (it == made.end()) {
+        // The face it has now was made in the mode before this rebuild.
+        sk_sp<SkTypeface> mode_typefaces[2] = {font_info.mode_typefaces[0],
+                                               font_info.mode_typefaces[1]};
+        // (Unless it is the other mode's face, kept when that mode could not
+        // make it.)
+        if (!font_info.installed && font_info.typeface &&
+            !mode_typefaces[previous_mode] &&
+            font_info.typeface != mode_typefaces[1 - previous_mode]) {
+          mode_typefaces[previous_mode] = font_info.typeface;
+        }
+        sk_sp<SkTypeface> typeface;
+        if (font_info.installed) {
+          typeface = font_info.typeface;
+        } else if (mode_typefaces[mode]) {
+          typeface = mode_typefaces[mode];
+        } else if (!font_info.path.empty()) {
+          // Path-registered font: made from the data of the face it has, so
+          // a file replaced or removed since it was registered is not read
+          // again; from the path only when that face gives no data.
+          std::unique_ptr<SkStreamAsset> stream;
+          if (font_info.typeface) {
+            int index = 0;
+            stream = font_info.typeface->openStream(&index);
+          }
+          typeface = stream
+                         ? MakeCanvasTypeface(std::move(stream))
+                         : MakeCanvasTypefaceFromFile(font_info.path.c_str());
+        } else if (font_info.data) {
+          // Buffer-registered font: recreate from stored data
+          typeface = MakeCanvasTypeface(font_info.data);
+        }
+        if (typeface && !font_info.installed) {
+          mode_typefaces[mode] = typeface;
+        }
+        // Not made again (its file is gone, or this mode cannot read it):
+        // the face it had stays, and the next switch to this mode tries
+        // again.
+        if (!typeface) {
+          typeface = font_info.typeface;
+        }
+        // The web twin of a preloaded font with a FontFace name, made the
+        // same way: this mode's twin, else a new one from the face's data,
+        // else the twin it had.
+        sk_sp<SkTypeface> web_typeface;
+        sk_sp<SkTypeface> web_mode_typefaces[2] = {
+            font_info.web_mode_typefaces[0], font_info.web_mode_typefaces[1]};
+        if (typeface && font_info.HasWebName()) {
+          if (font_info.web_typeface && !web_mode_typefaces[previous_mode] &&
+              font_info.web_typeface != web_mode_typefaces[1 - previous_mode]) {
+            web_mode_typefaces[previous_mode] = font_info.web_typeface;
+          }
+          if (web_mode_typefaces[mode]) {
+            web_typeface = web_mode_typefaces[mode];
+          } else {
+            int index = 0;
+            if (std::unique_ptr<SkStreamAsset> stream =
+                    typeface->openStream(&index)) {
+              web_typeface = MakeCanvasTypeface(std::move(stream));
+            }
+            if (web_typeface) {
+              web_mode_typefaces[mode] = web_typeface;
+            } else {
+              web_typeface = font_info.web_typeface;
+            }
+          }
+        }
+        if (typeface) {
+          if (system_font_ids.count(id)) {
+            kept_system_font_ids.insert(id);
+            system_typeface_ids.insert(typeface->uniqueID());
+          }
+          new_assets->addRebuiltFont(id, font_info, typeface, mode_typefaces,
+                                     web_typeface, web_mode_typefaces);
+        }
+        if (web_typeface) {
+          made_web.emplace(id, web_typeface);
+        }
+        it = made.emplace(id, std::move(typeface)).first;
+      }
       if (it->second) {
         new_assets->addRebuiltAlias(id, font_info.aliases[index],
                                     font_info.alias_args[index],

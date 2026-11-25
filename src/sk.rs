@@ -6764,10 +6764,9 @@ impl FontCollection {
   }
 
   /// The N-API env of the token `owner` went: its private registrations
-  /// stay as exited ones, which keep one registration per declaration (of
-  /// two that declare the same, the earlier one goes and the later one
-  /// stays, its setAlias entries move to the later one; both stay when the
-  /// earlier one is the first font registered). Returns whether one went.
+  /// stay as exited ones, which keep one registration per declaration (one
+  /// that an exited registration draws the same as goes). Returns whether
+  /// one went.
   pub fn retire_private(&self, owner: u32) -> bool {
     unsafe { ffi::skiac_font_collection_retire_private(self.0, owner) }
   }
