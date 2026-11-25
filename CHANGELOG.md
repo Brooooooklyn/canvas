@@ -1,3 +1,15 @@
+## [1.2.1](https://github.com/Brooooooklyn/canvas/compare/v1.2.0...v1.2.1) (2026-11-25)
+
+
+### Bug Fixes
+
+* **fonts:** align fontVariationSettings with Chrome CSS and fix VF edge cases ([#1470](https://github.com/Brooooooklyn/canvas/issues/1470)) ([841992a](https://github.com/Brooooooklyn/canvas/commit/841992ae52f21ed4d5fdeff94ea8ab7c0878564d))
+* **node-canvas:** registerFont descriptors and private cleanup registrations ([#1473](https://github.com/Brooooooklyn/canvas/issues/1473)) ([1d6ea39](https://github.com/Brooooooklyn/canvas/commit/1d6ea3993b159a5917c9989eaf40a069beabaf85))
+
+
+### Features
+
+* chrome/m158 ([#1469](https://github.com/Brooooooklyn/canvas/issues/1469)) ([b3698ce](https://github.com/Brooooooklyn/canvas/commit/b3698ce3fbb63dceda9adde50a5f5222fa98a097))
 # [1.2.0](https://github.com/Brooooooklyn/canvas/compare/v1.1.1...v1.2.0) (2026-11-20)
 
 
