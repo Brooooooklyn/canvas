@@ -278,9 +278,14 @@ function _addCompatMethods(canvas) {
  * Register a font file with the specified font face properties.
  * Compatible with node-canvas's registerFont(path, { family, weight?, style? }).
  *
- * The file is registered as GlobalFonts.registerFromPath does, with `weight`
- * and `style` as the face's @font-face descriptors, so the faces of one family are picked by
- * them with CSS font matching. Register one call per face file.
+ * The file is registered as a registration of its own, made as
+ * GlobalFonts.registerFromPath makes a path it never saw, with `weight` and
+ * `style` as the face's @font-face descriptors, so the faces of one family
+ * are picked by them with CSS font matching. Register one call per face
+ * file. Only the registerFont calls of this N-API env (the main thread or
+ * one worker) share it: the same declaration again reuses it and makes it
+ * the newest. A GlobalFonts call or loadFontsFromDir never reuses or
+ * changes it, so a file registered both ways has a face from each.
  *
  * - A field that is not given is `auto`: a call with only `family` registers
  *   the file as GlobalFonts.registerFromPath(path, family) does, and a
@@ -311,7 +316,6 @@ function registerFont(path, fontFace) {
   const weight = typeof w === 'string' || typeof w === 'number' ? String(w) : 'auto'
   const style = typeof s === 'string' ? s : 'auto'
   // Read from the binding at each call, not once at load: the tests stub it.
-  // The registry declares the name with this N-API env's owner token, for its deregisterAllFonts.
   if (!binding._registerFontFace(path, family, weight, style)) {
     throw new Error(`Failed to register font from "${path}" with family "${family}"`)
   }
@@ -323,14 +327,13 @@ function registerFont(path, fontFace) {
  * user-registered fonts and leaves system fonts untouched.
  */
 function deregisterAllFonts() {
-  // The registry releases what the registerFont calls of this N-API env declared
-  // (one per loaded native binding: the main thread or a worker; copies of
-  // this module that reuse the cached binding share it). A worker's are
-  // released when it exits. It decides, under its lock, what goes: a
-  // name no other declaration (a GlobalFonts call or a registerFont in
-  // another thread) holds, and a registration with no name left. So it
-  // removes only what registerFont added, as node-canvas leaves other fonts
-  // untouched. Read at each call, as in registerFont.
+  // Removes the registerFont registrations of this N-API env whole (one per
+  // loaded native binding: the main thread or a worker; copies of this
+  // module that reuse the cached binding share it), as GlobalFonts.remove(key)
+  // removes a registration, the setAlias entries made from them included. A
+  // worker's go when it exits. GlobalFonts registrations and loadFontsFromDir
+  // fonts are never touched, as node-canvas leaves other fonts untouched.
+  // Read at each call, as in registerFont.
   binding._releaseFontFaces()
 }
 

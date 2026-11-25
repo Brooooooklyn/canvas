@@ -624,8 +624,6 @@ void skiac_debug_text_line(skiac_font_collection* c_collection,
   out += std::to_string(c_collection->font_face_cores);
   out += ",\"splitFamilies\":";
   out += std::to_string(c_collection->assets->splitFamilyCount());
-  out += ",\"registerFontOwners\":";
-  out += std::to_string(c_collection->assets->registerFontOwnerCount());
   out += ",\"runs\":[";
   for (size_t r = 0; r < line->blink.runs.size(); ++r) {
     const BlinkRun& run = line->blink.runs[r];

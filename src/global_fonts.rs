@@ -254,55 +254,58 @@ fn read_face_descriptors(
   ))
 }
 
-/// The registerFont owner token of each N-API env (node-canvas.js), by the
-/// env's address. Every registerFont call of an env declares its names with
-/// the env's one token (issued at its first call, never issued twice), so
-/// the registry keeps one owner entry per env and name, whatever the number
-/// of calls; deregisterAllFonts releases the token's names (the token stays
-/// for the env's later calls), and an env cleanup hook releases them when
-/// the env goes (a worker that exits without deregisterAllFonts). Every
-/// node-canvas.js instance of one env shares the token (a Jest-style reload
-/// of the package keeps the .node binding, so its env). An entry lives from
-/// the first registerFont of its env to the env's cleanup, so an address
-/// reused by a later env gets a new token. The main thread's hook runs at
-/// exit, and rebuilds only when it changes something. Lock order: the font
-/// lock, then this.
+/// The registerFont env token of each N-API env (node-canvas.js), by the
+/// env's address, and the last token issued. Each registerFont call makes a
+/// private registration of its env's token (RegisteredFont::owner in
+/// skia_c.hpp): only registerFont calls of the same env share it, and no
+/// GlobalFonts call or loadFontsFromDir ever reuses or changes it.
+/// deregisterAllFonts removes the env's private registrations whole, as
+/// GlobalFonts.remove removes one (the token stays for the env's later
+/// calls), and an env cleanup hook removes them when the env goes (a worker
+/// that exits without deregisterAllFonts). Every node-canvas.js instance of
+/// one env shares the token (a Jest-style reload of the package keeps the
+/// .node binding, so its env). An entry lives from the first registerFont
+/// of its env to the env's cleanup, so an address reused by a later env
+/// gets a new token; a token is never issued twice. The main thread's hook
+/// runs at exit, and rebuilds only when it removes something. Lock order:
+/// the font lock, then this.
 #[cfg_attr(test, allow(dead_code))]
-static ENV_OWNERS: Mutex<Vec<(usize, u32)>> = Mutex::new(Vec::new());
+static ENV_OWNERS: Mutex<(u32, Vec<(usize, u32)>)> = Mutex::new((0, Vec::new()));
 
 #[cfg_attr(test, allow(dead_code))]
-fn env_owners<'a>() -> MutexGuard<'a, Vec<(usize, u32)>> {
+fn env_owners<'a>() -> MutexGuard<'a, (u32, Vec<(usize, u32)>)> {
   ENV_OWNERS.lock().unwrap_or_else(PoisonError::into_inner)
 }
 
-/// The env cleanup hook: what the token of the env `key` still holds goes.
+/// The env cleanup hook: the private registrations of the env `key` go.
 #[cfg_attr(test, allow(dead_code))]
 fn release_env_owner(key: usize) {
   // A token was issued, so the collection exists.
   let Some(collection) = GLOBAL_FONT_COLLECTION.get() else {
-    env_owners().retain(|(env, _)| *env != key);
+    env_owners().1.retain(|(env, _)| *env != key);
     return;
   };
   let font = collection.lock();
-  let mut envs = env_owners();
-  let Some(at) = envs.iter().position(|(env, _)| *env == key) else {
+  let mut owners = env_owners();
+  let Some(at) = owners.1.iter().position(|(env, _)| *env == key) else {
     return;
   };
-  let (_, owner) = envs.swap_remove(at);
-  drop(envs);
+  let (_, owner) = owners.1.swap_remove(at);
+  drop(owners);
   // A poisoned font lock: another thread panicked mid-change, leave it be.
   if let Ok(font) = font
-    && font.release_owner(owner)
+    && font.release_private(owner)
   {
     note_font_collection_mutation();
   }
 }
 
-/// node-canvas registerFont (node-canvas.js): registers the file as
+/// node-canvas registerFont (node-canvas.js): registers the file as a
+/// private registration of this env (ENV_OWNERS), made as
 /// `GlobalFonts.registerFromPath(font_path, name_alias, { weight, style })`
-/// does (the same key, names and descriptors), and the name the call
-/// declares is declared by this env's owner token (ENV_OWNERS). `weight` and
-/// `style` are read each on its own with the @font-face grammar: one it
+/// makes a path it never saw. Only this env's registerFont calls share it:
+/// the same declaration again reuses it (and makes it the newest). `weight`
+/// and `style` are read each on its own with the @font-face grammar: one it
 /// rejects counts as not given (`auto`), as node-canvas ignores unknown
 /// values instead of throwing, and the other is kept. Returns whether the
 /// file was registered. Not API: reachable through js-binding, as
@@ -335,24 +338,26 @@ pub fn register_font_face(
   };
   let font = get_font().map_err(into_napi_error)?;
   let key = env.raw() as usize;
-  let mut envs = env_owners();
+  let mut owners = env_owners();
   // The first registerFont of this env issues its token and adds the hook
-  // that releases what the env leaves (before anything is registered, so a
+  // that removes what the env leaves (before anything is registered, so a
   // hook that cannot be added registers nothing).
-  let owner = match envs.iter().find(|(env, _)| *env == key) {
+  let owner = match owners.1.iter().find(|(env, _)| *env == key) {
     Some((_, owner)) => *owner,
     None => {
-      let Some(owner) = font.issue_owner() else {
+      // No token left.
+      let Some(owner) = owners.0.checked_add(1) else {
         return Ok(false);
       };
       env.add_env_cleanup_hook(key, release_env_owner)?;
-      envs.push((key, owner));
+      owners.0 = owner;
+      owners.1.push((key, owner));
       owner
     }
   };
-  drop(envs);
+  drop(owners);
   if font
-    .register_from_path_owned(
+    .register_from_path_private(
       font_path.as_str(),
       maybe_name_alias.as_deref(),
       descriptors.as_ref(),
@@ -366,12 +371,12 @@ pub fn register_font_face(
   Ok(true)
 }
 
-/// node-canvas deregisterAllFonts (node-canvas.js): releases what this env's
-/// registerFont calls declared (its owner token, ENV_OWNERS). The registry
-/// decides, under the font lock, what goes: a name no other owner (a
-/// GlobalFonts call, or the registerFont calls of another env) holds, and a
-/// font with no declared name left. Returns whether anything changed. Not
-/// API: reachable through js-binding, as `_toNumber` is.
+/// node-canvas deregisterAllFonts (node-canvas.js): removes this env's
+/// private registrations (ENV_OWNERS) whole, as GlobalFonts.remove removes
+/// one, the setAlias entries made from them included. GlobalFonts
+/// registrations and loadFontsFromDir fonts are never touched. Returns
+/// whether anything went. Not API: reachable through js-binding, as
+/// `_toNumber` is.
 // Only JS calls it: the lib test build registers no napi exports.
 #[cfg_attr(test, allow(dead_code))]
 #[napi(js_name = "_releaseFontFaces")]
@@ -379,15 +384,16 @@ pub fn release_font_faces(env: &Env) -> napi::Result<bool> {
   let font = get_font().map_err(into_napi_error)?;
   let key = env.raw() as usize;
   // The entry stays: its hook is still added, and the env's later calls
-  // declare with the same token.
+  // register with the same token.
   let Some(owner) = env_owners()
+    .1
     .iter()
     .find(|(env, _)| *env == key)
     .map(|(_, owner)| *owner)
   else {
     return Ok(false);
   };
-  let changed = font.release_owner(owner);
+  let changed = font.release_private(owner);
   if changed {
     note_font_collection_mutation();
   }

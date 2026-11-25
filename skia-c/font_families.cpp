@@ -2315,10 +2315,6 @@ uint32_t skiac_font_collection_register_system_font(
     // A name a register call gives this file later is a FontFace of its own
     // (RegisteredFont::WebName).
     c_collection->assets->markPreloaded(id);
-  } else {
-    // loadFontsFromDir holds it too: releasing the registerFont
-    // declarations on it never removes it (RegisteredFont::dir_held).
-    c_collection->assets->markDirHeld(id);
   }
   c_collection->markCachesDirty();
   return id;

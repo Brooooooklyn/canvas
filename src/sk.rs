@@ -1578,9 +1578,7 @@ pub mod ffi {
       descriptors: *const skiac_face_descriptors,
     ) -> u32;
 
-    pub fn skiac_font_collection_issue_owner(c_font_collection: *mut skiac_font_collection) -> u32;
-
-    pub fn skiac_font_collection_register_from_path_owned(
+    pub fn skiac_font_collection_register_from_path_private(
       c_font_collection: *mut skiac_font_collection,
       font_path: *const c_char,
       maybe_name_alias: *const c_char,
@@ -1588,7 +1586,7 @@ pub mod ffi {
       owner: u32,
     ) -> u32;
 
-    pub fn skiac_font_collection_release_owner(
+    pub fn skiac_font_collection_release_private(
       c_font_collection: *mut skiac_font_collection,
       owner: u32,
     ) -> bool;
@@ -6717,18 +6715,11 @@ impl FontCollection {
     }
   }
 
-  /// node-canvas: a new registerFont owner token for an N-API env, never
-  /// issued twice. None when no token is left.
-  pub fn issue_owner(&self) -> Option<u32> {
-    let owner = unsafe { ffi::skiac_font_collection_issue_owner(self.0) };
-    (owner != 0).then_some(owner)
-  }
-
-  /// node-canvas registerFont: [`Self::register_from_path`], and the name the
-  /// call declares is declared by `owner` (its env's token,
-  /// [`Self::issue_owner`]), for [`Self::release_owner`]. None when nothing
-  /// was registered.
-  pub fn register_from_path_owned(
+  /// node-canvas registerFont: [`Self::register_from_path`] as a private
+  /// registration of the N-API env token `owner` (not 0): only the same
+  /// owner's calls share it, and it goes with [`Self::release_private`].
+  /// None when nothing was registered.
+  pub fn register_from_path_private(
     &self,
     font_path: &str,
     maybe_name_alias: Option<&str>,
@@ -6739,7 +6730,7 @@ impl FontCollection {
     // As register_from_path: an alias with a NUL is no alias.
     let alias = maybe_name_alias.and_then(|name| CString::new(name).ok());
     let typeface_id = unsafe {
-      ffi::skiac_font_collection_register_from_path_owned(
+      ffi::skiac_font_collection_register_from_path_private(
         self.0,
         fp.as_ptr(),
         alias.as_ref().map_or(ptr::null(), |a| a.as_ptr()),
@@ -6750,10 +6741,11 @@ impl FontCollection {
     (typeface_id > 0).then_some(typeface_id)
   }
 
-  /// node-canvas deregisterAllFonts: releases what the owner token `owner`
-  /// declared. Returns whether the registry changed.
-  pub fn release_owner(&self, owner: u32) -> bool {
-    unsafe { ffi::skiac_font_collection_release_owner(self.0, owner) }
+  /// node-canvas deregisterAllFonts: removes the private registrations of
+  /// `owner` whole, as [`Self::unregister_batch`] removes fonts. Returns
+  /// whether any went.
+  pub fn release_private(&self, owner: u32) -> bool {
+    unsafe { ffi::skiac_font_collection_release_private(self.0, owner) }
   }
 
   pub fn unregister(&self, typeface_id: u32) -> bool {
