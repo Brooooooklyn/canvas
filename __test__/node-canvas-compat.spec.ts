@@ -978,7 +978,11 @@ test.serial('a worker exit keeps the own family of a file a direct call register
   t.deepEqual(drawText(`30px "${own}"`), ownDrawn)
   t.deepEqual(drawText(`bold 30px "${family}"`), drawn)
   t.is(widthOf(`30px "${own}"`), width, 'the own family draws the file')
-  t.is(widthOf('30px "Compat 1472 Embedded Ref"'), missing, 'the reference name is gone')
+  t.is(
+    widthOf('30px "Compat 1472 Embedded Ref"'),
+    widthOf('30px "Compat 1472 No Such Font"'),
+    'the reference name is gone',
+  )
   t.is(widthOf(`bold 30px "${family}"`), width, 'the direct face draws the file')
   t.true(GlobalFonts.has(alias), 'the direct setAlias stays')
   t.is(widthOf(`30px "${alias}"`), width, 'the alias draws the file')
@@ -1247,15 +1251,23 @@ const path = require('path')
 const { createCanvas, GlobalFonts, registerFont, deregisterAllFonts } = require('./node-canvas.js')
 const file = path.join('__test__', 'fonts', 'Harmattan-Regular.ttf')
 const own = 'Harmattan', family = 'Compat 1472 Only Name'
+// On Linux with no other fonts, a family nobody lists draws with a
+// registered face, so 'draws the file' is checked only for a listed family,
+// against REF: the width the file gives in a process that only registers it.
 const m = (name) => {
   const ctx = createCanvas(10, 10).getContext('2d')
   ctx.font = '30px "' + name + '"'
   return ctx.measureText('Hamburgefonstiv').width
 }
+if (process.env.MODE === 'ref') {
+  GlobalFonts.registerFromPath(path.resolve(file))
+  process.stdout.write(JSON.stringify(m(own)))
+  process.exit(0)
+}
 const state = () => ({
   own: GlobalFonts.has(own),
   ownStyles: GlobalFonts.families.find((f) => f.family === own)?.styles.length ?? 0,
-  ownDraws: m(own) !== m('Compat 1472 No Such Font'),
+  ownDraws: GlobalFonts.has(own) && JSON.stringify(m(own)) === process.env.REF,
   family: GlobalFonts.has(family),
 })
 const out = { before: state() }
@@ -1277,12 +1289,16 @@ process.stdout.write(JSON.stringify(out))
 `
 
 test.serial('registerFont with a family does not list the embedded family', (t) => {
-  const { stdout, stderr, status } = spawnSync(process.execPath, ['-e', ONLY_FAMILY_PROBE], {
-    cwd: join(__dirname, '..'),
-    env: { ...process.env, DISABLE_SYSTEM_FONTS_LOAD: '1' },
-    encoding: 'utf8',
-    timeout: 60_000,
-  })
+  const run = (env: Record<string, string>) =>
+    spawnSync(process.execPath, ['-e', ONLY_FAMILY_PROBE], {
+      cwd: join(__dirname, '..'),
+      env: { ...process.env, DISABLE_SYSTEM_FONTS_LOAD: '1', ...env },
+      encoding: 'utf8',
+      timeout: 60_000,
+    })
+  const ref = run({ MODE: 'ref' })
+  t.is(ref.status, 0, ref.stderr)
+  const { stdout, stderr, status } = run({ REF: ref.stdout })
   t.is(status, 0, stderr)
   const none = { own: false, ownStyles: 0, ownDraws: false, family: false }
   t.deepEqual(JSON.parse(stdout), {
@@ -1316,13 +1332,26 @@ const m = (name) => {
     return [t.width, t.actualBoundingBoxAscent, t.actualBoundingBoxDescent, t.fontBoundingBoxAscent, t.fontBoundingBoxDescent]
   })
 }
-const state = () => ({
-  has: GlobalFonts.has(own),
-  styles: GlobalFonts.families.find((f) => f.family === own)?.styles.length ?? 0,
-  metrics: m(own),
-})
+// On Linux with no other fonts, a family nobody lists draws with a
+// registered face (a registerFont face too), so metrics are compared only
+// while the family is listed, against REF: the metrics the file gives in a
+// process that only registers it.
 const order = process.env.ORDER
-const out = { missing: m('Compat 1472 No Such Font') }
+if (order === 'ref') {
+  GlobalFonts.registerFromPath(file)
+  process.stdout.write(JSON.stringify(m(own)))
+  fs.rmSync(dir, { recursive: true, force: true })
+  process.exit(0)
+}
+const state = () => {
+  const has = GlobalFonts.has(own)
+  return {
+    has,
+    styles: GlobalFonts.families.find((f) => f.family === own)?.styles.length ?? 0,
+    metrics: has ? m(own) : null,
+  }
+}
+const out = { ref: JSON.parse(process.env.REF) }
 if (order === 'registerFont first') registerFont(file, { family })
 out.loaded = GlobalFonts.loadFontsFromDir(dir)
 if (order === 'dir first') registerFont(file, { family })
@@ -1333,7 +1362,7 @@ out.removed = !!key && GlobalFonts.remove(key)
 out.removedState = state()
 if (order !== 'none') {
   out.family = GlobalFonts.has(family)
-  out.familyDraws = JSON.stringify(m(family)) !== JSON.stringify(out.missing)
+  out.familyDraws = JSON.stringify(m(family)) === JSON.stringify(out.ref)
   out.familyKept = JSON.stringify(m(family)) === JSON.stringify(familyLive)
 }
 const again = GlobalFonts.registerFromPath(file)
@@ -1348,22 +1377,25 @@ process.stdout.write(JSON.stringify(out))
 test.serial(
   'removing the loadFontsFromDir registration through its key keeps registerFont and the own family',
   async (t) => {
+    let ref = ''
     const run = (order: string) => {
       const { stdout, stderr, status } = spawnSync(process.execPath, ['-e', DIR_KEY_REMOVE_PROBE], {
         cwd: join(__dirname, '..'),
-        env: { ...process.env, DISABLE_SYSTEM_FONTS_LOAD: '1', ORDER: order },
+        env: { ...process.env, DISABLE_SYSTEM_FONTS_LOAD: '1', ORDER: order, REF: ref },
         encoding: 'utf8',
         timeout: 60_000,
       })
       if (status !== 0) throw new Error(stderr)
-      return JSON.parse(stdout)
+      return order === 'ref' ? stdout : JSON.parse(stdout)
     }
+    ref = run('ref')
     const baseline = run('none')
     t.is(baseline.loaded, 1)
     t.true(baseline.removed)
     t.true(baseline.live.has)
     t.false(baseline.removedState.has, 'the own family goes with the key')
-    t.deepEqual(baseline.removedState.metrics, baseline.missing)
+    t.is(baseline.removedState.metrics, null)
+    t.deepEqual(baseline.live.metrics, baseline.ref, 'the own family draws the file')
     t.true(baseline.again.has, 'registering the path again lists the own family')
     t.true(baseline.againRemoved)
     for (const order of ['registerFont first', 'dir first']) {
