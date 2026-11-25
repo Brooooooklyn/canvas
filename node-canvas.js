@@ -20,7 +20,8 @@ const {
 } = require('./index.js')
 
 // CanvasRenderingContext2D is not re-exported by index.js, grab from native bindings
-const { CanvasRenderingContext2D } = require('./js-binding')
+const binding = require('./js-binding')
+const { CanvasRenderingContext2D } = binding
 
 // node-canvas defaults JPEG quality to 0.75 across all paths.
 // @napi-rs/canvas native default is 0.92 (matching Blink/Chrome).
@@ -273,31 +274,55 @@ function _addCompatMethods(canvas) {
 // Public API: registerFont / deregisterAllFonts
 // ---------------------------------------------------------------------------
 
-// Track FontKeys from registerFont() so deregisterAllFonts() can remove
-// only user-registered fonts (matching node-canvas behavior which leaves
-// system fonts untouched).
-const _registeredFontKeys = []
-
 /**
  * Register a font file with the specified font face properties.
  * Compatible with node-canvas's registerFont(path, { family, weight?, style? }).
  *
- * Note: @napi-rs/canvas auto-detects weight and style from font file metadata
- * (matching browser behavior). The weight and style properties in fontFace are
- * accepted for API compatibility but the actual values are read from the font.
+ * The file is registered as a registration of its own, made as
+ * GlobalFonts.registerFromPath makes a path it never saw, with `weight` and
+ * `style` as the face's @font-face descriptors, so the faces of one family
+ * are picked by them with CSS font matching. Register one call per face
+ * file. A non-empty `family` is the face's only name, as
+ * `new FontFace(family, ...)` in Chrome: the family embedded in the file is
+ * not listed (Behavior change from 1.2.0, where it was). `family: ''` (or
+ * the embedded name) registers it under its embedded name. Only the
+ * registerFont calls of this N-API env (the main thread or one worker) share
+ * it: the same declaration again reuses it and makes it the newest. A
+ * GlobalFonts call or loadFontsFromDir never reuses it, so a file registered
+ * both ways has a face from each.
+ *
+ * - A field that is not given is `auto`: a call with only `family` registers
+ *   the file as GlobalFonts.registerFromPath(path, family) does, except that
+ *   the embedded family is not listed, and a variable font keeps its axes.
+ * - An explicit weight or style, `'normal'` included, pins a variable font to
+ *   it, as with @font-face. Use a range such as `'100 900'` to keep the axis.
+ * - Each of `weight` and `style` is read on its own: a value the @font-face
+ *   grammar rejects (`'bolder'`, `''`) counts as not given, as node-canvas
+ *   ignores unknown values instead of throwing, and the other field is kept.
+ *   A value the grammar accepts (`calc(700)` too) works exactly as in
+ *   GlobalFonts.registerFromPath. It throws only when the file cannot be
+ *   registered.
  *
  * @param {string} path   Absolute path to the font file (.ttf, .otf, etc.)
- * @param {{ family: string, weight?: string, style?: string }} fontFace
+ * @param {{ family: string, weight?: string | number, style?: string }} fontFace
  */
 function registerFont(path, fontFace) {
-  if (!fontFace || typeof fontFace.family !== 'string') {
+  const family = fontFace ? fontFace.family : undefined
+  if (typeof family !== 'string') {
     throw new TypeError('registerFont requires a fontFace with a "family" property')
   }
-  const key = GlobalFonts.registerFromPath(path, fontFace.family)
-  if (!key) {
-    throw new Error(`Failed to register font from "${path}" with family "${fontFace.family}"`)
+  // node-canvas reads `weight` as a string or a number and `style` as a
+  // string; any other value counts as not given. The native call reads each
+  // value with the @font-face grammar (src/global_fonts.rs
+  // register_font_face): one it rejects counts as not given too.
+  const w = fontFace.weight
+  const s = fontFace.style
+  const weight = typeof w === 'string' || typeof w === 'number' ? String(w) : 'auto'
+  const style = typeof s === 'string' ? s : 'auto'
+  // Read from the binding at each call, not once at load: the tests stub it.
+  if (!binding._registerFontFace(path, family, weight, style)) {
+    throw new Error(`Failed to register font from "${path}" with family "${family}"`)
   }
-  _registeredFontKeys.push(key)
 }
 
 /**
@@ -306,10 +331,19 @@ function registerFont(path, fontFace) {
  * user-registered fonts and leaves system fonts untouched.
  */
 function deregisterAllFonts() {
-  if (_registeredFontKeys.length > 0) {
-    GlobalFonts.removeBatch(_registeredFontKeys)
-    _registeredFontKeys.length = 0
-  }
+  // Removes the registerFont registrations of this N-API env whole (one per
+  // loaded native binding: the main thread or a worker; copies of this
+  // module that reuse the cached binding share it), as GlobalFonts.remove(key)
+  // removes a registration, the setAlias entries made from them included. A
+  // worker's stay when it exits, as in node-canvas (then only
+  // GlobalFonts.removeAll removes them; no later worker reuses them, so a
+  // pool that recycles workers should call this in each worker before it
+  // exits, or each worker adds its faces, as each adds its fonts in
+  // node-canvas). GlobalFonts
+  // registrations and loadFontsFromDir fonts are never touched, as
+  // node-canvas leaves other fonts untouched.
+  // Read at each call, as in registerFont.
+  binding._releaseFontFaces()
 }
 
 // ---------------------------------------------------------------------------

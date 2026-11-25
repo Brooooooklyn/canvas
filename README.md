@@ -186,6 +186,10 @@ GlobalFonts.registerFromPath('./fonts/Lato-Bold.ttf', 'MyLato', { weight: 700 })
 
 > **Behavior change**: registered faces with no descriptors are all `auto`, so in such a family the face registered last draws every style (made bold or italic when that file is not), as Chrome draws `@font-face` rules with no descriptors. Before, each face was picked by the file's own style.
 
+`registerFont(path, { family, weight, style })` from `@napi-rs/canvas/node-canvas` passes `weight` and `style` as these descriptors, so one call per face file picks each face. A field that is not given is `auto`, and a value the `@font-face` grammar rejects (`'bolder'`) counts as not given while the other field is kept; a value it accepts (`calc(700)` too) works exactly as in `registerFromPath`. A face declared bold or italic is not made bold or italic when its file is not, and an explicit weight (`'normal'` included) pins a variable font to it. `registerFont`'s faces are its own, so a file also registered through `GlobalFonts` or `loadFontsFromDir` has a face from each (`GlobalFonts.families` shows both) until `deregisterAllFonts`. `deregisterAllFonts` removes the `registerFont` faces of its own thread only (the main thread or one worker), and a worker's faces stay after it exits, as in node-canvas. A later worker does not reuse them, so each worker that calls `registerFont` adds its faces for the life of the process (only `GlobalFonts.removeAll()` removes them then): a pool that recycles workers should call `deregisterAllFonts()` in each worker before it exits.
+
+> **Behavior change**: `registerFont(path, { family: 'X' })` lists the face under `X` only, as `new FontFace('X', ...)` does in Chrome, so the face is no longer usable under the family name embedded in the file. Pass `family: ''` (or the embedded name) to register it under its embedded name.
+
 These still depend on the OS and the machine:
 
 - Installed fonts. Names like `Arial` or `Helvetica`, and the generic families (`sans-serif`, `serif`, `monospace`, `system-ui`, the canvas default `10px sans-serif`) resolve to whatever is installed.

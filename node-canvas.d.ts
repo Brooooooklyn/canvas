@@ -168,18 +168,43 @@ export function loadImage(
  * Register a font file for use in canvas text rendering.
  * Compatible with node-canvas's `registerFont()`.
  *
- * Note: @napi-rs/canvas auto-detects weight and style from font file metadata
- * (matching browser behavior). The `weight` and `style` properties in fontFace
- * are accepted for API compatibility.
+ * A non-empty `family` is the face's only name, as `new FontFace(family, ...)`
+ * in Chrome: the family embedded in the file is not listed (Behavior change
+ * from 1.2.0, where it was). `family: ''` (or the embedded name) registers
+ * the face under its embedded name.
+ *
+ * `weight` and `style` are the face's `@font-face` descriptors: the faces of
+ * one family are picked by them with CSS font matching. Register one call per
+ * face file, e.g. `{ family: 'Lato', weight: 'bold', style: 'italic' }`.
+ * A field that is not given, or that the `@font-face` grammar rejects, is
+ * `auto`, and the other field is kept; a value the grammar accepts
+ * (`calc(700)` too) works exactly as in `GlobalFonts.registerFromPath`. An
+ * explicit weight or style (`'normal'` included) pins a variable font to it;
+ * use a range such as `'100 900'` to keep the axis. It throws only when the
+ * file cannot be registered.
  *
  * @param path     Absolute path to the font file (.ttf, .otf, etc.)
  * @param fontFace Font face properties matching CSS @font-face descriptors
  */
-export function registerFont(path: string, fontFace: { family: string; weight?: string; style?: string }): void
+export function registerFont(path: string, fontFace: { family: string; weight?: string | number; style?: string }): void
 
 /**
  * Deregister all previously registered fonts.
- * Compatible with node-canvas's `deregisterAllFonts()`.
+ * Compatible with node-canvas's `deregisterAllFonts()`: it removes the
+ * registrations that `registerFont` calls made through the same loaded native
+ * binding (one per main thread or worker; a worker's stay when it exits, as in
+ * node-canvas, and only its own `deregisterAllFonts` removes them), each
+ * whole, as `GlobalFonts.remove(key)` removes one, with the `setAlias` entries
+ * made from them. `GlobalFonts` registrations and `loadFontsFromDir` fonts are
+ * never touched. A `registerFont` registration is its own: a file registered
+ * both with `registerFont` and with `GlobalFonts` has a face from each while
+ * both are live, and a `setAlias` made while a `registerFont` face of the
+ * family was the newest goes with it.
+ *
+ * A later worker never reuses an exited worker's registrations, so each
+ * worker that calls `registerFont` adds its faces for the life of the process
+ * (only `GlobalFonts.removeAll()` removes them then). A pool that recycles
+ * workers should call `deregisterAllFonts()` in each worker before it exits.
  */
 export function deregisterAllFonts(): void
 

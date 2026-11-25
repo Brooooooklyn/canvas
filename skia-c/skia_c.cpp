@@ -4628,7 +4628,7 @@ void skiac_font_collection_get_family(
 // and moves too (Chrome 157, FontFaces "ReX" Lato, Oswald, Lato, Oswald: Oswald
 // draws, 37.32).
 static void RelistRegistered(skiac_font_collection* c_font_collection,
-                             uint32_t id,
+                             RegistrationKey id,
                              size_t registered,
                              const sk_sp<SkTypeface>& typeface,
                              const char* name_alias) {
@@ -4703,16 +4703,64 @@ uint32_t skiac_font_collection_register_from_path(
   const size_t registered =
       c_font_collection->assets->getRegisteredFonts().size();
   // As register: the call declares the name with `descriptors` (a twin of
-  // another declaration of the same path gets a FontKey of its own).
-  const uint32_t typeface_id =
+  // another declaration of the same path gets a FontKey of its own). With
+  // no owner the key is a FontKey.
+  const uint32_t typeface_id = static_cast<uint32_t>(
       c_font_collection->assets->registerTypefaceFromPathWithTracking(
-          font_path, typeface, name_alias, descriptors);
+          font_path, typeface, name_alias, descriptors));
   if (typeface_id) {
     RelistRegistered(c_font_collection, typeface_id, registered, typeface,
                      name_alias);
     c_font_collection->markCachesDirty();
   }
   return typeface_id;
+}
+
+bool skiac_font_collection_register_from_path_private(
+    skiac_font_collection* c_font_collection,
+    const char* font_path,
+    const char* name_alias,
+    const skiac_face_descriptors* descriptors,
+    uint32_t owner) {
+  if (!owner) {
+    return false;
+  }
+  // As skiac_font_collection_register_from_path, over the private
+  // registrations of `owner` only (a non-empty alias is the face's only
+  // name): the file is read now, never taken from a registration a
+  // GlobalFonts call or loadFontsFromDir made.
+  c_font_collection->prepareLookup();
+  auto typeface = MakeCanvasTypefaceFromFile(font_path);
+  if (!typeface) {
+    return false;
+  }
+  const size_t registered =
+      c_font_collection->assets->getRegisteredFonts().size();
+  const RegistrationKey typeface_id =
+      c_font_collection->assets->registerTypefaceFromPathWithTracking(
+          font_path, typeface, name_alias, descriptors, owner);
+  if (!typeface_id) {
+    return false;
+  }
+  RelistRegistered(c_font_collection, typeface_id, registered, typeface,
+                   name_alias);
+  c_font_collection->markCachesDirty();
+  return true;
+}
+
+bool skiac_font_collection_release_private(
+    skiac_font_collection* c_font_collection,
+    uint32_t owner) {
+  const std::set<RegistrationKey> removed_ids =
+      c_font_collection->assets->removePrivate(owner);
+  if (removed_ids.empty()) {
+    return false;
+  }
+  // As skiac_font_collection_unregister_batch: the setAlias entries made
+  // from them go too, and one rebuild.
+  c_font_collection->dropAliasesOf(removed_ids);
+  c_font_collection->rebuildAssets();
+  return true;
 }
 
 size_t skiac_font_collection_unregister(
@@ -4736,7 +4784,7 @@ size_t skiac_font_collection_unregister_batch(
     const uint32_t* typeface_ids,
     size_t count) {
   size_t removed_count = 0;
-  std::set<uint32_t> removed_ids;
+  std::set<RegistrationKey> removed_ids;
   for (size_t i = 0; i < count; i++) {
     if (c_font_collection->assets->removeTypeface(typeface_ids[i])) {
       removed_count++;

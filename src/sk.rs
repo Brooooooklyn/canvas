@@ -1578,6 +1578,19 @@ pub mod ffi {
       descriptors: *const skiac_face_descriptors,
     ) -> u32;
 
+    pub fn skiac_font_collection_register_from_path_private(
+      c_font_collection: *mut skiac_font_collection,
+      font_path: *const c_char,
+      maybe_name_alias: *const c_char,
+      descriptors: *const skiac_face_descriptors,
+      owner: u32,
+    ) -> bool;
+
+    pub fn skiac_font_collection_release_private(
+      c_font_collection: *mut skiac_font_collection,
+      owner: u32,
+    ) -> bool;
+
     pub fn skiac_font_collection_register_system_font(
       c_font_collection: *mut skiac_font_collection,
       font_path: *const c_char,
@@ -6700,6 +6713,49 @@ impl FontCollection {
     } else {
       None
     }
+  }
+
+  /// node-canvas registerFont: [`Self::register_from_path`] as a private
+  /// registration of the N-API env token `owner` (not 0), except that a
+  /// non-empty alias is the face's only name (the embedded family is not
+  /// listed) and its key is no FontKey: only the same owner's calls share
+  /// it, and it goes with [`Self::release_private`].
+  /// Returns whether it was registered.
+  pub fn register_from_path_private(
+    &self,
+    font_path: &str,
+    maybe_name_alias: Option<&str>,
+    descriptors: Option<&ffi::skiac_face_descriptors>,
+    owner: u32,
+  ) -> bool {
+    let Ok(fp) = CString::new(font_path) else {
+      return false;
+    };
+    // Unlike register_from_path, an alias with a NUL is refused: it would
+    // otherwise be no alias and list the face under the file's own family.
+    let alias = match maybe_name_alias {
+      Some(name) => match CString::new(name) {
+        Ok(alias) => Some(alias),
+        Err(_) => return false,
+      },
+      None => None,
+    };
+    unsafe {
+      ffi::skiac_font_collection_register_from_path_private(
+        self.0,
+        fp.as_ptr(),
+        alias.as_ref().map_or(ptr::null(), |a| a.as_ptr()),
+        descriptors.map_or(ptr::null(), |d| d as *const _),
+        owner,
+      )
+    }
+  }
+
+  /// node-canvas deregisterAllFonts: removes the private registrations of
+  /// `owner` whole, as [`Self::unregister_batch`] removes fonts. Returns
+  /// whether any went.
+  pub fn release_private(&self, owner: u32) -> bool {
+    unsafe { ffi::skiac_font_collection_release_private(self.0, owner) }
   }
 
   pub fn unregister(&self, typeface_id: u32) -> bool {

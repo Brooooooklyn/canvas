@@ -254,6 +254,144 @@ fn read_face_descriptors(
   ))
 }
 
+/// The registerFont env token of each N-API env (node-canvas.js), by the
+/// env's address, and the last token issued. Each registerFont call makes a
+/// private registration of its env's token (RegisteredFont::owner in
+/// skia_c.hpp): only registerFont calls of the same env share it, and no
+/// GlobalFonts call or loadFontsFromDir ever reuses it.
+/// deregisterAllFonts removes the env's private registrations whole, as
+/// GlobalFonts.remove removes one (the token stays for the env's later
+/// calls). When the env goes (a worker exits, or the process), its
+/// registrations stay, as in node-canvas: a worker that preloads fonts does
+/// not change the main thread's text when it exits. An env cleanup hook only
+/// drops the entry, so the exited env's registrations stay private (no
+/// FontKey names them, and no later env's deregisterAllFonts removes them);
+/// only GlobalFonts.removeAll does. A later env never reuses them (its
+/// token is new), so each worker that calls registerFont and exits without
+/// deregisterAllFonts adds its faces for the life of the process: a pool
+/// that recycles workers should deregister in each worker (README). Every node-canvas.js instance of one env
+/// shares the token (a Jest-style reload of the package keeps the .node
+/// binding, so its env). An entry lives from the first registerFont of its
+/// env to the env's cleanup, so an address reused by a later env gets a new
+/// token; a token is never issued twice. Lock order: the font lock, then
+/// this.
+#[cfg_attr(test, allow(dead_code))]
+static ENV_OWNERS: Mutex<(u32, Vec<(usize, u32)>)> = Mutex::new((0, Vec::new()));
+
+#[cfg_attr(test, allow(dead_code))]
+fn env_owners<'a>() -> MutexGuard<'a, (u32, Vec<(usize, u32)>)> {
+  ENV_OWNERS.lock().unwrap_or_else(PoisonError::into_inner)
+}
+
+/// The env cleanup hook: the env `key` goes. Its entry goes, so a later env
+/// at the same address gets a new token, never this one; its private
+/// registrations stay registered (ENV_OWNERS).
+#[cfg_attr(test, allow(dead_code))]
+fn forget_env_owner(key: usize) {
+  env_owners().1.retain(|(env, _)| *env != key);
+}
+
+/// node-canvas registerFont (node-canvas.js): registers the file as a
+/// private registration of this env (ENV_OWNERS), made as
+/// `GlobalFonts.registerFromPath(font_path, name_alias, { weight, style })`
+/// makes a path it never saw, except that a family name (`name_alias`) is
+/// its only name, as `new FontFace(family, ...)` in Chrome: the file's own
+/// (embedded) family is listed only for family '' or that same name.
+/// Behavior change from 1.2.0, where registerFont also made the face
+/// usable under its embedded family. Only this env's registerFont calls
+/// share it: the same declaration again reuses it (and makes it the
+/// newest). `weight` and `style` are read each on its own with the
+/// @font-face grammar: one it rejects counts as not given (`auto`), as
+/// node-canvas ignores unknown values instead of throwing, and the other is
+/// kept. Returns whether the file was registered. Not API: reachable through
+/// js-binding, as `_toNumber` is.
+// Only JS calls it: the lib test build registers no napi exports.
+#[cfg_attr(test, allow(dead_code))]
+#[napi(js_name = "_registerFontFace")]
+pub fn register_font_face(
+  env: &Env,
+  font_path: String,
+  name_alias: Option<String>,
+  weight: String,
+  style: String,
+) -> napi::Result<bool> {
+  use crate::font::{parse_font_face_style, parse_font_face_weight};
+  let maybe_name_alias = name_alias.filter(|s| !s.is_empty());
+  let weight = match parse_font_face_weight(&weight) {
+    Some(_) => weight.as_str(),
+    None => "auto",
+  };
+  let style = match parse_font_face_style(&style) {
+    Some(_) => style.as_str(),
+    None => "auto",
+  };
+  // Both parse, and the stretch is the IDL default "normal", as
+  // registerFromPath reads `{ weight, style }`: never Invalid.
+  let descriptors = match face_descriptors(Some(weight), Some(style), None) {
+    Declared::Explicit(descriptors) => Some(descriptors),
+    Declared::Auto | Declared::Invalid => None,
+  };
+  let font = get_font().map_err(into_napi_error)?;
+  let key = env.raw() as usize;
+  let mut owners = env_owners();
+  // The first registerFont of this env issues its token and adds the hook
+  // that drops the entry when the env goes (before anything is registered,
+  // so a hook that cannot be added registers nothing).
+  let owner = match owners.1.iter().find(|(env, _)| *env == key) {
+    Some((_, owner)) => *owner,
+    None => {
+      // No token left.
+      let Some(owner) = owners.0.checked_add(1) else {
+        return Ok(false);
+      };
+      env.add_env_cleanup_hook(key, forget_env_owner)?;
+      owners.0 = owner;
+      owners.1.push((key, owner));
+      owner
+    }
+  };
+  drop(owners);
+  if !font.register_from_path_private(
+    font_path.as_str(),
+    maybe_name_alias.as_deref(),
+    descriptors.as_ref(),
+    owner,
+  ) {
+    return Ok(false);
+  }
+  note_font_collection_mutation();
+  Ok(true)
+}
+
+/// node-canvas deregisterAllFonts (node-canvas.js): removes this env's
+/// private registrations (ENV_OWNERS) whole, as GlobalFonts.remove removes
+/// one, the setAlias entries made from them included. GlobalFonts
+/// registrations and loadFontsFromDir fonts are never touched. Returns
+/// whether anything went. Not API: reachable through js-binding, as
+/// `_toNumber` is.
+// Only JS calls it: the lib test build registers no napi exports.
+#[cfg_attr(test, allow(dead_code))]
+#[napi(js_name = "_releaseFontFaces")]
+pub fn release_font_faces(env: &Env) -> napi::Result<bool> {
+  let font = get_font().map_err(into_napi_error)?;
+  let key = env.raw() as usize;
+  // The entry stays: its hook is still added, and the env's later calls
+  // register with the same token.
+  let Some(owner) = env_owners()
+    .1
+    .iter()
+    .find(|(env, _)| *env == key)
+    .map(|(_, owner)| *owner)
+  else {
+    return Ok(false);
+  };
+  let changed = font.release_private(owner);
+  if changed {
+    note_font_collection_mutation();
+  }
+  Ok(changed)
+}
+
 #[napi(js_name = "GlobalFonts")]
 #[allow(non_snake_case)]
 pub mod global_fonts {

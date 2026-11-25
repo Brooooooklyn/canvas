@@ -155,7 +155,7 @@ std::optional<FaceDescriptors> ResolveDescriptors(
   std::optional<uint64_t> declared;
   if (assets->describes(folded)) {
     ++c_collection->descriptor_lookups;
-    if (const uint32_t key = assets->registrationOf(id)) {
+    if (const RegistrationKey key = assets->registrationOf(id)) {
       const auto& descriptors =
           assets->getRegisteredFonts().at(key).descriptors;
       if (const auto found = descriptors.find(folded);
