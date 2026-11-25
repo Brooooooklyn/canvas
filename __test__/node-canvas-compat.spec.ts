@@ -757,8 +757,11 @@ const state = () => ({
   familyMetrics: m(family),
   alias: GlobalFonts.has(alias),
   aliasMetrics: m(alias),
+  // Measured at the same point: on Linux an installed font is the fallback
+  // of a family nobody lists.
+  missing: m('Compat 1472 No Such Font'),
 })
-const out = { missing: m('Compat 1472 No Such Font') }
+const out = {}
 if (process.env.ORDER === 'dir first') {
   out.loaded = GlobalFonts.loadFontsFromDir(dir)
   registerFont(file, { family })
@@ -795,10 +798,10 @@ test.serial('registerFont and loadFontsFromDir of one file give the same result 
     t.true(out.aliased, order)
     t.is(out.live.ownStyles, 1, `${order}: the own family lists the installed face only`)
     t.true(out.live.family, order)
-    t.notDeepEqual(out.live.familyMetrics, out.missing, `${order}: the registerFont name draws the file`)
+    t.deepEqual(out.live.familyMetrics, out.live.own, `${order}: the registerFont name draws the file`)
     t.deepEqual(out.live.aliasMetrics, out.live.own, `${order}: the alias draws the own family`)
     t.false(out.after.family, `${order}: the registerFont name goes`)
-    t.deepEqual(out.after.familyMetrics, out.missing, order)
+    t.deepEqual(out.after.familyMetrics, out.after.missing, `${order}: the registerFont name is a missing family`)
     t.true(out.after.alias, `${order}: the alias of the installed font stays`)
     t.deepEqual(out.after.aliasMetrics, out.after.own, order)
     t.is(out.after.ownStyles, 1, order)

@@ -4725,8 +4725,9 @@ uint32_t skiac_font_collection_register_from_path_private(
     return 0;
   }
   // As skiac_font_collection_register_from_path, over the private
-  // registrations of `owner` only: the file is read now, never taken from a
-  // registration a GlobalFonts call or loadFontsFromDir made.
+  // registrations of `owner` only (a non-empty alias is the face's only
+  // name): the file is read now, never taken from a registration a
+  // GlobalFonts call or loadFontsFromDir made.
   c_font_collection->prepareLookup();
   auto typeface = MakeCanvasTypefaceFromFile(font_path);
   if (!typeface) {

@@ -312,9 +312,8 @@ fn release_env_owner(key: usize) {
 /// newest). `weight` and `style` are read each on its own with the
 /// @font-face grammar: one it rejects counts as not given (`auto`), as
 /// node-canvas ignores unknown values instead of throwing, and the other is
-/// kept. Returns whether the
-/// file was registered. Not API: reachable through js-binding, as
-/// `_toNumber` is.
+/// kept. Returns whether the file was registered. Not API: reachable through
+/// js-binding, as `_toNumber` is.
 // Only JS calls it: the lib test build registers no napi exports.
 #[cfg_attr(test, allow(dead_code))]
 #[napi(js_name = "_registerFontFace")]

@@ -3045,7 +3045,8 @@ size_t skiac_font_collection_unregister_all(
     skiac_font_collection* c_font_collection);
 // node-canvas registerFont: as skiac_font_collection_register_from_path, as
 // a private registration of the N-API env token `owner` (RegisteredFont::
-// owner). 0 on failure, and when `owner` is 0.
+// owner), except that a non-empty alias is the face's only name (the
+// embedded family is not listed). 0 on failure, and when `owner` is 0.
 uint32_t skiac_font_collection_register_from_path_private(
     skiac_font_collection* c_font_collection,
     const char* font_path,

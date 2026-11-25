@@ -6716,8 +6716,10 @@ impl FontCollection {
   }
 
   /// node-canvas registerFont: [`Self::register_from_path`] as a private
-  /// registration of the N-API env token `owner` (not 0): only the same
-  /// owner's calls share it, and it goes with [`Self::release_private`].
+  /// registration of the N-API env token `owner` (not 0), except that a
+  /// non-empty alias is the face's only name (the embedded family is not
+  /// listed): only the same owner's calls share it, and it goes with
+  /// [`Self::release_private`].
   /// None when nothing was registered.
   pub fn register_from_path_private(
     &self,
