@@ -410,6 +410,20 @@ test.serial('deregisterAllFonts removes a registerFont face registered under an 
 // as GlobalFonts.remove(key) removes one; GlobalFonts registrations are never
 // touched. Each test starts with no registerFont registration live.
 const stylesOf = (family: string) => GlobalFonts.families.find((f) => f.family === family)?.styles.length ?? 0
+
+// A family with a NUL cannot be passed to the registry. registerFont refuses
+// it instead of registering the face under the file's own family.
+test.serial('registerFont refuses a family with a NUL', (t) => {
+  const own = 'RMStatic'
+  const before = stylesOf(own)
+  const bold = drawText(`bold 30px "${own}"`)
+  t.throws(() => registerFont(fixture('RMStatic-Regular.ttf'), { family: 'Compat 1472\u0000Nul' }), {
+    message: /Failed to register font/,
+  })
+  t.is(stylesOf(own), before, 'no face is added to the own family')
+  t.false(GlobalFonts.has('Compat 1472'))
+  t.deepEqual(drawText(`bold 30px "${own}"`), bold)
+})
 const familyNames = () => GlobalFonts.families.map((f) => f.family)
 const BOLD = { weight: 'bold', style: 'auto' }
 

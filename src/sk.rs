@@ -6731,8 +6731,15 @@ impl FontCollection {
     let Ok(fp) = CString::new(font_path) else {
       return false;
     };
-    // As register_from_path: an alias with a NUL is no alias.
-    let alias = maybe_name_alias.and_then(|name| CString::new(name).ok());
+    // Unlike register_from_path, an alias with a NUL is refused: it would
+    // otherwise be no alias and list the face under the file's own family.
+    let alias = match maybe_name_alias {
+      Some(name) => match CString::new(name) {
+        Ok(alias) => Some(alias),
+        Err(_) => return false,
+      },
+      None => None,
+    };
     unsafe {
       ffi::skiac_font_collection_register_from_path_private(
         self.0,
