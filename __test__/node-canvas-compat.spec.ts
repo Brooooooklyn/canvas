@@ -723,6 +723,91 @@ test.serial('registerFont of a file loadFontsFromDir loaded leaves its own famil
   t.is(stylesOf(own), before.styles)
 })
 
+// registerFont under another name of a file loadFontsFromDir loads gives the
+// same result whichever comes first: the registration lists that name only
+// (made first, it drops the own family the load then has installed), so a
+// setAlias of the own family names the installed font, which outlives
+// deregisterAllFonts. In a child process per order, with no other fonts.
+const DIR_ORDER_PROBE = `
+const crypto = require('crypto'), fs = require('fs'), os = require('os'), path = require('path')
+const { createCanvas, GlobalFonts, registerFont, deregisterAllFonts } = require('./node-canvas.js')
+const own = 'RMStatic', family = 'Compat 1472 Order Other', alias = 'Compat 1472 Order Alias'
+const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'canvas-compat-order-'))
+const file = path.join(dir, 'RMStatic.ttf')
+fs.copyFileSync(path.join('__test__', 'fonts', 'RMStatic-Regular.ttf'), file)
+const m = (name) => {
+  const ctx = createCanvas(10, 10).getContext('2d')
+  return [9.5, 30].map((size) => {
+    ctx.font = size + 'px "' + name + '"'
+    const t = ctx.measureText('Hamburgefonstiv')
+    return [t.width, t.actualBoundingBoxAscent, t.actualBoundingBoxDescent, t.fontBoundingBoxAscent, t.fontBoundingBoxDescent]
+  })
+}
+const pixels = (name) => {
+  const ctx = createCanvas(420, 60).getContext('2d')
+  ctx.font = '30px "' + name + '"'
+  ctx.fillText('Hamburgefonstiv', 10, 42)
+  return crypto.createHash('sha1').update(ctx.getImageData(0, 0, 420, 60).data).digest('hex')
+}
+const state = () => ({
+  ownStyles: GlobalFonts.families.find((f) => f.family === own)?.styles.length ?? 0,
+  own: m(own),
+  ownPixels: pixels(own),
+  family: GlobalFonts.has(family),
+  familyMetrics: m(family),
+  alias: GlobalFonts.has(alias),
+  aliasMetrics: m(alias),
+})
+const out = { missing: m('Compat 1472 No Such Font') }
+if (process.env.ORDER === 'dir first') {
+  out.loaded = GlobalFonts.loadFontsFromDir(dir)
+  registerFont(file, { family })
+} else {
+  registerFont(file, { family })
+  out.loaded = GlobalFonts.loadFontsFromDir(dir)
+}
+out.aliased = GlobalFonts.setAlias(own, alias)
+out.live = state()
+deregisterAllFonts()
+out.after = state()
+fs.rmSync(dir, { recursive: true, force: true })
+process.stdout.write(JSON.stringify(out))
+`
+
+test.serial('registerFont and loadFontsFromDir of one file give the same result in either order', (t) => {
+  const run = (order: string) => {
+    const { stdout, stderr, status } = spawnSync(process.execPath, ['-e', DIR_ORDER_PROBE], {
+      cwd: join(__dirname, '..'),
+      env: { ...process.env, DISABLE_SYSTEM_FONTS_LOAD: '1', ORDER: order },
+      encoding: 'utf8',
+      timeout: 60_000,
+    })
+    if (status !== 0) throw new Error(stderr)
+    return JSON.parse(stdout)
+  }
+  const dirFirst = run('dir first')
+  const registerFirst = run('registerFont first')
+  for (const [order, out] of [
+    ['dir first', dirFirst],
+    ['registerFont first', registerFirst],
+  ]) {
+    t.is(out.loaded, 1, order)
+    t.true(out.aliased, order)
+    t.is(out.live.ownStyles, 1, `${order}: the own family lists the installed face only`)
+    t.true(out.live.family, order)
+    t.notDeepEqual(out.live.familyMetrics, out.missing, `${order}: the registerFont name draws the file`)
+    t.deepEqual(out.live.aliasMetrics, out.live.own, `${order}: the alias draws the own family`)
+    t.false(out.after.family, `${order}: the registerFont name goes`)
+    t.deepEqual(out.after.familyMetrics, out.missing, order)
+    t.true(out.after.alias, `${order}: the alias of the installed font stays`)
+    t.deepEqual(out.after.aliasMetrics, out.after.own, order)
+    t.is(out.after.ownStyles, 1, order)
+    t.deepEqual(out.after.own, out.live.own, `${order}: the own family is as it was`)
+    t.is(out.after.ownPixels, out.live.ownPixels, order)
+  }
+  t.deepEqual(registerFirst, dirFirst)
+})
+
 // The registry is one per process; each worker's node-canvas module removes
 // only its own registerFont registrations, whichever thread registered first.
 test.serial('deregisterAllFonts in a worker keeps what the main thread registered', async (t) => {
@@ -766,7 +851,8 @@ test.serial('deregisterAllFonts in a worker keeps what the main thread registere
 
 // The registrations of a worker that exits without deregisterAllFonts go
 // with it (an env cleanup hook). The same declaration in the main thread and
-// in a worker is a registration each.
+// in a worker is a registration each. The worker stays until the main thread
+// has counted its registration, then exits on its own.
 test.serial('a worker that exits without deregisterAllFonts leaves no registration', async (t) => {
   deregisterAllFonts()
   const file = fixture('EBGaramond-Regular.ttf')
@@ -775,6 +861,7 @@ test.serial('a worker that exits without deregisterAllFonts leaves no registrati
     const { parentPort, workerData } = require('node:worker_threads')
     const { registerFont, GlobalFonts } = require(workerData.nodeCanvas)
     registerFont(workerData.file, { family: workerData.family })
+    parentPort.once('message', () => parentPort.close())
     parentPort.postMessage({ during: GlobalFonts.has(workerData.family) })
   `
   for (const order of ['worker alone', 'main first']) {
@@ -786,10 +873,12 @@ test.serial('a worker that exits without deregisterAllFonts leaves no registrati
       eval: true,
       workerData: { nodeCanvas: join(__dirname, '..', 'node-canvas.js'), file, family },
     })
+    t.teardown(() => worker.terminate())
     const exited = once(worker, 'exit')
     const [registered] = await once(worker, 'message')
     t.deepEqual(registered, { during: true }, order)
     t.is(stylesOf(family), main ? 2 : 1, `${order}: a registration per env`)
+    worker.postMessage('exit')
     await exited
     t.is(stylesOf(family), main ? 1 : 0, `${order}: after the worker exits`)
     deregisterAllFonts()

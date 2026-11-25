@@ -280,14 +280,15 @@ function _addCompatMethods(canvas) {
  *
  * The file is registered as a registration of its own, made as
  * GlobalFonts.registerFromPath makes a path it never saw (for a file
- * loadFontsFromDir loaded and a family name, as its twin: only that name is
- * listed, so the file's own family stays installed), with `weight` and
- * `style` as the face's @font-face descriptors, so the faces of one family
- * are picked by them with CSS font matching. Register one call per face
- * file. Only the registerFont calls of this N-API env (the main thread or
- * one worker) share it: the same declaration again reuses it and makes it
- * the newest. A GlobalFonts call or loadFontsFromDir never reuses or
- * changes it, so a file registered both ways has a face from each.
+ * loadFontsFromDir loads, before or after this call, and a family name, as
+ * its twin: only that name is listed, so the file's own family stays
+ * installed), with `weight` and `style` as the face's @font-face
+ * descriptors, so the faces of one family are picked by them with CSS font
+ * matching. Register one call per face file. Only the registerFont calls of
+ * this N-API env (the main thread or one worker) share it: the same
+ * declaration again reuses it and makes it the newest. A GlobalFonts call or
+ * loadFontsFromDir never reuses it, so a file registered both ways has a
+ * face from each.
  *
  * - A field that is not given is `auto`: a call with only `family` registers
  *   the file as GlobalFonts.registerFromPath(path, family) does, and a

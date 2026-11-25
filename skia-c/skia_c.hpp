@@ -1015,7 +1015,8 @@ class TypefaceFontProviderCustom : public TypefaceFontProvider {
     if (owner && same.empty() && alias_arg && IsPreloadedPath(path)) {
       // A private registration of a file loadFontsFromDir loaded lists the
       // alias only, as the twin registerFromPath makes of that file: its
-      // own family stays an installed font with all its faces.
+      // own family stays an installed font with all its faces. One made
+      // before the load drops that listing then (hidePrivateOwnFamilies).
       font_info.AddName(name, true, true, ++registrations);
     } else if (same.empty()) {
       // The own family first, then the alias (when not the same name).
@@ -1088,6 +1089,38 @@ class TypefaceFontProviderCustom : public TypefaceFontProvider {
   void keepTwinKeys(const TypefaceFontProviderCustom& old) {
     twin_keys_next = old.twin_keys_next;
     private_free_keys = old.private_free_keys;
+  }
+
+  // loadFontsFromDir loaded the file `path` now: a private registration of
+  // it (RegisteredFont::owner) made before drops the listing of its own
+  // family that no call gave (the face's family listed next to the
+  // caller's name: alias_args and call_names both false), as a private
+  // registration made after the load never lists it
+  // (registerTypefaceFromPathWithTracking), so the own family stays the
+  // installed font with its faces whichever came first. A name the caller
+  // gave (family '' or the same spelling) stays. Returns whether a listing
+  // went: the caller rebuilds, as the provider cannot drop a name.
+  bool hidePrivateOwnFamilies(const std::string& path) {
+    bool hidden = false;
+    for (auto& [id, font_info] : registered_fonts) {
+      if (!font_info.owner || font_info.path != path) {
+        continue;
+      }
+      for (size_t i = font_info.aliases.size(); i-- > 0;) {
+        if (font_info.alias_args[i] || font_info.call_names[i]) {
+          continue;
+        }
+        font_info.aliases.erase(font_info.aliases.begin() + i);
+        font_info.orders.erase(font_info.orders.begin() + i);
+        font_info.alias_args.erase(font_info.alias_args.begin() + i);
+        font_info.call_names.erase(font_info.call_names.begin() + i);
+        if (i < font_info.relists.size()) {
+          font_info.relists.erase(font_info.relists.begin() + i);
+        }
+        hidden = true;
+      }
+    }
+    return hidden;
   }
 
   // Whether the font `id` is a private registration (RegisteredFont::owner).
