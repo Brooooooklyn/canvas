@@ -266,8 +266,10 @@ fn read_face_descriptors(
 /// not change the main thread's text when it exits. The env cleanup hook
 /// drops the entry and makes them exited ones (EXITED_OWNER), so no later
 /// env's deregisterAllFonts removes them; only GlobalFonts.removeAll does.
-/// One that an exited registration of the same declaration draws the same as
-/// goes then (FontCollection::retire_private), so exited envs keep one
+/// Of two exited registrations that declare the same, the earlier one goes
+/// then and the later one stays, and a setAlias made from the earlier one
+/// moves to the later one; both stay only when the earlier one is the first
+/// font registered (FontCollection::retire_private). So exited envs keep one
 /// registration per declaration, however many workers register it and exit.
 /// Every node-canvas.js instance of one env shares the token (a Jest-style
 /// reload of the package keeps the .node binding, so its env). An entry

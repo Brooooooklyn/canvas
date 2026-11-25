@@ -997,10 +997,10 @@ test.serial("a worker's registerFont fonts stay and draw after it exits", (t) =>
 // descriptors, bytes), the earlier one goes and the later one stays, so a
 // pool that recycles workers keeps one face per distinct declaration. Only
 // an exited one merges (a live worker's is its own until it exits), and only
-// when the text stays the same: not when a setAlias was made from the
-// earlier one, nor when the earlier one is the first font registered (the
-// one a family nobody lists draws). In child processes: the exited workers'
-// registrations stay until removeAll.
+// when the text stays the same: a setAlias made from the earlier one moves
+// to the later one (the same file), and both stay when the earlier one is
+// the first font registered (the one a family nobody lists draws). In child
+// processes: the exited workers' registrations stay until removeAll.
 const EXIT_MERGE_PROBE = `
 const crypto = require('crypto'), path = require('path')
 const { once } = require('events')
@@ -1025,6 +1025,7 @@ const code = \`
   const { parentPort, workerData } = require('node:worker_threads')
   const { registerFont, deregisterAllFonts, GlobalFonts } = require(workerData.nodeCanvas)
   registerFont(workerData.file, { family: workerData.family, weight: workerData.weight })
+  if (workerData.alias) GlobalFonts.setAlias(workerData.family, workerData.alias)
   parentPort.on('message', (message) => {
     if (message === 'clean up') {
       deregisterAllFonts()
@@ -1035,8 +1036,8 @@ const code = \`
   })
   parentPort.postMessage(GlobalFonts.has(workerData.family))
 \`
-const start = async (family, weight = '400') => {
-  const worker = new Worker(code, { eval: true, workerData: { nodeCanvas, file, family, weight } })
+const start = async (family, weight = '400', alias) => {
+  const worker = new Worker(code, { eval: true, workerData: { nodeCanvas, file, family, weight, alias } })
   const exited = once(worker, 'exit')
   const [registered] = await once(worker, 'message')
   return { worker, exited, registered }
@@ -1095,7 +1096,7 @@ const stop = async ({ worker, exited }) => {
   await stop(later)
   out.between.after = measure(between)
   out.between.styles = stylesOf(between)
-  // A setAlias made from the earlier one: it stays with its alias.
+  // A setAlias made from the earlier one: it moves to the later one.
   const aliased = 'Compat 1472 Merge Aliased'
   const alias = 'Compat 1472 Merge Alias'
   families.push(aliased, alias)
@@ -1105,6 +1106,33 @@ const stop = async ({ worker, exited }) => {
   await stop(await start(aliased))
   out.alias.after = measure(alias)
   out.alias.styles = stylesOf(aliased)
+  // N workers in turn, each with the same declaration and its own setAlias
+  // of it: one face stays, and the alias draws as while the first was alive.
+  const churned = 'Compat 1472 Merge Alias Churn'
+  const churnAlias = 'Compat 1472 Merge Alias Churn Alias'
+  families.push(churned, churnAlias)
+  out.aliasChurn = { styles: [] }
+  for (let i = 0; i < N; i++) {
+    const run = await start(churned, '400', churnAlias)
+    if (i === 0) out.aliasChurn.alive = measure(churnAlias)
+    await stop(run)
+    out.aliasChurn.styles.push(stylesOf(churned))
+  }
+  out.aliasChurn.after = measure(churnAlias)
+  // A font listed under the alias name between two workers' setAlias calls:
+  // the later worker's call is the newest, so the alias still draws the
+  // file after that worker exits.
+  const ordered = 'Compat 1472 Merge Alias Order'
+  const orderAlias = 'Compat 1472 Merge Alias Order Alias'
+  families.push(ordered, orderAlias)
+  await stop(await start(ordered, '400', orderAlias))
+  GlobalFonts.registerFromPath(lato, orderAlias)
+  out.aliasOrder = { lato: measure(orderAlias) }
+  const newest = await start(ordered, '400', orderAlias)
+  out.aliasOrder.alive = measure(orderAlias)
+  await stop(newest)
+  out.aliasOrder.after = measure(orderAlias)
+  out.aliasOrder.styles = stylesOf(ordered)
   GlobalFonts.removeAll()
   out.removeAll = families.map((family) => GlobalFonts.has(family))
   process.stdout.write(JSON.stringify(out))
@@ -1147,8 +1175,22 @@ test.serial("exited workers' registerFont fonts keep one face per declaration", 
   t.true(out.alias.set)
   t.notDeepEqual(out.alias.alive, out.missing, 'the alias draws the file')
   t.deepEqual(out.alias.after, out.alias.alive, 'and still after the workers exit')
-  t.is(out.alias.styles, 2, 'so the face the alias was made from stays')
-  t.deepEqual(out.removeAll, [false, false, false, false, false], 'GlobalFonts.removeAll removes them')
+  t.is(out.alias.styles, 1, 'the alias moved to the later face, the earlier one went')
+  t.notDeepEqual(out.aliasChurn.alive, out.missing, "a worker's setAlias draws the file")
+  t.deepEqual(
+    out.aliasChurn.styles,
+    Array.from({ length: 20 }, () => 1),
+    'workers that exit with the same declaration and setAlias leave one face',
+  )
+  t.deepEqual(out.aliasChurn.after, out.aliasChurn.alive, 'and the alias draws as while the first was alive')
+  t.notDeepEqual(out.aliasOrder.lato, out.aliasOrder.alive, "the later worker's setAlias draws over the font between")
+  t.deepEqual(out.aliasOrder.after, out.aliasOrder.alive, 'and still after it exits')
+  t.is(out.aliasOrder.styles, 1)
+  t.deepEqual(
+    out.removeAll,
+    [false, false, false, false, false, false, false, false, false],
+    'GlobalFonts.removeAll removes them',
+  )
 })
 
 // The first font registered is the provider's first family, the one a
