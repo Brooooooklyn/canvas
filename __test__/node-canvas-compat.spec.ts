@@ -1379,6 +1379,115 @@ test.serial(
   },
 )
 
+// The FontKeys GlobalFonts calls get, and what GlobalFonts.remove of each
+// (also a stale one, tried again) returns, are the same with registerFont
+// and deregisterAllFonts calls in between as without them: a registerFont
+// registration takes no key a GlobalFonts call could get, and leaves no
+// trace in how they are issued. The files have path hashes (the FontKey of
+// a new path) of each kind: one in the first keys a declaration twin gets
+// (from 0x80000000 on), one past them with the high bit set, and one
+// without it. In a child process per run, with no other fonts.
+const PUBLIC_KEYS_PROBE = `
+const fs = require('fs'), os = require('os'), path = require('path')
+const { GlobalFonts, registerFont, deregisterAllFonts } = require('./node-canvas.js')
+const compat = process.env.COMPAT === '1'
+const src = path.join('__test__', 'fonts', 'SourceSerifPro-Regular.ttf')
+const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'canvas-compat-keys-'))
+// FNV-1a over the path bytes (skia_c.hpp computePathHash).
+const fnv = (hash, bytes) => {
+  for (const byte of bytes) hash = Math.imul(hash ^ byte, 16777619) >>> 0
+  return hash
+}
+// A copy of the font in dir whose path hash is in [lo, hi).
+const copyWithHash = (tag, lo, hi) => {
+  const prefix = fnv(2166136261, Buffer.from(path.join(dir, tag)))
+  for (let i = 0; ; i++) {
+    const name = tag + i.toString(36) + '.ttf'
+    let hash = prefix
+    for (let j = tag.length; j < name.length; j++) hash = Math.imul(hash ^ name.charCodeAt(j), 16777619) >>> 0
+    if (hash >= lo && hash < hi) {
+      const file = path.join(dir, name)
+      fs.copyFileSync(src, file)
+      return { file, hash }
+    }
+  }
+}
+const twinBase = 0x80000000
+// Past the few twin keys the run takes itself.
+const nearTwins = copyWithHash('t', twinBase + 16, twinBase + 256)
+const high = copyWithHash('h', 0xc0000000, 0x100000000)
+const low = copyWithHash('l', 0, twinBase)
+// registerFont of 256 declarations of one family (each its own face)
+// before the fix took the first 256 twin keys.
+const compatFile = path.join(dir, 'compat.ttf')
+fs.copyFileSync(src, compatFile)
+const declare = () => {
+  if (!compat) return
+  for (let i = 0; i < 256; i++) registerFont(compatFile, { family: 'Compat Keys', weight: String(101 + i) })
+}
+const release = () => compat && deregisterAllFonts()
+const id = (key) => (key ? key.typefaceId : null)
+const out = { hashes: [nearTwins.hash, high.hash, low.hash] }
+declare()
+const a = GlobalFonts.registerFromPath(nearTwins.file)
+const b = GlobalFonts.registerFromPath(high.file)
+const c = GlobalFonts.registerFromPath(low.file)
+GlobalFonts.registerFromPath(low.file, 'Keys Twin', { weight: '400' })
+const t1 = GlobalFonts.registerFromPath(low.file, 'Keys Twin', { weight: '700' })
+out.first = [a, b, c, t1].map(id)
+release()
+out.removed = [GlobalFonts.remove(a), GlobalFonts.remove(t1)]
+declare()
+release()
+if (compat) registerFont(compatFile, { family: 'Compat Keys Kept' })
+const t2 = GlobalFonts.registerFromPath(low.file, 'Keys Twin', { weight: '900' })
+const t3 = GlobalFonts.registerFromPath(low.file, 'Keys Twin', { weight: '300' })
+out.second = [t2, t3].map(id)
+// The stale keys tried again, before and after the path is registered again.
+out.stale = [GlobalFonts.remove(a), GlobalFonts.remove(t1)]
+const a2 = GlobalFonts.registerFromPath(nearTwins.file)
+out.again = id(a2)
+out.staleAgain = [GlobalFonts.remove(t1), GlobalFonts.remove(a), GlobalFonts.remove(a2)]
+out.rest = [b, c, t2, t3].map((key) => GlobalFonts.remove(key))
+release()
+fs.rmSync(dir, { recursive: true, force: true })
+process.stdout.write(JSON.stringify(out))
+`
+
+test.serial('registerFont and deregisterAllFonts leave the GlobalFonts keys as without them', (t) => {
+  const run = (compat: boolean) => {
+    const { stdout, stderr, status } = spawnSync(process.execPath, ['-e', PUBLIC_KEYS_PROBE], {
+      cwd: join(__dirname, '..'),
+      env: { ...process.env, DISABLE_SYSTEM_FONTS_LOAD: '1', COMPAT: compat ? '1' : '0' },
+      encoding: 'utf8',
+      timeout: 120_000,
+    })
+    if (status !== 0) throw new Error(stderr)
+    return JSON.parse(stdout)
+  }
+  const baseline = run(false)
+  // A new path's key is its hash; a twin's is a new one from 0x80000000.
+  t.deepEqual(baseline.first.slice(0, 3), baseline.hashes)
+  t.true(baseline.first[3] >= 0x80000000)
+  t.deepEqual(baseline.removed, [true, true])
+  t.deepEqual(baseline.stale, [false, false], 'a removed key names no other font')
+  t.is(baseline.again, baseline.hashes[0])
+  t.deepEqual(baseline.staleAgain, [false, true, false])
+  t.true(baseline.second.every((key: number) => key >= 0x80000000))
+  t.deepEqual(baseline.rest, [true, true, true, true])
+  const out = run(true)
+  t.deepEqual(out.first.slice(0, 3), out.hashes, 'with registerFont: a new path still gets its hash')
+  // Each run has its own files (other path hashes) of the same kinds: a key
+  // that is a file's path hash is compared as that file's.
+  const symbolic = (result: { hashes: number[] }) =>
+    JSON.parse(
+      JSON.stringify(result, (_, value) =>
+        typeof value === 'number' && result.hashes.includes(value) ? `hash ${result.hashes.indexOf(value)}` : value,
+      ),
+    )
+  t.deepEqual(symbolic(out), symbolic(baseline), 'the same keys and remove results')
+})
+
 // ---------------------------------------------------------------------------
 // deregisterAllFonts
 // ---------------------------------------------------------------------------

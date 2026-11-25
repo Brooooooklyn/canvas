@@ -360,15 +360,12 @@ pub fn register_font_face(
     }
   };
   drop(owners);
-  if font
-    .register_from_path_private(
-      font_path.as_str(),
-      maybe_name_alias.as_deref(),
-      descriptors.as_ref(),
-      owner,
-    )
-    .is_none()
-  {
+  if !font.register_from_path_private(
+    font_path.as_str(),
+    maybe_name_alias.as_deref(),
+    descriptors.as_ref(),
+    owner,
+  ) {
     return Ok(false);
   }
   note_font_collection_mutation();

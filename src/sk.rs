@@ -1584,7 +1584,7 @@ pub mod ffi {
       maybe_name_alias: *const c_char,
       descriptors: *const skiac_face_descriptors,
       owner: u32,
-    ) -> u32;
+    ) -> bool;
 
     pub fn skiac_font_collection_release_private(
       c_font_collection: *mut skiac_font_collection,
@@ -6718,20 +6718,22 @@ impl FontCollection {
   /// node-canvas registerFont: [`Self::register_from_path`] as a private
   /// registration of the N-API env token `owner` (not 0), except that a
   /// non-empty alias is the face's only name (the embedded family is not
-  /// listed): only the same owner's calls share it, and it goes with
-  /// [`Self::release_private`].
-  /// None when nothing was registered.
+  /// listed) and its key is no FontKey: only the same owner's calls share
+  /// it, and it goes with [`Self::release_private`].
+  /// Returns whether it was registered.
   pub fn register_from_path_private(
     &self,
     font_path: &str,
     maybe_name_alias: Option<&str>,
     descriptors: Option<&ffi::skiac_face_descriptors>,
     owner: u32,
-  ) -> Option<u32> {
-    let fp = CString::new(font_path).ok()?;
+  ) -> bool {
+    let Ok(fp) = CString::new(font_path) else {
+      return false;
+    };
     // As register_from_path: an alias with a NUL is no alias.
     let alias = maybe_name_alias.and_then(|name| CString::new(name).ok());
-    let typeface_id = unsafe {
+    unsafe {
       ffi::skiac_font_collection_register_from_path_private(
         self.0,
         fp.as_ptr(),
@@ -6739,8 +6741,7 @@ impl FontCollection {
         descriptors.map_or(ptr::null(), |d| d as *const _),
         owner,
       )
-    };
-    (typeface_id > 0).then_some(typeface_id)
+    }
   }
 
   /// node-canvas deregisterAllFonts: removes the private registrations of
