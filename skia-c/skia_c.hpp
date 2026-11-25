@@ -1123,6 +1123,11 @@ class TypefaceFontProviderCustom : public TypefaceFontProvider {
   // replays both in this order).
   uint64_t nextOrder() { return ++registrations; }
 
+  // Whether `key` is a private registration's key (PrivateKey), no FontKey.
+  static bool IsPrivateKey(RegistrationKey key) {
+    return key >= kPrivateKeyBase;
+  }
+
   // A rebuild: the twin keys `old` issued stay issued (NextTwinKey), as do
   // the private ones (PrivateKey).
   void keepTwinKeys(const TypefaceFontProviderCustom& old) {
@@ -1371,10 +1376,12 @@ struct skiac_font_collection {
     // the alias family, also when it is an installed one
     // (font_families.cpp FamilyResolver::Faces).
     SkTypefaceID face_id = 0;
-    // The registration (FontKey) that face came from, through alias chains
-    // (TypefaceFontProviderCustom::registrationOf); 0 for an installed
-    // font. Removing that font drops the alias (dropAliasesOf), whatever
-    // names either was registered under; removing another font keeps it.
+    // The registration (FontKey, or a private registration's key:
+    // TypefaceFontProviderCustom::IsPrivateKey) that face came from, through
+    // alias chains (TypefaceFontProviderCustom::registrationOf); 0 for an
+    // installed font. Removing that font drops the alias (dropAliasesOf),
+    // whatever names either was registered under; removing another font
+    // keeps it.
     RegistrationKey font_key = 0;
     // The face is that font's web twin (a FontFace name of a file
     // loadFontsFromDir loaded: RegisteredFont::web_typeface), so a rebuild
@@ -1414,6 +1421,18 @@ struct skiac_font_collection {
     if (!registered) {
       for (auto it = set_aliases.begin(); it != set_aliases.end(); ++it) {
         SetAlias& entry = *it;
+        // An entry of a private registration (node-canvas registerFont,
+        // TypefaceFontProviderCustom::IsPrivateKey) is reused only for that
+        // registration, and only such a call reuses it: the entry goes with
+        // its registration (dropAliasesOf), so a call of another one keeps
+        // an entry of its own, and an earlier entry of a public face stays
+        // when the private one goes. Entries of public registrations and
+        // installed fonts are reused by the name pair alone.
+        if (entry.font_key != font_key &&
+            (TypefaceFontProviderCustom::IsPrivateKey(entry.font_key) ||
+             TypefaceFontProviderCustom::IsPrivateKey(font_key))) {
+          continue;
+        }
         if (entry.family == family && entry.alias == alias) {
           // The provider lists the alias with the family's face.
           bool changed = !entry.active || entry.face_id != face_id;

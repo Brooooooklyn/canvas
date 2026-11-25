@@ -913,83 +913,208 @@ test.serial('registerFont of two weights of one file is two faces, both released
 // A worker's registerFont made a registration of the file, under its family
 // only; a direct call with other descriptors then made one of its own, which
 // lists the file's own family too. When the worker exits, the direct one
-// stays as it was, and so
-// does a direct setAlias of the own family made from its face (the newest of
-// the own family's faces). The fixture's own family is registered nowhere
-// else in this file (as Harmattan is), so the alias names this file's face.
-test.serial('a worker exit keeps the own family of a file a direct call registered too', async (t) => {
-  deregisterAllFonts()
-  const own = 'Noto Sans Devanagari'
-  const family = 'Compat 1472 Embedded'
-  const {
-    files: [file, reference],
-  } = copies(t, ['NotoSansDevanagari-subset.ttf', 'NotoSansDevanagari-subset.ttf'])
-  const before = stylesOf(own)
-  t.is(before, 0)
-  const text = 'नमस्ते हिन्दी'
-  const widthOf = (font: string) => {
-    const ctx = nativeCreateCanvas(10, 10).getContext('2d')
-    ctx.font = font
-    return ctx.measureText(text).width
-  }
-  const missing = widthOf('30px "Compat 1472 No Such Font"')
+// stays as it was, and so does a direct setAlias of the own family made from
+// its face (the newest of the own family's faces). In a child process with no
+// other fonts (the worker started from it), so nothing else lists the own
+// family and the alias names this file's face.
+const EMBEDDED_EXIT_PROBE = `
+const crypto = require('crypto'), fs = require('fs'), os = require('os'), path = require('path')
+const { once } = require('events')
+const { Worker } = require('worker_threads')
+const { createCanvas, GlobalFonts } = require('./node-canvas.js')
+const fixture = path.join('__test__', 'fonts', 'NotoSansDevanagari-subset.ttf')
+const own = 'Noto Sans Devanagari', family = 'Compat 1472 Embedded'
+const refFamily = 'Compat 1472 Embedded Ref', alias = 'Compat 1472 Embedded Alias'
+const missing = 'Compat 1472 No Such Font'
+const text = 'नमस्ते हिन्दी'
+const widthOf = (font) => {
+  const ctx = createCanvas(10, 10).getContext('2d')
+  ctx.font = font
+  return ctx.measureText(text).width
+}
+const pixels = (font) => {
+  const ctx = createCanvas(420, 60).getContext('2d')
+  ctx.font = font
+  ctx.fillText(text, 10, 42)
+  return crypto.createHash('sha1').update(ctx.getImageData(0, 0, 420, 60).data).digest('hex')
+}
+const stylesOf = (name) => GlobalFonts.families.find((f) => f.family === name)?.styles.length ?? 0
+// On Linux with no other fonts, a family nobody lists draws with a
+// registered face, so 'draws the file' is checked only for a listed family,
+// against REF: the width the file gives in a process that only registers it.
+if (process.env.MODE === 'ref') {
+  GlobalFonts.registerFromPath(path.resolve(fixture))
+  process.stdout.write(JSON.stringify(widthOf('30px "' + own + '"')))
+  process.exit(0)
+}
+const ref = JSON.parse(process.env.REF)
+const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'canvas-compat-embedded-'))
+const file = path.join(dir, '0-NotoSansDevanagari-subset.ttf')
+const reference = path.join(dir, '1-NotoSansDevanagari-subset.ttf')
+fs.copyFileSync(fixture, file)
+fs.copyFileSync(fixture, reference)
+;(async () => {
+  const out = { before: stylesOf(own) }
   // Had the worker never registered the file: the direct call alone.
-  const referenceKey = GlobalFonts.registerFromPath(reference, 'Compat 1472 Embedded Ref', { weight: '700' })
-  t.truthy(referenceKey)
-  t.is(stylesOf(own), before + 1, 'the direct call alone lists the own family')
-  const ownDrawn = drawText(`30px "${own}"`)
-  const drawn = drawText('bold 30px "Compat 1472 Embedded Ref"')
-  const width = widthOf(`30px "${own}"`)
-  t.not(width, missing, 'the own family draws the file')
+  const referenceKey = GlobalFonts.registerFromPath(reference, refFamily, { weight: '700' })
+  out.referenceKey = !!referenceKey
+  out.referenceStyles = stylesOf(own)
+  const ownDrawn = pixels('30px "' + own + '"')
+  const drawn = pixels('bold 30px "' + refFamily + '"')
+  const width = widthOf('30px "' + own + '"')
+  out.ownDraws = width === ref
   // A direct setAlias of the own family names the direct call's face.
-  const alias = 'Compat 1472 Embedded Alias'
-  t.true(GlobalFonts.setAlias(own, alias))
-  t.is(widthOf(`30px "${alias}"`), width)
-  t.true(GlobalFonts.remove(referenceKey!))
-  t.is(stylesOf(own), before)
-  t.false(GlobalFonts.has(alias), 'the alias goes with the face it named')
+  out.aliased = GlobalFonts.setAlias(own, alias)
+  out.aliasDraws = widthOf('30px "' + alias + '"') === width
+  out.referenceRemoved = GlobalFonts.remove(referenceKey)
+  out.removedStyles = stylesOf(own)
+  out.removedAlias = GlobalFonts.has(alias)
 
-  const code = `
+  const worker = new Worker(
+    \`
     const { parentPort, workerData } = require('node:worker_threads')
     const { registerFont } = require(workerData.nodeCanvas)
     registerFont(workerData.file, { family: workerData.family, weight: '400' })
     parentPort.once('message', () => parentPort.close())
     parentPort.postMessage('registered')
+    \`,
+    { eval: true, workerData: { nodeCanvas: path.resolve('node-canvas.js'), file, family } },
+  )
+  const exited = once(worker, 'exit')
+  ;[out.registered] = await once(worker, 'message')
+  out.workerStyles = stylesOf(own)
+  const key = GlobalFonts.registerFromPath(file, family, { weight: '700' })
+  out.key = !!key
+  out.familyStyles = stylesOf(family)
+  out.ownStyles = stylesOf(own)
+  // Made from the direct call's face, the newest of the own family.
+  out.aliasedAgain = GlobalFonts.setAlias(own, alias)
+  worker.postMessage('exit')
+  await exited
+  out.after = {
+    familyStyles: stylesOf(family),
+    ownStyles: stylesOf(own),
+    own: GlobalFonts.has(own),
+    ownDrawn: pixels('30px "' + own + '"') === ownDrawn,
+    familyDrawn: pixels('bold 30px "' + family + '"') === drawn,
+    ownWidth: widthOf('30px "' + own + '"') === width,
+    // Both unlisted, measured at the same point.
+    reference: GlobalFonts.has(refFamily),
+    referenceMissing: widthOf('30px "' + refFamily + '"') === widthOf('30px "' + missing + '"'),
+    familyWidth: widthOf('bold 30px "' + family + '"') === width,
+    alias: GlobalFonts.has(alias),
+    aliasWidth: widthOf('30px "' + alias + '"') === width,
+  }
+  // The direct registration goes with the own family.
+  out.removed = GlobalFonts.remove(key)
+  out.final = { family: GlobalFonts.has(family), ownStyles: stylesOf(own), alias: GlobalFonts.has(alias) }
+  fs.rmSync(dir, { recursive: true, force: true })
+  process.stdout.write(JSON.stringify(out))
+})().catch((err) => {
+  fs.rmSync(dir, { recursive: true, force: true })
+  console.error(err)
+  process.exit(1)
+})
+`
+
+test.serial('a worker exit keeps the own family of a file a direct call registered too', (t) => {
+  const run = (env: Record<string, string>) =>
+    spawnSync(process.execPath, ['-e', EMBEDDED_EXIT_PROBE], {
+      cwd: join(__dirname, '..'),
+      env: { ...process.env, DISABLE_SYSTEM_FONTS_LOAD: '1', ...env },
+      encoding: 'utf8',
+      timeout: 60_000,
+    })
+  const ref = run({ MODE: 'ref' })
+  t.is(ref.status, 0, ref.stderr)
+  const { stdout, stderr, status } = run({ REF: ref.stdout })
+  t.is(status, 0, stderr)
+  const out = JSON.parse(stdout)
+  const before = out.before
+  t.is(before, 0)
+  t.true(out.referenceKey)
+  t.is(out.referenceStyles, before + 1, 'the direct call alone lists the own family')
+  t.true(out.ownDraws, 'the own family draws the file')
+  t.true(out.aliased)
+  t.true(out.aliasDraws)
+  t.true(out.referenceRemoved)
+  t.is(out.removedStyles, before)
+  t.false(out.removedAlias, 'the alias goes with the face it named')
+  t.is(out.registered, 'registered')
+  t.is(out.workerStyles, before, "the worker's registration lists its family only")
+  t.true(out.key)
+  t.is(out.familyStyles, 2, 'the direct call makes a registration of its own')
+  t.is(out.ownStyles, before + 1, 'which lists the own family too')
+  t.true(out.aliasedAgain)
+  const after = out.after
+  t.is(after.familyStyles, 1, "the worker's face goes")
+  t.is(after.ownStyles, before + 1, 'the own family stays')
+  t.true(after.own)
+  t.true(after.ownDrawn)
+  t.true(after.familyDrawn)
+  t.true(after.ownWidth, 'the own family draws the file')
+  t.false(after.reference, 'the reference name is gone')
+  t.true(after.referenceMissing, 'the reference name is gone')
+  t.true(after.familyWidth, 'the direct face draws the file')
+  t.true(after.alias, 'the direct setAlias stays')
+  t.true(after.aliasWidth, 'the alias draws the file')
+  t.true(out.removed)
+  t.false(out.final.family)
+  t.is(out.final.ownStyles, before)
+  t.false(out.final.alias, 'the alias goes with the face it named')
+})
+
+// A direct setAlias made again while a worker's registerFont faces are the
+// newest of the family and of the alias name (so the call names the worker's
+// face, which the alias lists already) keeps the entry of the first call: the
+// worker's registrations go when it exits, and the alias stays with the face
+// the first call named, as without the repeat.
+test.serial('a direct setAlias made again during a worker keeps its public face after the worker exits', async (t) => {
+  deregisterAllFonts()
+  const family = 'Compat 1472 Repeat Src'
+  const alias = 'Compat 1472 Repeat Alias'
+  const {
+    files: [file],
+  } = copies(t, ['EBGaramond-Regular.ttf'])
+  const widthOf = (name: string) => {
+    const ctx = nativeCreateCanvas(10, 10).getContext('2d')
+    ctx.font = `30px "${name}"`
+    return ctx.measureText('Hamburgefonstiv').width
+  }
+  const key = GlobalFonts.registerFromPath(file, family)
+  t.truthy(key)
+  t.true(GlobalFonts.setAlias(family, alias))
+  const width = widthOf(family)
+  t.is(widthOf(alias), width, 'the alias draws the file')
+  const drawn = drawText(`30px "${family}"`)
+
+  const code = `
+    const { parentPort, workerData } = require('node:worker_threads')
+    const { registerFont } = require(workerData.nodeCanvas)
+    registerFont(workerData.file, { family: workerData.family })
+    registerFont(workerData.file, { family: workerData.alias })
+    parentPort.once('message', () => parentPort.close())
+    parentPort.postMessage('registered')
   `
   const worker = new Worker(code, {
     eval: true,
-    workerData: { nodeCanvas: join(__dirname, '..', 'node-canvas.js'), file, family },
+    workerData: { nodeCanvas: join(__dirname, '..', 'node-canvas.js'), file, family, alias },
   })
   t.teardown(() => worker.terminate())
   const exited = once(worker, 'exit')
   t.deepEqual(await once(worker, 'message'), ['registered'])
-  t.is(stylesOf(own), before, "the worker's registration lists its family only")
-  const key = GlobalFonts.registerFromPath(file, family, { weight: '700' })
-  t.truthy(key)
-  t.is(stylesOf(family), 2, 'the direct call makes a registration of its own')
-  t.is(stylesOf(own), before + 1, 'which lists the own family too')
-  // Made from the direct call's face, the newest of the own family.
-  t.true(GlobalFonts.setAlias(own, alias))
+  t.is(stylesOf(family), 2, 'the worker lists a face of its own under the family')
+  t.is(stylesOf(alias), 2, 'and under the alias name')
+  t.true(GlobalFonts.setAlias(family, alias), 'the direct setAlias again')
   worker.postMessage('exit')
   await exited
   t.is(stylesOf(family), 1, "the worker's face goes")
-  t.is(stylesOf(own), before + 1, 'the own family stays')
-  t.true(GlobalFonts.has(own))
-  t.deepEqual(drawText(`30px "${own}"`), ownDrawn)
-  t.deepEqual(drawText(`bold 30px "${family}"`), drawn)
-  t.is(widthOf(`30px "${own}"`), width, 'the own family draws the file')
-  t.is(
-    widthOf('30px "Compat 1472 Embedded Ref"'),
-    widthOf('30px "Compat 1472 No Such Font"'),
-    'the reference name is gone',
-  )
-  t.is(widthOf(`bold 30px "${family}"`), width, 'the direct face draws the file')
   t.true(GlobalFonts.has(alias), 'the direct setAlias stays')
-  t.is(widthOf(`30px "${alias}"`), width, 'the alias draws the file')
-  // The direct registration goes with the own family.
+  t.is(stylesOf(alias), 1)
+  t.is(widthOf(alias), width, 'the alias draws the file')
+  t.deepEqual(drawText(`30px "${alias}"`), drawn, 'the alias draws the face the first call named')
   t.true(GlobalFonts.remove(key!))
   t.false(GlobalFonts.has(family))
-  t.is(stylesOf(own), before)
   t.false(GlobalFonts.has(alias), 'the alias goes with the face it named')
 })
 
