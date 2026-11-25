@@ -4763,6 +4763,12 @@ bool skiac_font_collection_release_private(
   return true;
 }
 
+bool skiac_font_collection_retire_private(
+    skiac_font_collection* c_font_collection,
+    uint32_t owner) {
+  return owner && c_font_collection->retirePrivate(owner);
+}
+
 size_t skiac_font_collection_unregister(
     skiac_font_collection* c_font_collection,
     uint32_t typeface_id) {

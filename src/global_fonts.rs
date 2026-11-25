@@ -263,32 +263,77 @@ fn read_face_descriptors(
 /// GlobalFonts.remove removes one (the token stays for the env's later
 /// calls). When the env goes (a worker exits, or the process), its
 /// registrations stay, as in node-canvas: a worker that preloads fonts does
-/// not change the main thread's text when it exits. An env cleanup hook only
-/// drops the entry, so the exited env's registrations stay private (no
-/// FontKey names them, and no later env's deregisterAllFonts removes them);
-/// only GlobalFonts.removeAll does. A later env never reuses them (its
-/// token is new), so each worker that calls registerFont and exits without
-/// deregisterAllFonts adds its faces for the life of the process: a pool
-/// that recycles workers should deregister in each worker (README). Every node-canvas.js instance of one env
-/// shares the token (a Jest-style reload of the package keeps the .node
-/// binding, so its env). An entry lives from the first registerFont of its
-/// env to the env's cleanup, so an address reused by a later env gets a new
-/// token; a token is never issued twice. Lock order: the font lock, then
-/// this.
+/// not change the main thread's text when it exits. The env cleanup hook
+/// drops the entry and makes them exited ones (EXITED_OWNER), so no later
+/// env's deregisterAllFonts removes them; only GlobalFonts.removeAll does.
+/// One that an exited registration of the same declaration draws the same as
+/// goes then (FontCollection::retire_private), so exited envs keep one
+/// registration per declaration, however many workers register it and exit.
+/// Every node-canvas.js instance of one env shares the token (a Jest-style
+/// reload of the package keeps the .node binding, so its env). An entry
+/// lives from the first registerFont of its env to the env's cleanup, so an
+/// address reused by a later env gets a new token; a token is never issued
+/// twice, and EXITED_OWNER never. Lock order: the font lock, then this.
 #[cfg_attr(test, allow(dead_code))]
-static ENV_OWNERS: Mutex<(u32, Vec<(usize, u32)>)> = Mutex::new((0, Vec::new()));
+static ENV_OWNERS: Mutex<EnvOwners> = Mutex::new((0, Vec::new()));
+
+/// The last token issued, and the token of each env by its address.
+type EnvOwners = (u32, Vec<(usize, u32)>);
+
+/// The owner of the registrations of every env that went
+/// (TypefaceFontProviderCustom::kExitedOwner in skia_c.hpp): never issued
+/// to an env, so no deregisterAllFonts removes them.
+const EXITED_OWNER: u32 = u32::MAX;
 
 #[cfg_attr(test, allow(dead_code))]
-fn env_owners<'a>() -> MutexGuard<'a, (u32, Vec<(usize, u32)>)> {
+fn env_owners<'a>() -> MutexGuard<'a, EnvOwners> {
   ENV_OWNERS.lock().unwrap_or_else(PoisonError::into_inner)
 }
 
-/// The env cleanup hook: the env `key` goes. Its entry goes, so a later env
-/// at the same address gets a new token, never this one; its private
-/// registrations stay registered (ENV_OWNERS).
+/// The token of the env `key`: its entry's, else a new one, issued only once
+/// `add_hook` (the env's cleanup hook) is added. None when no token is left.
+fn env_owner<E>(
+  owners: &mut EnvOwners,
+  key: usize,
+  add_hook: impl FnOnce() -> Result<(), E>,
+) -> Result<Option<u32>, E> {
+  if let Some((_, owner)) = owners.1.iter().find(|(env, _)| *env == key) {
+    return Ok(Some(*owner));
+  }
+  let Some(owner) = owners.0.checked_add(1).filter(|t| *t != EXITED_OWNER) else {
+    return Ok(None);
+  };
+  add_hook()?;
+  owners.0 = owner;
+  owners.1.push((key, owner));
+  Ok(Some(owner))
+}
+
+/// The env `key` went: its entry goes (so a later env at the same address
+/// gets a new token, never this one). Returns its token.
+fn forget_env(owners: &mut EnvOwners, key: usize) -> Option<u32> {
+  let at = owners.1.iter().position(|(env, _)| *env == key)?;
+  Some(owners.1.swap_remove(at).1)
+}
+
+/// The env cleanup hook: the env `key` goes (forget_env), and its private
+/// registrations become exited ones (ENV_OWNERS). Rebuilds only when one
+/// goes.
 #[cfg_attr(test, allow(dead_code))]
 fn forget_env_owner(key: usize) {
-  env_owners().1.retain(|(env, _)| *env != key);
+  // A token was issued, so the collection exists.
+  let Some(collection) = GLOBAL_FONT_COLLECTION.get() else {
+    forget_env(&mut env_owners(), key);
+    return;
+  };
+  let font = collection.lock();
+  let owner = forget_env(&mut env_owners(), key);
+  // A poisoned font lock: another thread panicked mid-change, leave it be.
+  if let (Ok(font), Some(owner)) = (font, owner)
+    && font.retire_private(owner)
+  {
+    note_font_collection_mutation();
+  }
 }
 
 /// node-canvas registerFont (node-canvas.js): registers the file as a
@@ -333,24 +378,16 @@ pub fn register_font_face(
   };
   let font = get_font().map_err(into_napi_error)?;
   let key = env.raw() as usize;
-  let mut owners = env_owners();
   // The first registerFont of this env issues its token and adds the hook
-  // that drops the entry when the env goes (before anything is registered,
-  // so a hook that cannot be added registers nothing).
-  let owner = match owners.1.iter().find(|(env, _)| *env == key) {
-    Some((_, owner)) => *owner,
-    None => {
-      // No token left.
-      let Some(owner) = owners.0.checked_add(1) else {
-        return Ok(false);
-      };
-      env.add_env_cleanup_hook(key, forget_env_owner)?;
-      owners.0 = owner;
-      owners.1.push((key, owner));
-      owner
-    }
+  // that runs when the env goes (before anything is registered, so a hook
+  // that cannot be added registers nothing).
+  let owner = env_owner(&mut env_owners(), key, || {
+    env.add_env_cleanup_hook(key, forget_env_owner).map(drop)
+  })?;
+  // No token left.
+  let Some(owner) = owner else {
+    return Ok(false);
   };
-  drop(owners);
   if !font.register_from_path_private(
     font_path.as_str(),
     maybe_name_alias.as_deref(),
@@ -747,4 +784,41 @@ fn load_fonts_from_dir<P: AsRef<path::Path>>(dir: P) -> napi::Result<u32> {
     }
   }
   Ok(count)
+}
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+
+  #[test]
+  fn a_later_env_at_the_same_address_gets_a_new_token() {
+    let mut owners: EnvOwners = (0, Vec::new());
+    let mut hooks = 0;
+    let mut add_hook = || {
+      hooks += 1;
+      Ok::<(), ()>(())
+    };
+    assert_eq!(env_owner(&mut owners, 7, &mut add_hook), Ok(Some(1)));
+    // The same env again: its token, and no second hook.
+    assert_eq!(env_owner(&mut owners, 7, &mut add_hook), Ok(Some(1)));
+    assert_eq!(forget_env(&mut owners, 7), Some(1));
+    assert_eq!(forget_env(&mut owners, 7), None);
+    // A later env at the same address.
+    assert_eq!(env_owner(&mut owners, 7, &mut add_hook), Ok(Some(2)));
+    assert_eq!(hooks, 2);
+  }
+
+  #[test]
+  fn no_token_without_its_hook_and_never_the_exited_owner() {
+    let mut owners: EnvOwners = (0, Vec::new());
+    assert_eq!(env_owner(&mut owners, 7, || Err("no hook")), Err("no hook"));
+    assert_eq!(owners, (0, Vec::new()), "nothing issued");
+    let mut owners: EnvOwners = (EXITED_OWNER - 2, Vec::new());
+    assert_eq!(
+      env_owner(&mut owners, 7, || Ok::<(), ()>(())),
+      Ok(Some(EXITED_OWNER - 1))
+    );
+    assert_eq!(env_owner(&mut owners, 8, || Ok::<(), ()>(())), Ok(None));
+    assert_eq!(owners, (EXITED_OWNER - 1, vec![(7, EXITED_OWNER - 1)]));
+  }
 }
