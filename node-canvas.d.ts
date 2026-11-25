@@ -168,6 +168,11 @@ export function loadImage(
  * Register a font file for use in canvas text rendering.
  * Compatible with node-canvas's `registerFont()`.
  *
+ * A non-empty `family` is the face's only name, as `new FontFace(family, ...)`
+ * in Chrome: the family embedded in the file is not listed (Behavior change
+ * from 1.2.0, where it was). `family: ''` (or the embedded name) registers
+ * the face under its embedded name.
+ *
  * `weight` and `style` are the face's `@font-face` descriptors: the faces of
  * one family are picked by them with CSS font matching. Register one call per
  * face file, e.g. `{ family: 'Lato', weight: 'bold', style: 'italic' }`.

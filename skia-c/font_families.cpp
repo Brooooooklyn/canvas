@@ -2315,13 +2315,6 @@ uint32_t skiac_font_collection_register_system_font(
     // A name a register call gives this file later is a FontFace of its own
     // (RegisteredFont::WebName).
     c_collection->assets->markPreloaded(id);
-    // A registerFont registration of the file made before lists its own
-    // family no more, as one made after the load (hidePrivateOwnFamilies);
-    // only then a rebuild, which drops the caches too.
-    if (c_collection->assets->hidePrivateOwnFamilies(path)) {
-      c_collection->rebuildAssets();
-      return id;
-    }
   }
   c_collection->markCachesDirty();
   return id;

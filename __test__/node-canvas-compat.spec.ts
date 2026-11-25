@@ -699,9 +699,9 @@ test.serial('deregisterAllFonts keeps a font loadFontsFromDir loaded', (t) => {
 })
 
 // registerFont under another name of a file loadFontsFromDir loaded lists
-// that name only, as GlobalFonts.registerFromPath does: the file's own family
-// stays an installed font with the faces it had (a FontFace in it would hide
-// them: font_families.cpp FamilyResolver::IsWebFont).
+// that name only, as every registerFont with a family does: the file's own
+// family stays an installed font with the faces it had (a FontFace in it would
+// hide them: font_families.cpp FamilyResolver::IsWebFont).
 test.serial('registerFont of a file loadFontsFromDir loaded leaves its own family an installed font', (t) => {
   deregisterAllFonts()
   const {
@@ -725,9 +725,9 @@ test.serial('registerFont of a file loadFontsFromDir loaded leaves its own famil
 
 // registerFont under another name of a file loadFontsFromDir loads gives the
 // same result whichever comes first: the registration lists that name only
-// (made first, it drops the own family the load then has installed), so a
-// setAlias of the own family names the installed font, which outlives
-// deregisterAllFonts. In a child process per order, with no other fonts.
+// (never the file's own family), so a setAlias of the own family names the
+// installed font, which outlives deregisterAllFonts. In a child process per
+// order, with no other fonts.
 const DIR_ORDER_PROBE = `
 const crypto = require('crypto'), fs = require('fs'), os = require('os'), path = require('path')
 const { createCanvas, GlobalFonts, registerFont, deregisterAllFonts } = require('./node-canvas.js')
@@ -907,9 +907,10 @@ test.serial('registerFont of two weights of one file is two faces, both released
   t.is(stylesOf(own), before + 1, 'the file loadFontsFromDir loaded stays')
 })
 
-// A worker's registerFont made a registration of the file; a direct call with
-// other descriptors then made one of its own, which lists the file's own
-// family too. When the worker exits, the direct one stays as it was, and so
+// A worker's registerFont made a registration of the file, under its family
+// only; a direct call with other descriptors then made one of its own, which
+// lists the file's own family too. When the worker exits, the direct one
+// stays as it was, and so
 // does a direct setAlias of the own family made from its face (the newest of
 // the own family's faces). The fixture's own family is registered nowhere
 // else in this file (as Harmattan is), so the alias names this file's face.
@@ -959,11 +960,11 @@ test.serial('a worker exit keeps the own family of a file a direct call register
   t.teardown(() => worker.terminate())
   const exited = once(worker, 'exit')
   t.deepEqual(await once(worker, 'message'), ['registered'])
-  t.is(stylesOf(own), before + 1, "the worker's registration lists the own family")
+  t.is(stylesOf(own), before, "the worker's registration lists its family only")
   const key = GlobalFonts.registerFromPath(file, family, { weight: '700' })
   t.truthy(key)
   t.is(stylesOf(family), 2, 'the direct call makes a registration of its own')
-  t.is(stylesOf(own), before + 2, 'which lists the own family too')
+  t.is(stylesOf(own), before + 1, 'which lists the own family too')
   // Made from the direct call's face, the newest of the own family.
   t.true(GlobalFonts.setAlias(own, alias))
   worker.postMessage('exit')
@@ -1214,19 +1215,166 @@ test.serial('registerFont without weight keeps the wght axis of a variable font'
 
 // With only family, registerFont registers the file as registerFromPath
 // registers a new path: a face of its own next to the direct one, drawn as
-// the direct one is.
+// the direct one is. Except that it lists the family only, as
+// new FontFace(family, ...): the direct call lists the file's own family
+// (RMStatic) too, registerFont adds no face to it.
 test.serial('registerFont with only family registers the file as registerFromPath does', (t) => {
   deregisterAllFonts()
   const family = 'Compat 1472 Auto'
+  const own = 'RMStatic'
   const key = GlobalFonts.registerFromPath(fixture('RMStatic-Bold.ttf'), family)
   const direct = facesOf(family)
+  const ownStyles = stylesOf(own)
   registerFont(fixture('RMStatic-Bold.ttf'), { family })
   t.is(stylesOf(family), 2)
   t.deepEqual(facesOf(family), direct)
+  t.is(stylesOf(own), ownStyles, 'the own family gets no registerFont face')
   deregisterAllFonts()
   t.is(stylesOf(family), 1)
   t.true(GlobalFonts.remove(key!))
 })
+
+// Behavior change from 1.2.0: registerFont with a family lists the face under
+// that family only, as new FontFace('X', ...) in Chrome; the family embedded
+// in the file is listed only for family '' or that same name. In a child
+// process with no other fonts, so no other registration lists the embedded
+// family.
+const ONLY_FAMILY_PROBE = `
+const path = require('path')
+const { createCanvas, GlobalFonts, registerFont, deregisterAllFonts } = require('./node-canvas.js')
+const file = path.join('__test__', 'fonts', 'Harmattan-Regular.ttf')
+const own = 'Harmattan', family = 'Compat 1472 Only Name'
+const m = (name) => {
+  const ctx = createCanvas(10, 10).getContext('2d')
+  ctx.font = '30px "' + name + '"'
+  return ctx.measureText('Hamburgefonstiv').width
+}
+const state = () => ({
+  own: GlobalFonts.has(own),
+  ownStyles: GlobalFonts.families.find((f) => f.family === own)?.styles.length ?? 0,
+  ownDraws: m(own) !== m('Compat 1472 No Such Font'),
+  family: GlobalFonts.has(family),
+})
+const out = { before: state() }
+registerFont(file, { family })
+out.named = state()
+deregisterAllFonts()
+registerFont(file, { family: '' })
+out.empty = state()
+deregisterAllFonts()
+registerFont(file, { family: own })
+out.same = state()
+deregisterAllFonts()
+registerFont(file, { family })
+registerFont(file, { family: '' })
+out.both = state()
+deregisterAllFonts()
+out.after = state()
+process.stdout.write(JSON.stringify(out))
+`
+
+test.serial('registerFont with a family does not list the embedded family', (t) => {
+  const { stdout, stderr, status } = spawnSync(process.execPath, ['-e', ONLY_FAMILY_PROBE], {
+    cwd: join(__dirname, '..'),
+    env: { ...process.env, DISABLE_SYSTEM_FONTS_LOAD: '1' },
+    encoding: 'utf8',
+    timeout: 60_000,
+  })
+  t.is(status, 0, stderr)
+  const none = { own: false, ownStyles: 0, ownDraws: false, family: false }
+  t.deepEqual(JSON.parse(stdout), {
+    before: none,
+    named: { ...none, family: true },
+    empty: { own: true, ownStyles: 1, ownDraws: true, family: false },
+    same: { own: true, ownStyles: 1, ownDraws: true, family: false },
+    both: { own: true, ownStyles: 1, ownDraws: true, family: true },
+    after: none,
+  })
+})
+
+// The registration loadFontsFromDir made of a file, removed through its key
+// (GlobalFonts.registerFromPath of the path with no name returns it), leaves
+// a registerFont registration of the file under another name working, made
+// before or after the load, and the file's own family exactly as in a run
+// without registerFont, also when the path is registered again. In a child
+// process per order, with no other fonts.
+const DIR_KEY_REMOVE_PROBE = `
+const fs = require('fs'), os = require('os'), path = require('path')
+const { createCanvas, GlobalFonts, registerFont, deregisterAllFonts } = require('./node-canvas.js')
+const own = 'RMStatic', family = 'Compat 1472 Dir Key Other'
+const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'canvas-compat-dir-key-'))
+const file = path.join(dir, 'RMStatic.ttf')
+fs.copyFileSync(path.join('__test__', 'fonts', 'RMStatic-Regular.ttf'), file)
+const m = (name) => {
+  const ctx = createCanvas(10, 10).getContext('2d')
+  return [9.5, 30].map((size) => {
+    ctx.font = size + 'px "' + name + '"'
+    const t = ctx.measureText('Hamburgefonstiv')
+    return [t.width, t.actualBoundingBoxAscent, t.actualBoundingBoxDescent, t.fontBoundingBoxAscent, t.fontBoundingBoxDescent]
+  })
+}
+const state = () => ({
+  has: GlobalFonts.has(own),
+  styles: GlobalFonts.families.find((f) => f.family === own)?.styles.length ?? 0,
+  metrics: m(own),
+})
+const order = process.env.ORDER
+const out = { missing: m('Compat 1472 No Such Font') }
+if (order === 'registerFont first') registerFont(file, { family })
+out.loaded = GlobalFonts.loadFontsFromDir(dir)
+if (order === 'dir first') registerFont(file, { family })
+out.live = state()
+const familyLive = m(family)
+const key = GlobalFonts.registerFromPath(file)
+out.removed = !!key && GlobalFonts.remove(key)
+out.removedState = state()
+if (order !== 'none') {
+  out.family = GlobalFonts.has(family)
+  out.familyDraws = JSON.stringify(m(family)) !== JSON.stringify(out.missing)
+  out.familyKept = JSON.stringify(m(family)) === JSON.stringify(familyLive)
+}
+const again = GlobalFonts.registerFromPath(file)
+out.again = state()
+out.againRemoved = !!again && GlobalFonts.remove(again)
+deregisterAllFonts()
+out.after = state()
+fs.rmSync(dir, { recursive: true, force: true })
+process.stdout.write(JSON.stringify(out))
+`
+
+test.serial(
+  'removing the loadFontsFromDir registration through its key keeps registerFont and the own family',
+  async (t) => {
+    const run = (order: string) => {
+      const { stdout, stderr, status } = spawnSync(process.execPath, ['-e', DIR_KEY_REMOVE_PROBE], {
+        cwd: join(__dirname, '..'),
+        env: { ...process.env, DISABLE_SYSTEM_FONTS_LOAD: '1', ORDER: order },
+        encoding: 'utf8',
+        timeout: 60_000,
+      })
+      if (status !== 0) throw new Error(stderr)
+      return JSON.parse(stdout)
+    }
+    const baseline = run('none')
+    t.is(baseline.loaded, 1)
+    t.true(baseline.removed)
+    t.true(baseline.live.has)
+    t.false(baseline.removedState.has, 'the own family goes with the key')
+    t.deepEqual(baseline.removedState.metrics, baseline.missing)
+    t.true(baseline.again.has, 'registering the path again lists the own family')
+    t.true(baseline.againRemoved)
+    for (const order of ['registerFont first', 'dir first']) {
+      await new Promise((resolve) => setImmediate(resolve))
+      const out = run(order)
+      t.true(out.family, `${order}: the registerFont family stays`)
+      t.true(out.familyDraws, `${order}: it draws the file`)
+      t.true(out.familyKept, `${order}: as before the remove`)
+      const own = { ...out }
+      for (const field of ['family', 'familyDraws', 'familyKept']) delete own[field]
+      t.deepEqual(own, baseline, `${order}: the own family is as without registerFont`)
+    }
+  },
+)
 
 // ---------------------------------------------------------------------------
 // deregisterAllFonts

@@ -258,9 +258,7 @@ fn read_face_descriptors(
 /// env's address, and the last token issued. Each registerFont call makes a
 /// private registration of its env's token (RegisteredFont::owner in
 /// skia_c.hpp): only registerFont calls of the same env share it, and no
-/// GlobalFonts call or loadFontsFromDir ever reuses it (a loadFontsFromDir
-/// of its file only drops the own-family listing no call gave it:
-/// hidePrivateOwnFamilies).
+/// GlobalFonts call or loadFontsFromDir ever reuses it.
 /// deregisterAllFonts removes the env's private registrations whole, as
 /// GlobalFonts.remove removes one (the token stays for the env's later
 /// calls), and an env cleanup hook removes them when the env goes (a worker
@@ -305,13 +303,16 @@ fn release_env_owner(key: usize) {
 /// node-canvas registerFont (node-canvas.js): registers the file as a
 /// private registration of this env (ENV_OWNERS), made as
 /// `GlobalFonts.registerFromPath(font_path, name_alias, { weight, style })`
-/// makes a path it never saw (for a file loadFontsFromDir loads, before or
-/// after this call, and a family name, as its twin: only that name is
-/// listed). Only this env's registerFont calls share it:
-/// the same declaration again reuses it (and makes it the newest). `weight`
-/// and `style` are read each on its own with the @font-face grammar: one it
-/// rejects counts as not given (`auto`), as node-canvas ignores unknown
-/// values instead of throwing, and the other is kept. Returns whether the
+/// makes a path it never saw, except that a family name (`name_alias`) is
+/// its only name, as `new FontFace(family, ...)` in Chrome: the file's own
+/// (embedded) family is listed only for family '' or that same name.
+/// Behavior change from 1.2.0, where registerFont also made the face
+/// usable under its embedded family. Only this env's registerFont calls
+/// share it: the same declaration again reuses it (and makes it the
+/// newest). `weight` and `style` are read each on its own with the
+/// @font-face grammar: one it rejects counts as not given (`auto`), as
+/// node-canvas ignores unknown values instead of throwing, and the other is
+/// kept. Returns whether the
 /// file was registered. Not API: reachable through js-binding, as
 /// `_toNumber` is.
 // Only JS calls it: the lib test build registers no napi exports.

@@ -909,7 +909,9 @@ class TypefaceFontProviderCustom : public TypefaceFontProvider {
   // on failure.
   // `owner` (node-canvas registerFont, RegisteredFont::owner): the same rule
   // over that env's private registrations of the path only, with keys that
-  // never are a path hash (PrivateKey), and the result is in no index.
+  // never are a path hash (PrivateKey), and the result is in no index. A new
+  // one with an alias lists the alias only (a FontFace of that family), not
+  // the face's own family.
   uint32_t registerTypefaceFromPathWithTracking(
       const std::string& path,
       sk_sp<SkTypeface> typeface,
@@ -1012,11 +1014,12 @@ class TypefaceFontProviderCustom : public TypefaceFontProvider {
     font_info.path = path;
     font_info.typeface = typeface;
     font_info.owner = owner;
-    if (owner && same.empty() && alias_arg && IsPreloadedPath(path)) {
-      // A private registration of a file loadFontsFromDir loaded lists the
-      // alias only, as the twin registerFromPath makes of that file: its
-      // own family stays an installed font with all its faces. One made
-      // before the load drops that listing then (hidePrivateOwnFamilies).
+    if (owner && same.empty() && alias_arg) {
+      // A private registration (node-canvas registerFont) with a family is
+      // a FontFace of that family only, as new FontFace('X', ...) in Chrome:
+      // the face's own family is not listed, so it stays whatever else
+      // gives it (an installed font, a GlobalFonts registration) whether
+      // loadFontsFromDir loads the file before or after this call.
       font_info.AddName(name, true, true, ++registrations);
     } else if (same.empty()) {
       // The own family first, then the alias (when not the same name).
@@ -1089,38 +1092,6 @@ class TypefaceFontProviderCustom : public TypefaceFontProvider {
   void keepTwinKeys(const TypefaceFontProviderCustom& old) {
     twin_keys_next = old.twin_keys_next;
     private_free_keys = old.private_free_keys;
-  }
-
-  // loadFontsFromDir loaded the file `path` now: a private registration of
-  // it (RegisteredFont::owner) made before drops the listing of its own
-  // family that no call gave (the face's family listed next to the
-  // caller's name: alias_args and call_names both false), as a private
-  // registration made after the load never lists it
-  // (registerTypefaceFromPathWithTracking), so the own family stays the
-  // installed font with its faces whichever came first. A name the caller
-  // gave (family '' or the same spelling) stays. Returns whether a listing
-  // went: the caller rebuilds, as the provider cannot drop a name.
-  bool hidePrivateOwnFamilies(const std::string& path) {
-    bool hidden = false;
-    for (auto& [id, font_info] : registered_fonts) {
-      if (!font_info.owner || font_info.path != path) {
-        continue;
-      }
-      for (size_t i = font_info.aliases.size(); i-- > 0;) {
-        if (font_info.alias_args[i] || font_info.call_names[i]) {
-          continue;
-        }
-        font_info.aliases.erase(font_info.aliases.begin() + i);
-        font_info.orders.erase(font_info.orders.begin() + i);
-        font_info.alias_args.erase(font_info.alias_args.begin() + i);
-        font_info.call_names.erase(font_info.call_names.begin() + i);
-        if (i < font_info.relists.size()) {
-          font_info.relists.erase(font_info.relists.begin() + i);
-        }
-        hidden = true;
-      }
-    }
-    return hidden;
   }
 
   // Whether the font `id` is a private registration (RegisteredFont::owner).
@@ -1254,23 +1225,6 @@ class TypefaceFontProviderCustom : public TypefaceFontProvider {
       }
     }
     return NextTwinKey();
-  }
-
-  // Whether loadFontsFromDir loaded the file `path` (RegisteredFont::
-  // preloaded): read only, a private registration never changes it.
-  bool IsPreloadedPath(const std::string& path) const {
-    auto index_it = content_hash_index.find(computePathHash(path));
-    if (index_it == content_hash_index.end()) {
-      return false;
-    }
-    for (uint32_t id : index_it->second) {
-      auto it = registered_fonts.find(id);
-      if (it != registered_fonts.end() && it->second.preloaded &&
-          it->second.path == path) {
-        return true;
-      }
-    }
-    return false;
   }
 
   // The first key from `id` on (linear probe) that no live registration has

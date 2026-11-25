@@ -279,20 +279,21 @@ function _addCompatMethods(canvas) {
  * Compatible with node-canvas's registerFont(path, { family, weight?, style? }).
  *
  * The file is registered as a registration of its own, made as
- * GlobalFonts.registerFromPath makes a path it never saw (for a file
- * loadFontsFromDir loads, before or after this call, and a family name, as
- * its twin: only that name is listed, so the file's own family stays
- * installed), with `weight` and `style` as the face's @font-face
- * descriptors, so the faces of one family are picked by them with CSS font
- * matching. Register one call per face file. Only the registerFont calls of
- * this N-API env (the main thread or one worker) share it: the same
- * declaration again reuses it and makes it the newest. A GlobalFonts call or
- * loadFontsFromDir never reuses it, so a file registered both ways has a
- * face from each.
+ * GlobalFonts.registerFromPath makes a path it never saw, with `weight` and
+ * `style` as the face's @font-face descriptors, so the faces of one family
+ * are picked by them with CSS font matching. Register one call per face
+ * file. A non-empty `family` is the face's only name, as
+ * `new FontFace(family, ...)` in Chrome: the family embedded in the file is
+ * not listed (Behavior change from 1.2.0, where it was). `family: ''` (or
+ * the embedded name) registers it under its embedded name. Only the
+ * registerFont calls of this N-API env (the main thread or one worker) share
+ * it: the same declaration again reuses it and makes it the newest. A
+ * GlobalFonts call or loadFontsFromDir never reuses it, so a file registered
+ * both ways has a face from each.
  *
  * - A field that is not given is `auto`: a call with only `family` registers
- *   the file as GlobalFonts.registerFromPath(path, family) does, and a
- *   variable font keeps its axes.
+ *   the file as GlobalFonts.registerFromPath(path, family) does, except that
+ *   the embedded family is not listed, and a variable font keeps its axes.
  * - An explicit weight or style, `'normal'` included, pins a variable font to
  *   it, as with @font-face. Use a range such as `'100 900'` to keep the axis.
  * - Each of `weight` and `style` is read on its own: a value the @font-face

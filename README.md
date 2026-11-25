@@ -188,6 +188,8 @@ GlobalFonts.registerFromPath('./fonts/Lato-Bold.ttf', 'MyLato', { weight: 700 })
 
 `registerFont(path, { family, weight, style })` from `@napi-rs/canvas/node-canvas` passes `weight` and `style` as these descriptors, so one call per face file picks each face. A field that is not given is `auto`, and a value the `@font-face` grammar rejects (`'bolder'`) counts as not given while the other field is kept; a value it accepts (`calc(700)` too) works exactly as in `registerFromPath`. A face declared bold or italic is not made bold or italic when its file is not, and an explicit weight (`'normal'` included) pins a variable font to it. `registerFont`'s faces are its own, so a file also registered through `GlobalFonts` or `loadFontsFromDir` has a face from each (`GlobalFonts.families` shows both) until `deregisterAllFonts`.
 
+> **Behavior change**: `registerFont(path, { family: 'X' })` lists the face under `X` only, as `new FontFace('X', ...)` does in Chrome, so the face is no longer usable under the family name embedded in the file. Pass `family: ''` (or the embedded name) to register it under its embedded name.
+
 These still depend on the OS and the machine:
 
 - Installed fonts. Names like `Arial` or `Helvetica`, and the generic families (`sans-serif`, `serif`, `monospace`, `system-ui`, the canvas default `10px sans-serif`) resolve to whatever is installed.
