@@ -901,7 +901,8 @@ test.serial('a worker exit keeps the own family of a file a direct call register
 // registration goes, a character the font list lacks comes from the file
 // (installed-fallback.spec.ts). A direct registerFromPath of the file with
 // other descriptors (DIRECT_FACE) made before the load is the path's first
-// registration, which the load only holds, so the file is no fallback font;
+// registration, which the load reuses (it registers nothing new), so the file
+// is no fallback font, as on main;
 // made after the load, it is a twin of the installed font, which stays a
 // fallback font. Each case runs in a child process with no other fonts
 // loaded.

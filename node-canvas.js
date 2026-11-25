@@ -279,7 +279,9 @@ function _addCompatMethods(canvas) {
  * Compatible with node-canvas's registerFont(path, { family, weight?, style? }).
  *
  * The file is registered as a registration of its own, made as
- * GlobalFonts.registerFromPath makes a path it never saw, with `weight` and
+ * GlobalFonts.registerFromPath makes a path it never saw (for a file
+ * loadFontsFromDir loaded and a family name, as its twin: only that name is
+ * listed, so the file's own family stays installed), with `weight` and
  * `style` as the face's @font-face descriptors, so the faces of one family
  * are picked by them with CSS font matching. Register one call per face
  * file. Only the registerFont calls of this N-API env (the main thread or
