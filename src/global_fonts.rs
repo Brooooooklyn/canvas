@@ -266,7 +266,10 @@ fn read_face_descriptors(
 /// not change the main thread's text when it exits. An env cleanup hook only
 /// drops the entry, so the exited env's registrations stay private (no
 /// FontKey names them, and no later env's deregisterAllFonts removes them);
-/// only GlobalFonts.removeAll does. Every node-canvas.js instance of one env
+/// only GlobalFonts.removeAll does. A later env never reuses them (its
+/// token is new), so each worker that calls registerFont and exits without
+/// deregisterAllFonts adds its faces for the life of the process: a pool
+/// that recycles workers should deregister in each worker (README). Every node-canvas.js instance of one env
 /// shares the token (a Jest-style reload of the package keeps the .node
 /// binding, so its env). An entry lives from the first registerFont of its
 /// env to the env's cleanup, so an address reused by a later env gets a new

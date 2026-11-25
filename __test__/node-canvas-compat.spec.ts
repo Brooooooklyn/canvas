@@ -942,7 +942,17 @@ const start = async (family) => {
   const [cleaned] = await once(worker, 'message')
   worker.postMessage('exit')
   await exited
-  out.later = { registered, cleaned, styles: families.map(stylesOf) }
+  out.later = { registered, cleaned, styles: families.map(stylesOf), own: stylesOf(later) }
+  // No later worker reuses an exited worker's registration: two workers that
+  // register the same declaration and exit leave one each.
+  const churn = 'Compat 1472 Worker Exit churn'
+  families.push(churn)
+  for (let i = 0; i < 2; i++) {
+    const { worker, exited } = await start(churn)
+    worker.postMessage('exit')
+    await exited
+  }
+  out.churn = stylesOf(churn)
   GlobalFonts.removeAll()
   out.removeAll = families.map((family) => GlobalFonts.has(family))
   process.stdout.write(JSON.stringify(out))
@@ -973,8 +983,13 @@ test.serial("a worker's registerFont fonts stay and draw after it exits", (t) =>
     t.is(r.cleanedStyles, 1, `${order}: the main thread's deregisterAllFonts keeps the exited worker's`)
     t.deepEqual(r.cleaned, r.alive, `${order}: and the text stays`)
   }
-  t.deepEqual(out.later, { registered: true, cleaned: false, styles: [1, 1] }, 'a later worker removes its own only')
-  t.deepEqual(out.removeAll, [false, false], 'GlobalFonts.removeAll removes them')
+  t.deepEqual(
+    out.later,
+    { registered: true, cleaned: false, styles: [1, 1], own: 0 },
+    'a later worker removes its own only, and nothing of it stays after it exits',
+  )
+  t.is(out.churn, 2, 'each worker that exits without deregisterAllFonts leaves its own')
+  t.deepEqual(out.removeAll, [false, false, false], 'GlobalFonts.removeAll removes them')
 })
 
 // Two weights of one file in one env are two registrations (the second a
@@ -1002,8 +1017,9 @@ test.serial('registerFont of two weights of one file is two faces, both released
 // only; a direct call with other descriptors then made one of its own, which
 // lists the file's own family too. When the worker's deregisterAllFonts
 // removes its registration (a worker's stays after it exits, so it cleans up
-// before), the direct one stays as it was, and so does a direct setAlias of the own family made from
-// its face (the newest of the own family's faces). In a child process with no
+// before), the direct one stays as it was, and so does a direct setAlias of
+// the own family made from its face (the newest of the own family's faces).
+// In a child process with no
 // other fonts (the worker started from it), so nothing else lists the own
 // family and the alias names this file's face.
 const EMBEDDED_RELEASE_PROBE = `

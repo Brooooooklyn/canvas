@@ -200,6 +200,11 @@ export function registerFont(path: string, fontFace: { family: string; weight?: 
  * both with `registerFont` and with `GlobalFonts` has a face from each while
  * both are live, and a `setAlias` made while a `registerFont` face of the
  * family was the newest goes with it.
+ *
+ * A later worker never reuses an exited worker's registrations, so each
+ * worker that calls `registerFont` adds its faces for the life of the process
+ * (only `GlobalFonts.removeAll()` removes them then). A pool that recycles
+ * workers should call `deregisterAllFonts()` in each worker before it exits.
  */
 export function deregisterAllFonts(): void
 
