@@ -75,7 +75,7 @@
     "version": "napi version && conventional-changelog -p angular -i CHANGELOG.md -s && git add ."
   },
   "devDependencies": {
-    "@jimp/core": "^1.6.0",
+    "@jimp/core": "^2.0.0",
     "@jimp/custom": "^0.22.12",
     "@jimp/jpeg": "^0.22.12",
     "@jimp/png": "^0.22.12",
